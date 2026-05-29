@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>오늘의 뉴스 브리핑</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: "Malgun Gothic", "Apple SD Gothic Neo", Arial, sans-serif;
+            max-width: 1120px;
+            margin: 0 auto;
+            padding: 28px 18px 46px;
+            background-color: #f4f7f6;
+            color: #24313d;
+        }
+        h1 {
+            margin: 0 0 8px;
+            color: #1f2d3a;
+            text-align: center;
+            font-size: 2rem;
+        }
+        .date-title {
+            text-align: center;
+            color: #667788;
+            margin-bottom: 26px;
+            line-height: 1.6;
+        }
+        .top-tabs {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 10px;
+            margin: 0 0 28px;
+            position: sticky;
+            top: 0;
+            z-index: 5;
+            padding: 10px 0;
+            background: #f4f7f6;
+        }
+        .nav-tab {
+            border: 1px solid #d7e0e6;
+            background: #ffffff;
+            color: #24313d;
+            border-radius: 8px;
+            padding: 13px 12px;
+            font-size: 1rem;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: 0 2px 5px rgba(25, 42, 58, 0.04);
+        }
+        .nav-tab:hover {
+            border-color: #9fb0bd;
+        }
+        .nav-tab.active {
+            background: #24313d;
+            color: #ffffff;
+            border-color: #24313d;
+        }
+        .tab-count {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 24px;
+            height: 24px;
+            margin-left: 6px;
+            padding: 0 7px;
+            border-radius: 999px;
+            background: rgba(36, 49, 61, 0.1);
+            font-size: 0.82rem;
+        }
+        .nav-tab.active .tab-count {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        .content-section {
+            display: none;
+        }
+        .content-section.active {
+            display: block;
+        }
+        .section-title {
+            font-size: 1.55rem;
+            color: #22313f;
+            border-left: 6px solid #2f8f83;
+            padding-left: 12px;
+            margin: 30px 0 18px;
+            font-weight: 800;
+        }
+        .group-title {
+            margin: 26px 0 12px;
+            padding: 9px 12px;
+            border-radius: 8px;
+            background: #e6ecef;
+            color: #263746;
+            font-size: 1.08rem;
+            font-weight: 800;
+        }
+        .sub-category {
+            font-size: 1rem;
+            color: #2c3e50;
+            margin: 18px 0 10px;
+            font-weight: 800;
+        }
+        .news-card {
+            background: #ffffff;
+            padding: 18px 20px;
+            margin-bottom: 12px;
+            border-radius: 8px;
+            border: 1px solid #e4e9ed;
+            box-shadow: 0 2px 5px rgba(25, 42, 58, 0.04);
+        }
+        .news-title {
+            font-size: 1.05rem;
+            font-weight: 800;
+            margin-bottom: 8px;
+            line-height: 1.45;
+        }
+        .news-title a {
+            color: #1f2d3a;
+            text-decoration: none;
+        }
+        .news-title a:hover {
+            color: #1d6fa5;
+            text-decoration: underline;
+        }
+        .news-date {
+            font-size: 0.86rem;
+            color: #748595;
+            line-height: 1.5;
+        }
+        .news-summary {
+            margin: 12px 0 0;
+            padding-left: 20px;
+            color: #334454;
+            font-size: 0.94rem;
+            line-height: 1.65;
+        }
+        .news-summary li {
+            margin: 2px 0;
+        }
+        .no-news {
+            color: #8a98a5;
+            font-style: italic;
+            padding: 10px 4px 16px;
+        }
+        @media (max-width: 720px) {
+            body { padding: 22px 14px 36px; }
+            h1 { font-size: 1.55rem; }
+            .top-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .section-title { font-size: 1.22rem; }
+            .news-card { padding: 16px; }
+        }
+    </style>
+</head>
+<body>
+    <h1>오늘의 뉴스 브리핑</h1>
+    <div class="date-title">
+        자동 업데이트 기준일: 2026.05.28 전일 기사<br>
+        마지막 갱신: 2026.05.29 16:32 KST
+    </div>
+    <div class="top-tabs" role="tablist">
+        <button class="nav-tab active" type="button" role="tab" aria-selected="true" data-target="section-macro">거시경제<span class="tab-count">24</span></button>
+        <button class="nav-tab" type="button" role="tab" aria-selected="false" data-target="section-ai">AI<span class="tab-count">12</span></button>
+        <button class="nav-tab" type="button" role="tab" aria-selected="false" data-target="section-vcac">VC/AC<span class="tab-count">9</span></button>
+        <button class="nav-tab" type="button" role="tab" aria-selected="false" data-target="section-impact">임팩트<span class="tab-count">5</span></button>
+    </div>
+    <section id="section-macro" class="content-section active">
+        <div class="section-title">거시경제</div>
+        <div class="group-title">미국</div>
+        <div class="sub-category">경제지표</div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMiW0FVX3lxTE9VREI4N2NhVGF4ZzFlMUVJZmhNYXJjeEEwVHN0VTFYZ0FmWUE3TkZFMUR6TlZfb3JXVzNqZlJBWmFBV1hlUnB1QkNmS1RzZUFhLVI0UU1lNVNkaDjSAWBBVV95cUxNZVdVRlBteTF3RWNCMHA1RGZtUlVpWW44aEYwVC1VTkl6ZzdWS2JxeHhDd3NvZ3NWeWxFRGNNU0NZbmZzcGZPVVotU05hVV91MElRRmowOHNmLTM3dGtlMzg?oc=5" target="_blank" rel="noopener noreferrer">美 4월 PCE물가 전년대비 3.8%↑…2년 11개월만에 최고</a></div>
+            <div class="news-date">출처: 연합뉴스 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: 美 4월 PCE물가 전년대비 3.8%↑…2년 11개월만에 최고</li>
+            <li>맥락: 미국 경기, 물가, 고용 흐름을 판단하는 데 연결되는 기사입니다.</li>
+            <li>출처: 연합뉴스에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMibkFVX3lxTE9DYTNHNmg5R0dUQkM3cWFNV0JlRllza0d6RE1CejhwM1RhWHpzVXNuOTE1OXB2clh3S1dKYXFZXzQ0NXhhVDVabC1OVW82QmlWYWluM2FJVWFjOUgxb3diNnFFY3Y2T1NNdWNuUWpR0gFuQVVfeXFMT0NhM0c2aDlHR1RCQzdxYU1XQmVGWXNrR3pETUJ6OHAzVGFYenNVc245MTU5cHZyWHdLV0phcVlfNDQ1eGFUNVpsLU5VbzZCaVZhaW4zYUlVYWM5SDFvd2I2cUVjdjZPU011Y25RalE?oc=5" target="_blank" rel="noopener noreferrer">4월 미국 PCE 2년 11개월만에 최고치…이란 전쟁·고유가 여파 - 머니투데이</a></div>
+            <div class="news-date">출처: 머니투데이 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: 4월 미국 PCE 2년 11개월만에 최고치…이란 전쟁·고유가 여파 - 머니투데이</li>
+            <li>맥락: 미국 경기, 물가, 고용 흐름을 판단하는 데 연결되는 기사입니다.</li>
+            <li>출처: 머니투데이에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMiW0FVX3lxTE5RUHU0MnpOeVljMGZUeXJsd2J1TEx1ZGkteHVQR1plcDEzQjJwR0JfQW5xZkZUODhCWnpHX2JyUzNaQjd6ZVlfVk9ma0N4eFB1TjdZNkNEU0x0M2PSAWBBVV95cUxOOG9ERm1HSGk3NVppR2lKYjNCVEpwS19RbXhGc0g1aFRfdldqYU50SHNtdk5MYjNhcVZMT0pjM00yUFV4X0M2clNjY19LY19Hb1ZXSkNMTFQ0UmMzTi10X1o?oc=5" target="_blank" rel="noopener noreferrer">美 4월 PCE물가 전년대비 3.8%↑…고유가에 오름폭 확대(종합)</a></div>
+            <div class="news-date">출처: 연합뉴스 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: 美 4월 PCE물가 전년대비 3.8%↑…고유가에 오름폭 확대(종합)</li>
+            <li>맥락: 미국 경기, 물가, 고용 흐름을 판단하는 데 연결되는 기사입니다.</li>
+            <li>출처: 연합뉴스에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="sub-category">관세</div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMiYEFVX3lxTE93Y3dCaVRsTV9YQ1FzZGVUQ0R5WkZUY1BJRmduQ1dBYndMZ0ZGdlpvX25haG1HS2VDNmhXSGdLUzBrQkZiajVhamxUeV9WUHVNYzZHNUcwTzRmeDZuc3FndtIBYEFVX3lxTE93Y3dCaVRsTV9YQ1FzZGVUQ0R5WkZUY1BJRmduQ1dBYndMZ0ZGdlpvX25haG1HS2VDNmhXSGdLUzBrQkZiajVhamxUeV9WUHVNYzZHNUcwTzRmeDZuc3Fndg?oc=5" target="_blank" rel="noopener noreferrer">미국-멕시코 북미무역협정 논의 착수…美 갈등 캐나다는 &#x27;패싱&#x27;</a></div>
+            <div class="news-date">출처: 연합뉴스 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: 미국-멕시코 북미무역협정 논의 착수…美 갈등 캐나다는 &#x27;패싱&#x27;</li>
+            <li>맥락: 미국 무역정책과 관세 리스크의 변화를 다루는 기사입니다.</li>
+            <li>출처: 연합뉴스에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMidkFVX3lxTE9pcUxucGJaZXZtQU1SaXZTXzd0VWhMVmN2WXFUWjV0MDZINmszcnRNOGFDX2c5WVVIWHJtYXp3S096aDNDeGRMQnpESndoc2ZRNzFPNE9PS05HUUNZc1puN3NNYmlnZy01S1JZQUlKaklleWJnTlHSAWZBVV95cUxNWGI1WVFzSnItNm43OFdhbmx2X2tyaGtUbUhNbG5nYlU4SE9TWGxiSFMtNmtQVl91TlhQYlpRczVTUVRFN0lhSmR6aE4tck4zUF8wWjV6ekZmUUtCbkZtdF9EZTN1MFE?oc=5" target="_blank" rel="noopener noreferrer">美 USTR 대표 “글로벌 10% 관세, 7월 만료후 재부과 가능”</a></div>
+            <div class="news-date">출처: 동아일보 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: 美 USTR 대표 “글로벌 10% 관세, 7월 만료후 재부과 가능”</li>
+            <li>맥락: 미국 무역정책과 관세 리스크의 변화를 다루는 기사입니다.</li>
+            <li>출처: 동아일보에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMib0FVX3lxTE1Ed2s2NVQyTFE4U1g1a0pzV2Z5N0ZTdHBjVEZEZENEVXRDUnRFSjdaQU5zdmxDbnF6QTZxb0RsTU5USU5TSGxHUWdLcnlOWmU5c0VRLU9jQ3MwMm01RzVTUHdxYlZfZmRpZHpTdnl1NNIBb0FVX3lxTE1Ed2s2NVQyTFE4U1g1a0pzV2Z5N0ZTdHBjVEZEZENEVXRDUnRFSjdaQU5zdmxDbnF6QTZxb0RsTU5USU5TSGxHUWdLcnlOWmU5c0VRLU9jQ3MwMm01RzVTUHdxYlZfZmRpZHpTdnl1NA?oc=5" target="_blank" rel="noopener noreferrer">[경제브리핑] 미국 트럼프, 협상은 만족스럽지 않은 수준. 이란 방송은 합의 가능성 보도</a></div>
+            <div class="news-date">출처: the-news.co.kr | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: [경제브리핑] 미국 트럼프, 협상은 만족스럽지 않은 수준. 이란 방송은 합의 가능성 보도</li>
+            <li>맥락: 미국 무역정책과 관세 리스크의 변화를 다루는 기사입니다.</li>
+            <li>출처: the-news.co.kr에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="sub-category">통화정책</div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMiYEFVX3lxTE9vR21OYTFJNTRxT3pkUzdZTVRreGQ2amVsWG9ORUtOeExDTWZvRWo2SXVJckVuZnJ0aV8zR1ZLbUNFRnpaQmk3ZDJmM0d6ZW9vTFlCWUNnd0RpVkVUTjEyOdIBYEFVX3lxTE9vR21OYTFJNTRxT3pkUzdZTVRreGQ2amVsWG9ORUtOeExDTWZvRWo2SXVJckVuZnJ0aV8zR1ZLbUNFRnpaQmk3ZDJmM0d6ZW9vTFlCWUNnd0RpVkVUTjEyOQ?oc=5" target="_blank" rel="noopener noreferrer">美연준 쿡 이사 &quot;인플레 잘못된 방향으로…지속시 금리인상&quot;</a></div>
+            <div class="news-date">출처: 연합뉴스 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: 美연준 쿡 이사 &quot;인플레 잘못된 방향으로…지속시 금리인상&quot;</li>
+            <li>맥락: 연준 금리 경로와 채권시장 흐름에 영향을 줄 수 있는 기사입니다.</li>
+            <li>출처: 연합뉴스에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMiiwFBVV95cUxNYkF3QzMzblhlSmRFQnZwR2NlYTE2NF9RNDlJTU1OMG9YeFVBeHZpMFVVTzFUQllzUTJmamEwYXdiRC1FbVhtSXYtWEtzbEVrTUFnNDczVm5pZXdLWmhwaFE4OG5iUlBVOEFybnpqcWpJbmVSYWQ0dkxXQy02UzlnWm0tbWk5OVAtQUc4?oc=5" target="_blank" rel="noopener noreferrer">&quot;지금이 바닥&quot; 미 장기 국채 5% 돌파에… 미국 채권에 몰려간 서학개미</a></div>
+            <div class="news-date">출처: 조선일보 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: &quot;지금이 바닥&quot; 미 장기 국채 5% 돌파에… 미국 채권에 몰려간 서학개미</li>
+            <li>맥락: 연준 금리 경로와 채권시장 흐름에 영향을 줄 수 있는 기사입니다.</li>
+            <li>출처: 조선일보에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMidEFVX3lxTE45SndINTVDUlBna3NtX3FaYzRUSGgyc19hNXlLUWVXemlWLUY5aXJmRFdDT29KaEVna00xalg1OXBzTmlNVXpfZjZDaEFMNWVTYkdvZ2F3MGFPbFA1VmFCY3BvMWQzRVc0OFFwMDRjaXF5SnJ20gF0QVVfeXFMTjlKd0g1NUNSUGdrc21fcVpjNFRIaDJzX2E1eUtRZVd6aVYtRjlpcmZEV0NPb0poRWdrTTFqWDU5cHNOaU1Vel9mNkNoQUw1ZVNiR29nYXcwYU9sUDVWYUJjcG8xZDNFVzQ4UXAwNGNpcXlKcnY?oc=5" target="_blank" rel="noopener noreferrer">국고 3년 금리 3.8% 터치…매파 금통위·이란 공격(상보)</a></div>
+            <div class="news-date">출처: 연합인포맥스 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: 국고 3년 금리 3.8% 터치…매파 금통위·이란 공격(상보)</li>
+            <li>맥락: 연준 금리 경로와 채권시장 흐름에 영향을 줄 수 있는 기사입니다.</li>
+            <li>출처: 연합인포맥스에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="sub-category">외교</div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMiakFVX3lxTE0xMk9hS1Vfb0szMTFsOGhaTE5lOUsybTFpMjhuSlZ5MVNjLVRseUhzZlpFZnB4ZmtISXBUX1NTY05kTWxNY2djV1JlcWRJUXhIU0FhTnRxWUlTSTNQZ1otUEdLTHZCdHVmR2c?oc=5" target="_blank" rel="noopener noreferrer">중국, 사상 처음으로 미국의 달러 제재망에 맞서다</a></div>
+            <div class="news-date">출처: 시사IN | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: 중국, 사상 처음으로 미국의 달러 제재망에 맞서다</li>
+            <li>맥락: 미국 대외관계, 제재, 협상 흐름을 확인할 수 있는 기사입니다.</li>
+            <li>출처: 시사IN에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMigwFBVV95cUxNZzZuSDdoNjVKYmwxQ3FqYWo2dEs5OV9jMUNadG1tUVlPZXpHMDR2VHJHMnJZa3lGbEhXTTdMTU43bzlSODI3VGNsWmkxU01VcF9QdnAwRHoxV0NNNHV5QktieTZSRDdmdklvMlBTN0FFcDhoRFFmV1d6N1BlNE9jaXhCVQ?oc=5" target="_blank" rel="noopener noreferrer">&#x27;합의 임박&#x27; 언급했던 트럼프 &quot;지금까지는 만족스럽지 않아&quot;</a></div>
+            <div class="news-date">출처: YTN | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: &#x27;합의 임박&#x27; 언급했던 트럼프 &quot;지금까지는 만족스럽지 않아&quot;</li>
+            <li>맥락: 미국 대외관계, 제재, 협상 흐름을 확인할 수 있는 기사입니다.</li>
+            <li>출처: YTN에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMiX0FVX3lxTE81ZTFwOUVvM1IySEpEUWtZRndQQll6Rlprb2RwcGswQmw4eFpzNzVWREhGZzJ4WkhlcUpmSkgxdEt2dndudjR2QWliQXJ1aFUzcUtQMmVmNVJvQmNHNlNN0gFfQVVfeXFMTzVlMXA5RW8zUjJISkRRa1lGd1BCWXpGWmtvZHBwazBCbDh4WnM3NVZESEZnMnhaSGVxSmZKSDF0S3Z2d252NHZBaWJBcnVoVTNxS1AyZWY1Um9CY0c2U00?oc=5" target="_blank" rel="noopener noreferrer">‘바람 앞 등불’ 종전 협상···미·이란, 다시 강대강 대치하나</a></div>
+            <div class="news-date">출처: 경향신문 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: ‘바람 앞 등불’ 종전 협상···미·이란, 다시 강대강 대치하나</li>
+            <li>맥락: 미국 대외관계, 제재, 협상 흐름을 확인할 수 있는 기사입니다.</li>
+            <li>출처: 경향신문에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="group-title">한국</div>
+        <div class="sub-category">경제지표</div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMickFVX3lxTE56WnlhNlpwd2I2R2JyTi1QN2RyZVlPTVYxcnNHMnNMdzNPN2VhQmJQbVFmdm1ZeXVGdHBKNmM2LTRRYlB1MHQtZHpzMlVkV2oySks0Y1dqZ3ZOcVJvanVHek1ZelpYQ0Z6emtGSlRHQzZRZw?oc=5" target="_blank" rel="noopener noreferrer">이코노미스트誌 &quot;AI 호황이 한국경제 중국발 쇼크 가려&quot;</a></div>
+            <div class="news-date">출처: KB Think | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: 이코노미스트誌 &quot;AI 호황이 한국경제 중국발 쇼크 가려&quot;</li>
+            <li>맥락: 한국 경기, 물가, 고용, 수출입 흐름을 살피는 기사입니다.</li>
+            <li>출처: KB Think에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMiYEFVX3lxTFBDNUswODFoa3o2NTE3X1pSN3ZKR3U2V3ZVeEM2bFlYN1Q0S0ZtSzVxZ1pfa3ItMGZGRUJiTV8yQkliZm9GZjQ3RVJJa1o3b3RtRnBYOWRUSl9HZTlJeVlhbdIBYEFVX3lxTFBDNUswODFoa3o2NTE3X1pSN3ZKR3U2V3ZVeEM2bFlYN1Q0S0ZtSzVxZ1pfa3ItMGZGRUJiTV8yQkliZm9GZjQ3RVJJa1o3b3RtRnBYOWRUSl9HZTlJeVlhbQ?oc=5" target="_blank" rel="noopener noreferrer">&quot;통상환경 변화 대응하려면 미래차 생산기반 확보 시급&quot;</a></div>
+            <div class="news-date">출처: 연합뉴스 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: &quot;통상환경 변화 대응하려면 미래차 생산기반 확보 시급&quot;</li>
+            <li>맥락: 한국 경기, 물가, 고용, 수출입 흐름을 살피는 기사입니다.</li>
+            <li>출처: 연합뉴스에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMibEFVX3lxTFA2SFJNV2JJTzd5a3RuZWtHUzBTa3hsNnRieVhnM0x5LTA5MGtSVF84UHFHUGl2N0wxZVd5Z2p3Z0ZuNmZlUVFqSk53NEVzdDl1ZWM0RnNwODVSRFRhenpTMXJwUS1wSDQwelJFbg?oc=5" target="_blank" rel="noopener noreferrer">&#x27;공동 R&amp;D 거점&#x27;으로…한국 시장 밀착하는 릴리</a></div>
+            <div class="news-date">출처: 약사공론 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: &#x27;공동 R&amp;D 거점&#x27;으로…한국 시장 밀착하는 릴리</li>
+            <li>맥락: 한국 경기, 물가, 고용, 수출입 흐름을 살피는 기사입니다.</li>
+            <li>출처: 약사공론에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="sub-category">통화정책</div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMiYEFVX3lxTE5hSVpBeUQyYlZWQVplbTZxS1I3TnlETkdBbFFHVUV3TjBVZjRTVF8yRzJ0Y2c2TVZWRktrejhSallCdlp0VnVxT1ctaFZReXRDakFuUGFWXzNVRkF2aWt4YdIBYEFVX3lxTE5hSVpBeUQyYlZWQVplbTZxS1I3TnlETkdBbFFHVUV3TjBVZjRTVF8yRzJ0Y2c2TVZWRktrejhSallCdlp0VnVxT1ctaFZReXRDakFuUGFWXzNVRkF2aWt4YQ?oc=5" target="_blank" rel="noopener noreferrer">한은총재, 통화정책방향 기자간담회</a></div>
+            <div class="news-date">출처: 연합뉴스 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: 한은총재, 통화정책방향 기자간담회</li>
+            <li>맥락: 한국은행 기준금리와 금융시장 방향성을 확인하는 기사입니다.</li>
+            <li>출처: 연합뉴스에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMiVEFVX3lxTE9zcHVYR3ZqNkFKWG1lNF9kYUVZRnEzVUFkN1RiUV9DVjQwUDhfUTdJUzhzcnZyS1piNzhYRG5VS2dQRVdidGhZWlkxZG8zcW5oVXg1Qg?oc=5" target="_blank" rel="noopener noreferrer">[전문] 한국은행 금융통화위원회 5월 통화정책방향 결정문</a></div>
+            <div class="news-date">출처: 뉴스1 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: [전문] 한국은행 금융통화위원회 5월 통화정책방향 결정문</li>
+            <li>맥락: 한국은행 기준금리와 금융시장 방향성을 확인하는 기사입니다.</li>
+            <li>출처: 뉴스1에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMiYEFVX3lxTE5ybWRlUDV4YlBUYW1mamNjZE8zX0V4a25qcVVqdXhlaXU4T1pHU2laeDg0bXJPYUhKT2QtOVZKMTlaZ2dVWThBYllhRGJ6T3dSUEdvMWtVOWtza1hrdEJHVdIBYEFVX3lxTE5ybWRlUDV4YlBUYW1mamNjZE8zX0V4a25qcVVqdXhlaXU4T1pHU2laeDg0bXJPYUhKT2QtOVZKMTlaZ2dVWThBYllhRGJ6T3dSUEdvMWtVOWtza1hrdEJHVQ?oc=5" target="_blank" rel="noopener noreferrer">&quot;이번에 올릴 수도 있었다&quot;…7월 금리 인상 기정사실로</a></div>
+            <div class="news-date">출처: 연합뉴스 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: &quot;이번에 올릴 수도 있었다&quot;…7월 금리 인상 기정사실로</li>
+            <li>맥락: 한국은행 기준금리와 금융시장 방향성을 확인하는 기사입니다.</li>
+            <li>출처: 연합뉴스에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="group-title">유럽</div>
+        <div class="sub-category">통화정책</div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMickFVX3lxTE1XSDVDdXRTemZmMjlPeGFfM3hpQTJ1UE1GcGFZTjR5RmViUlFjZmh1NHZIa1BzQ044MXdXY3Fuem8zbmZ3U1pZLW1lQzF6RGs5aFJJR1piTkJybkRxZmRtM3A2S0FqTUJ3Vkp0RjdrSkl0UQ?oc=5" target="_blank" rel="noopener noreferrer">ECB 총재 &quot;새로운 국제 질서 속 중앙은행 신뢰성이 핵심&quot;</a></div>
+            <div class="news-date">출처: KB Think | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: ECB 총재 &quot;새로운 국제 질서 속 중앙은행 신뢰성이 핵심&quot;</li>
+            <li>맥락: ECB 정책과 유로존 금리 흐름을 확인하는 기사입니다.</li>
+            <li>출처: KB Think에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMiWkFVX3lxTE92QkJXT1MzYTc4LXk4bWxqanZYMzNDVUlCanhxdWlYckZQX2dkMmFHVklUOC1TQk9UeEQzUjM0X0h4YmtXdEkzTzk4eXNfdWJRRmZsaUFPQWFaZ9IBVEFVX3lxTE1HZmlDRkpCTEFlRHBXMUgzWGI3elZpWEhWQ0FXbGpxSTB5ZjZrQWFvdTg5cGpQOFNIWXltUE8ydjJUX2RuZTQ3ZlJuVTJTYldhZVJQVA?oc=5" target="_blank" rel="noopener noreferrer">&quot;금리, 이번에 올릴 수도 있었다&quot;…&#x27;매파 본색&#x27; 드러낸 신현송</a></div>
+            <div class="news-date">출처: 한국경제 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: &quot;금리, 이번에 올릴 수도 있었다&quot;…&#x27;매파 본색&#x27; 드러낸 신현송</li>
+            <li>맥락: ECB 정책과 유로존 금리 흐름을 확인하는 기사입니다.</li>
+            <li>출처: 한국경제에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMickFVX3lxTE1FM0FNekRkS2pVbkJfQ2QtbXgwbldWbEtqU1RkMUlORUxWR3hRMlVrOFo1RjBCc0t5bUhiLUx4TG5MZk95RFpPSmFUSV9Oal9QcDRSTXEzX2hNU3FuSGpqWU5vbnlucGNTUHg4LWNoQ0VvQQ?oc=5" target="_blank" rel="noopener noreferrer">[뉴욕 마켓 브리핑](28일)</a></div>
+            <div class="news-date">출처: KB Think | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: [뉴욕 마켓 브리핑](28일)</li>
+            <li>맥락: ECB 정책과 유로존 금리 흐름을 확인하는 기사입니다.</li>
+            <li>출처: KB Think에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="group-title">중국</div>
+        <div class="sub-category">통화정책</div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMiWkFVX3lxTE9tWFZraVA0RTVERGROMkJDTzZYdi1HNjUwWmg4OTAzN2g5MkFuTDFtSk1QY0tCSC1xU0tETllaTFZGYlNUOUtiZnRKV29QM0kyZXJmOV84SzVRZ9IBX0FVX3lxTE9waFRkU3ZOakJkTHI4YmN5c1p6TXFvSjFQQk90SEVzblZqMGhDRHRCMDF2blg1M0lOS21XUU8wd0hnSmxzeEJvc2hGOUthRGl3a3NhWlZLb3VXclhsajRZ?oc=5" target="_blank" rel="noopener noreferrer">“중국이 보기에 한국은 단검” 미 사령관 발언…중 “선 넘어”</a></div>
+            <div class="news-date">출처: 경향신문 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: “중국이 보기에 한국은 단검” 미 사령관 발언…중 “선 넘어”</li>
+            <li>맥락: 중국 인민은행 정책과 유동성 흐름을 살피는 기사입니다.</li>
+            <li>출처: 경향신문에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMiW0FVX3lxTFBRTnFhNmx5OVhBMFg4Q29UallmNHh5UXV6b2haYmFxZW9MRUVXalNRQzV5X1pLRVJPdkRCMElMV1NfZ1RaT1VoNzNJZEh5c0NvMi1RT1RreGczWmfSAWBBVV95cUxQSDcyblFGcEZ5a3VBWVNUbUMwR003S3BrcURDWmVjZjJvOWlSbGpvbnVKV05jWFM5QW4wd2k4MmI0SURHVTVoVXhZLVNlMWRoYVJiWlR0TE1HQUotM1ZHcjU?oc=5" target="_blank" rel="noopener noreferrer">[연합뉴스 이 시각 헤드라인] - 10:30</a></div>
+            <div class="news-date">출처: 연합뉴스 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: [연합뉴스 이 시각 헤드라인] - 10:30</li>
+            <li>맥락: 중국 인민은행 정책과 유동성 흐름을 살피는 기사입니다.</li>
+            <li>출처: 연합뉴스에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMiYEFVX3lxTE02ZlhNc19KSGctOEhCZ2cxQWVpOEpmNG85OF94czl5cTJ6Nll6eGJCTXpGOWZJWE8waHVHTHhDcGliWkIwOWpHS0pIbjlOZktjS0puN1NhSmJJNTkwbmRfVtIBeEFVX3lxTE1MTWctN3c3QlFtZWJxSUFEN3pjenV1LW10UGpmdTh2MGlmRE5BNUpRQVNtQkFiX0xsTGhWVXRZLVlaX2g5eVBFa09Zc0UyM0hCTTRZQVJmdkVlNHRNYUxjNHJGdDZ3Y0JsM1o2ZjhNZ3pFdTNXLWNfYg?oc=5" target="_blank" rel="noopener noreferrer">[올댓차이나] 위안화, 1달러= 6.77위안대 초반 진입…3년여 만에 최고치</a></div>
+            <div class="news-date">출처: 뉴시스 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: [올댓차이나] 위안화, 1달러= 6.77위안대 초반 진입…3년여 만에 최고치</li>
+            <li>맥락: 중국 인민은행 정책과 유동성 흐름을 살피는 기사입니다.</li>
+            <li>출처: 뉴시스에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+    </section>
+    <section id="section-ai" class="content-section">
+        <div class="section-title">AI</div>
+        <div class="group-title">AI</div>
+        <div class="sub-category">글로벌/빅테크 오픈소스 동향</div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMiVkFVX3lxTFBuZzFjemd1VHlRRzl5ZVgyT19pU1F2RVZ5VkpMY1N2ZnhqNHRRRDBNQ1NCWGdzSFp0NUEyVWtVeTNVNDdKRWxrOWE4MjNhVVlQQnVHNElR?oc=5" target="_blank" rel="noopener noreferrer">&#x27;팔로워 2만명&#x27; 수천만 인플루언서 눌렀다…AI 검색 인용 글의 의외 공통점</a></div>
+            <div class="news-date">출처: 지디넷코리아 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: &#x27;팔로워 2만명&#x27; 수천만 인플루언서 눌렀다…AI 검색 인용 글의 의외 공통점</li>
+            <li>맥락: 글로벌 빅테크와 오픈소스 AI 생태계의 변화를 보여주는 기사입니다.</li>
+            <li>출처: 지디넷코리아에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMiVEFVX3lxTE8yMUpQXzdtSWhWeVlaWENKMlVDcDBMS1pDTTNxV0lNVmlHcko5MllZejA3Y1N3eDc3QWxHbmwtWHR6TWVTdkFfY1F5WDN6YXplLWRJTA?oc=5" target="_blank" rel="noopener noreferrer">노트북 닫아도 AI가 일한다…구글 I/O 2026이 바꾼 세 가지</a></div>
+            <div class="news-date">출처: AI 매터스 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: 노트북 닫아도 AI가 일한다…구글 I/O 2026이 바꾼 세 가지</li>
+            <li>맥락: 글로벌 빅테크와 오픈소스 AI 생태계의 변화를 보여주는 기사입니다.</li>
+            <li>출처: AI 매터스에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMiWkFVX3lxTE9XS3k3cmNEMThtcnNpVTZ5YXFPdGo5WmdnbDNUYU42aUpxaEZBaDZuSEJpOFR0N0pzajNOcmo1dVJXNEdFdFU5aHFtU3RwWWFLMUFlalE5b1NrQdIBVEFVX3lxTE9jc0RiZmNFcUVkalJfRE9VZEpxbi1QZi1DcVA5NUtjNG4xc21ocWtYeXA0VW1pdXc1R0ZUQTZrWmVjYmc1UFNka25seTg2TGYzNExLRA?oc=5" target="_blank" rel="noopener noreferrer">구광모-젠슨황 첫 만남…피지컬AI 동맹 맺을까</a></div>
+            <div class="news-date">출처: 한국경제 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: 구광모-젠슨황 첫 만남…피지컬AI 동맹 맺을까</li>
+            <li>맥락: 글로벌 빅테크와 오픈소스 AI 생태계의 변화를 보여주는 기사입니다.</li>
+            <li>출처: 한국경제에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="sub-category">AI 인프라 및 비용 동향</div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMiYEFVX3lxTE9nTWNETlRjZG1jNlBJUG84U2dEaDhCMkVkWTE5cFFRWUVlTkp3Q0pDaS1VRlU0Wl9DbjhERzhhdzZPVVY1NUdMbmRaelozdnVyUEp5S1psNk1ZUXdXSmY2S9IBYEFVX3lxTE9nTWNETlRjZG1jNlBJUG84U2dEaDhCMkVkWTE5cFFRWUVlTkp3Q0pDaS1VRlU0Wl9DbjhERzhhdzZPVVY1NUdMbmRaelozdnVyUEp5S1psNk1ZUXdXSmY2Sw?oc=5" target="_blank" rel="noopener noreferrer">젠슨 황, 다음주 한국 온다…반도체·AI 협력 논의 전망</a></div>
+            <div class="news-date">출처: 연합뉴스 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: 젠슨 황, 다음주 한국 온다…반도체·AI 협력 논의 전망</li>
+            <li>맥락: AI 데이터센터, GPU, 반도체, 비용 구조와 관련된 기사입니다.</li>
+            <li>출처: 연합뉴스에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMiiwFBVV95cUxNU3M1bWR4WU5MMFIwYkthdEc3U2dNRXA2NUlIWFVNbUxVeEJSZWJHWHVLcGRfcV9YTFpuOE04NGNoVGpZVWxnelAzeVI2Yld2cHpYZ0tlblBvVzZXWXVFREdQSlRsaHJ2bFIwa2MwN05CSXNjdGlYRkMyanJMazhBVmR0N1h6QlZxNWVz?oc=5" target="_blank" rel="noopener noreferrer">국민성장펀드, 퓨리오사AI에 8000억 투자</a></div>
+            <div class="news-date">출처: 조선일보 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: 국민성장펀드, 퓨리오사AI에 8000억 투자</li>
+            <li>맥락: AI 데이터센터, GPU, 반도체, 비용 구조와 관련된 기사입니다.</li>
+            <li>출처: 조선일보에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMiYEFVX3lxTFBhaFBkeDBSYXBmbGhWUkxLdXZoZkJ5RVdFWEw5cnJ3MGtqZm9FR0dmcENPZXZRUUpSZ2E3NzJ3RV95dVk0VTRBRG11aWczQjFBbXVyb3RxSmFWWU0xb0hRSNIBYEFVX3lxTFBhaFBkeDBSYXBmbGhWUkxLdXZoZkJ5RVdFWEw5cnJ3MGtqZm9FR0dmcENPZXZRUUpSZ2E3NzJ3RV95dVk0VTRBRG11aWczQjFBbXVyb3RxSmFWWU0xb0hRSA?oc=5" target="_blank" rel="noopener noreferrer">국민성장펀드, &#x27;국산 AI 반도체&#x27; 퓨리오사AI에 8천억 직접투자</a></div>
+            <div class="news-date">출처: 연합뉴스 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: 국민성장펀드, &#x27;국산 AI 반도체&#x27; 퓨리오사AI에 8천억 직접투자</li>
+            <li>맥락: AI 데이터센터, GPU, 반도체, 비용 구조와 관련된 기사입니다.</li>
+            <li>출처: 연합뉴스에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="sub-category">AI 융합 산업</div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMiTkFVX3lxTE1EUjhYU0RsZEFUa3hQNXZGWnN6Z3dHWEJ5MFBXbk1Gajk3TEk1a05LRFI3ZWl4dU9aSWh1d0FmQ05fZmdQd2ZGeVlCZHlCQQ?oc=5" target="_blank" rel="noopener noreferrer">[IT서비스학회 춘계학술대회] “AI 서비스 확산할수록 대규모 인프라가 핵심”</a></div>
+            <div class="news-date">출처: 전자신문 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: [IT서비스학회 춘계학술대회] “AI 서비스 확산할수록 대규모 인프라가 핵심”</li>
+            <li>맥락: AI가 산업 현장과 서비스에 결합되는 흐름을 다루는 기사입니다.</li>
+            <li>출처: 전자신문에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMiYEFVX3lxTE42NDdSQ1o5STdJemg5MDJVMThmZzRFbGtIMl9RMEVVVDRTZnloMlkxeUt3Y25Qalo0TE9Sb2oybTcyaDlqOHBPZVVHWmx6Y2dSeGphaktwakhWSUFnTFVVc9IBYEFVX3lxTE42NDdSQ1o5STdJemg5MDJVMThmZzRFbGtIMl9RMEVVVDRTZnloMlkxeUt3Y25Qalo0TE9Sb2oybTcyaDlqOHBPZVVHWmx6Y2dSeGphaktwakhWSUFnTFVVcw?oc=5" target="_blank" rel="noopener noreferrer">NC AI, 현대로템과 국방 로봇 &#x27;두뇌&#x27; 만든다</a></div>
+            <div class="news-date">출처: 연합뉴스 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: NC AI, 현대로템과 국방 로봇 &#x27;두뇌&#x27; 만든다</li>
+            <li>맥락: AI가 산업 현장과 서비스에 결합되는 흐름을 다루는 기사입니다.</li>
+            <li>출처: 연합뉴스에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMiVkFVX3lxTE4xSnY3dDRGZ2U5clQ0TnNtM1M0VXN5OE5HSkd1SjFaRElZVldIaEdEYXJheXk0cURzZV9IU1RhWVkzbERGTjd1dzNRSlVRSHk4ZXBaZjR3?oc=5" target="_blank" rel="noopener noreferrer">AI·XR·디지털 헬스케어 융합한 고숙련 인재 양성</a></div>
+            <div class="news-date">출처: 중앙일보 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: AI·XR·디지털 헬스케어 융합한 고숙련 인재 양성</li>
+            <li>맥락: AI가 산업 현장과 서비스에 결합되는 흐름을 다루는 기사입니다.</li>
+            <li>출처: 중앙일보에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="sub-category">규제 이슈</div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMib0FVX3lxTE1UemJhRFp2ay1iM040ek5heWptUzZkT1pWWXlueFZaM0t6OThHbEIyeUl1YVhtZ2N3ckJlc0JWcGtNY2lPbUJaLVNCdl9TNkM3bmktRlprUjJiVlNjWWlUcUxSODhBd18xMFphdDZKOA?oc=5" target="_blank" rel="noopener noreferrer">AI 전선의 변수와 에이전트 전쟁의 승자</a></div>
+            <div class="news-date">출처: KB Think | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: AI 전선의 변수와 에이전트 전쟁의 승자</li>
+            <li>맥락: AI 법제, 저작권, 개인정보, 안전 규제와 관련된 기사입니다.</li>
+            <li>출처: KB Think에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMibEFVX3lxTE5wLW5BbTF0TVBoVV9vUFc2YnZ4X1oxeTBEVmJwWUJaQU9fN2plQjU5M1V0SFBGMzMwV2w2SlhnTHBCNF93S2JiZmtzYjdrWmxKbDNmSlJtY1FyZm8tSlNRVzJUNzBxaWdSVEZ6Tw?oc=5" target="_blank" rel="noopener noreferrer">금융권 망분리 규제 완화 본격화…AI 보안위협에 금융AI보안연구소 신설 추진</a></div>
+            <div class="news-date">출처: 데일리시큐 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: 금융권 망분리 규제 완화 본격화…AI 보안위협에 금융AI보안연구소 신설 추진</li>
+            <li>맥락: AI 법제, 저작권, 개인정보, 안전 규제와 관련된 기사입니다.</li>
+            <li>출처: 데일리시큐에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMiUkFVX3lxTFA0Y19md0NSOVFrQTlxMjZnRUUzM0hZdmRfTUhTNVhDb00wNlp3MFh6QlVGTE5qdEUyY3JnbjJqaS0yTmF1VzA4akRYenVrc2JjelHSAVNBVV95cUxNa1FZZGtmSGx3bVRqME5IUENUOHVLRU1KNjloNTN1OTdlZVE2TXluZ2VqeXNBZTlPdGtleDF5eEFtMzVzVkd2QXlyeE9Lb3A5X0pwOA?oc=5" target="_blank" rel="noopener noreferrer">[사설] 피지컬AI 산업 대전환, 규제 혁파와 파격 정책이 관건이다</a></div>
+            <div class="news-date">출처: 서울경제 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: [사설] 피지컬AI 산업 대전환, 규제 혁파와 파격 정책이 관건이다</li>
+            <li>맥락: AI 법제, 저작권, 개인정보, 안전 규제와 관련된 기사입니다.</li>
+            <li>출처: 서울경제에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+    </section>
+    <section id="section-vcac" class="content-section">
+        <div class="section-title">VC/AC</div>
+        <div class="group-title">VC/AC</div>
+        <div class="sub-category">빅딜 및 메가 라운드 소식</div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMidkFVX3lxTE1DQ2ZlTlluUFR0ckFxVHJLM2V0QTZ5czBnVWJFRjNGRXhIdWo5MWJGUDJfSEpRWFp0enVkOE03UzBORFo2VjZyelFZNXdQWHJERk9MbDVKanlqRmdzbDBGMEc0bUloM1lvbHlpdGxzeHllWnpvX0HSAXZBVV95cUxNQ0NmZU5ZblBUdHJBcVRySzNldEE2eXMwZ1ViRUYzRkV4SHVqOTFiRlAyX0hKUVhadHp1ZDhNN1MwTkRaNlY2cnpRWTV3UFhyREZPTGw1Smp5akZnc2wwRjBHNG1JaDNZb2x5aXRsc3h5ZVp6b19B?oc=5" target="_blank" rel="noopener noreferrer">[팹리스×대기업] ②리벨리온, 통신·금융 우군과 ‘비(非)엔비디아’ 정조준</a></div>
+            <div class="news-date">출처: 시사저널e | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: [팹리스×대기업] ②리벨리온, 통신·금융 우군과 ‘비(非)엔비디아’ 정조준</li>
+            <li>맥락: 대규모 스타트업 투자와 성장자금 유입을 확인하는 기사입니다.</li>
+            <li>출처: 시사저널e에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMiSEFVX3lxTE1BWFBqdDJmZEZyVlRwQ05TbFVlZUg3bm1FdC0wcmdORkhsNExILVJkTWx3bEFUTVVqQ1MwZjcyUXpBanNmUkVQcw?oc=5" target="_blank" rel="noopener noreferrer">일본 스타트업 생태계, 딥테크로 전환 중…투자 목표 달성은 과제</a></div>
+            <div class="news-date">출처: 플래텀(Platum) | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: 일본 스타트업 생태계, 딥테크로 전환 중…투자 목표 달성은 과제</li>
+            <li>맥락: 대규모 스타트업 투자와 성장자금 유입을 확인하는 기사입니다.</li>
+            <li>출처: 플래텀(Platum)에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMic0FVX3lxTE5sWHpVMW9yUURKOWw4ZC1Jb1cwQk4xMG4tWTVCWFRnRS1YME5SUlVMZzg4SGk5eEJtYnFFYmQ0R2d4Uk9obzNQbVYwbEVDT3pTVzBRc3VuYmRIXzRYbXBuSDl4MjdzY25ZMVhma09TbWZpLU0?oc=5" target="_blank" rel="noopener noreferrer">미국 핵융합 스타트업 &#x27;테아&#x27; 1억 달러 투자 확보, 2030년까지 실증로 완공</a></div>
+            <div class="news-date">출처: 비즈니스포스트 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: 미국 핵융합 스타트업 &#x27;테아&#x27; 1억 달러 투자 확보, 2030년까지 실증로 완공</li>
+            <li>맥락: 대규모 스타트업 투자와 성장자금 유입을 확인하는 기사입니다.</li>
+            <li>출처: 비즈니스포스트에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="sub-category">신규 펀드 결성</div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMib0FVX3lxTE9CZ0t0WWwwSmM4V3puQlhCbUdOdTgzMV9SZlNaVVRJUmdwMnN1bHN2bUlPRDVUcXI4Yzg5UTdQd0VOTjFyUS1rdWxrME81VjFzZ3dVS1BlQjVSUFhXRDBnY0NNZlRPNnpEa1FQc0ZSYw?oc=5" target="_blank" rel="noopener noreferrer">에이티넘인베, 5000억 ‘메가펀드’ 시동...맹두진 운용 전면 유력</a></div>
+            <div class="news-date">출처: 뉴스톱 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: 에이티넘인베, 5000억 ‘메가펀드’ 시동...맹두진 운용 전면 유력</li>
+            <li>맥락: VC와 AC의 신규 펀드 결성, 출자, 운용자금 흐름을 다루는 기사입니다.</li>
+            <li>출처: 뉴스톱에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMigwFBVV95cUxPcGY1NHhlVXB2dW1lMkNQRldjUVlBck1tSFF3bk1MLXZSQzNQTHl6YVlmXzVJWEEycXRJdFFWM3dFMVhETFlzQV9IWWd3S2NFTGtNRlFtVmxORjZEMG1BU2hrMGNWMUg3dXdoYkRHa0x1UC1CTE02U3YtTml4YnZrdnIxdw?oc=5" target="_blank" rel="noopener noreferrer">베트남에 수십억 달러 규모의 기술 기업이 없는 이유는 무엇일까요?</a></div>
+            <div class="news-date">출처: Vietnam.vn | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: 베트남에 수십억 달러 규모의 기술 기업이 없는 이유는 무엇일까요?</li>
+            <li>맥락: VC와 AC의 신규 펀드 결성, 출자, 운용자금 흐름을 다루는 기사입니다.</li>
+            <li>출처: Vietnam.vn에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMigAFBVV95cUxPVENYV1Y2WEJ0b2xqeGx2MnVtSWpUMmFHeVBjYTRKdEw0RENfOEkzMjctVVF1dW85aGtEMWE3MnM3OWkwcFRuNVVDZTVQNGxZdnRaTGh3ZVpCRWZ2TmRFOXg3STBJTk1wdVdsc3lWVDF1MEJxM0V4U3pXakFmYWNTMg?oc=5" target="_blank" rel="noopener noreferrer">하나증권, 발행어음 5000억 돌파…모험자본 투자 확대 속도</a></div>
+            <div class="news-date">출처: 이데일리 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: 하나증권, 발행어음 5000억 돌파…모험자본 투자 확대 속도</li>
+            <li>맥락: VC와 AC의 신규 펀드 결성, 출자, 운용자금 흐름을 다루는 기사입니다.</li>
+            <li>출처: 이데일리에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="sub-category">M&amp;A 및 IPO 소식</div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMibkFVX3lxTE9nYURjWE9pQUJXWWZEdzFZU0J3X05HMUVtd2NrWUd2MC1IV2N5S09NV3A4MjFDbExwdUQtWWk2ZnBqdmJXdGVVcFI4MzkzeFVDTkFPaEJLTUdLWlBpWkJiWWk3d0hOZVNhQldRelln?oc=5" target="_blank" rel="noopener noreferrer">[라이브in] “혁신 스타트업, 푸른 창공으로 훨훨”...도약 무대 열려</a></div>
+            <div class="news-date">출처: 산업인뉴스 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: [라이브in] “혁신 스타트업, 푸른 창공으로 훨훨”...도약 무대 열려</li>
+            <li>맥락: 스타트업과 벤처 시장의 인수합병, 상장, 회수 이벤트를 다루는 기사입니다.</li>
+            <li>출처: 산업인뉴스에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMiTkFVX3lxTFBRQ3ZRNVRGX1hmaHdScUdkQVRTcXpEclB4eWdDVVlSSWZYeHpjRXZqR3I4OE94T1lwZWdHcXJwMm1VMzJob0p3SmpJZ3piQQ?oc=5" target="_blank" rel="noopener noreferrer">IBK기업은행, &#x27;IBK창공 플라이하이&#x27; 개최…스타트업·대기업 오픈이노베이션 연계</a></div>
+            <div class="news-date">출처: 전자신문 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: IBK기업은행, &#x27;IBK창공 플라이하이&#x27; 개최…스타트업·대기업 오픈이노베이션 연계</li>
+            <li>맥락: 스타트업과 벤처 시장의 인수합병, 상장, 회수 이벤트를 다루는 기사입니다.</li>
+            <li>출처: 전자신문에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://news.google.com/rss/articles/CBMiWEFVX3lxTE00MXlHZjZjeTRSWktOLS00VUdfcUtsZGZRUXhkV3Jpb3h1YVhucXFVRGVZS3Rvemo4QkdodzY1NGdCZ0U0eVZGQjg1Zlc5dW1vRGEzRXpyakbSAVhBVV95cUxNNDF5R2Y2Y3k0UlpLTi0tNFVHX3FLbGRmUVF4ZFdyaW94dWFYbnFxVURlWUt0b3pqOEJHaHc2NTRnQmdFNHlWRkI4NWZXOXVtb0RhM0V6cmpG?oc=5" target="_blank" rel="noopener noreferrer">스타트업·대기업 한자리에…기업은행, IBK창공 Fly High 데모데이 성료</a></div>
+            <div class="news-date">출처: 아주경제 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>핵심: 스타트업·대기업 한자리에…기업은행, IBK창공 Fly High 데모데이 성료</li>
+            <li>맥락: 스타트업과 벤처 시장의 인수합병, 상장, 회수 이벤트를 다루는 기사입니다.</li>
+            <li>출처: 아주경제에서 세부 배경과 수치를 확인할 수 있습니다.</li>
+            </ul>
+        </div>
+    </section>
+    <section id="section-impact" class="content-section">
+        <div class="section-title">임팩트</div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://www.impacton.net/news/articleView.html?idxno=19048" target="_blank" rel="noopener noreferrer">【위클리 ESG 행사】 6월 1주차</a></div>
+            <div class="news-date">출처: 임팩트온 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>2026년 관악경제인회 제1차 ESG경영포럼: 기업 ESG 공시, 기업의 대응 관악경제인회가 대한상공회의소 후원으로 서울 중구 대한상공회의소 중회의실B에서 기업 ESG 공시 대응을 주제로 경영포럼…</li>
+            <li>이번 행사에서는 글로벌 ESG 공시 흐름과 국내 ESG 공시 도입안, ESG 공시에 대한 기업의 대응, ESG 공시와 공급망 대응 과제 등을 다룬다.</li>
+            <li>기후에너지환경부 정선화 녹색전환기획관과 대한상공회의소 김현민 ESG경영팀장, 에코네트워크 류정령 대표 등이 참여한다.</li>
+            </ul>
+        </div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://www.impacton.net/news/articleView.html?idxno=19046" target="_blank" rel="noopener noreferrer">&quot;1600조 굴리면서 기후엔 침묵&quot;...국민연금 기후책임투자, 논쟁 뜨거워</a></div>
+            <div class="news-date">출처: 임팩트온 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>국민연금의 기후 대응 투자와 책임투자 이행 실태를 진단하고 개선 방향을 모색하는 자리가 마련됐다.</li>
+            <li>기후솔루션을 비롯한 시민사회단체들이 주축이 된 &#x27;국민연금기후행동&#x27;은 출범 1주년을 맞아 지난 27일 서울 성수도 헤이그라운드에서 &#x27;국민연금, 기후에 답하라&#x27;를 주제로 토크 콘서트를 개최했다.</li>
+            <li>국민연금은 지난 2월말 기준 기금 적립금 1600조원을 돌파해 세계 최대 단일 연기금 중 하나로 성장했다.</li>
+            </ul>
+        </div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://www.impacton.net/news/articleView.html?idxno=19040" target="_blank" rel="noopener noreferrer">법무팀 가기 전 AI 먼저 돌려봤더니…그린워싱 리스크 수십 건 즉시 포착</a></div>
+            <div class="news-date">출처: 임팩트온 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>AI를 활용해 기업 ESG팀이 ▲지속가능경영보고서 부분 자동화 ▲데이터 이상치 발견 ▲평가 사전대응 ▲그린워싱 사전 진단까지 다양하게 활용할 수 있는 방법은 없을까.</li>
+            <li>이를 고민하는 기업 담당자를 위해 개최된 임팩트온 교육센터의 &#x27;특별교육(AI-Powered ESG 데이터 워크숍)&#x27;이 지난 27일 종료됐다.</li>
+            <li>3월과 4월의 수강생 피드백을 반영해, 이번 3차 세션은 철저하게 &#x27;1시간 안에 스스로 따라할 수 있는 AI 진단 툴 만들어보기&#x27; 실습과정으로 이뤄졌다.</li>
+            </ul>
+        </div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://www.impacton.net/news/articleView.html?idxno=19044" target="_blank" rel="noopener noreferrer">5월 5주차 국내 ESG 핫클립</a></div>
+            <div class="news-date">출처: 임팩트온 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>RPS 제도를 폐지하고 정부 주도 계약시장으로 전환하는 법안이 국회 상임위를 통과했다.</li>
+            <li>새 제도는 재생에너지를 장기 고정가격으로 낙찰받아 전력구매계약을 체결하는 방식이다.</li>
+            <li>소규모 재생에너지 사업자를 위한 별도 지원 체계와 재생에너지종합서비스기업(RESCO) 제도 근거도 마련된다.</li>
+            </ul>
+        </div>
+        <div class="news-card">
+            <div class="news-title"><a href="https://www.impacton.net/news/articleView.html?idxno=19042" target="_blank" rel="noopener noreferrer">5월 5주차 해외 ESG 핫클립</a></div>
+            <div class="news-date">출처: 임팩트온 | 발행일: 2026.05.28</div>
+            <ul class="news-summary">
+            <li>앤트로픽은 스페이스X의 AI 데이터센터 인프라를 사용하는 계약을 체결했다.</li>
+            <li>계약 규모는 월 12억5000만달러(약 1조8790억원)이며, 2029년까지 이어질 예정이다.</li>
+            <li>앤트로픽은 ‘콜로서스’ 데이터센터를 활용해 연산 능력을 확대했다.</li>
+            </ul>
+        </div>
+    </section>
+
+    <script>
+        const tabs = document.querySelectorAll(".nav-tab");
+        const sections = document.querySelectorAll(".content-section");
+
+        function activateSection(targetId) {
+            tabs.forEach((tab) => {
+                const isActive = tab.dataset.target === targetId;
+                tab.classList.toggle("active", isActive);
+                tab.setAttribute("aria-selected", String(isActive));
+            });
+            sections.forEach((section) => {
+                section.classList.toggle("active", section.id === targetId);
+            });
+        }
+
+        tabs.forEach((tab) => {
+            tab.addEventListener("click", () => {
+                activateSection(tab.dataset.target);
+                history.replaceState(null, "", "#" + tab.dataset.target.replace("section-", ""));
+            });
+        });
+
+        const initialHash = location.hash.replace("#", "");
+        if (initialHash) {
+            const target = "section-" + initialHash;
+            if (document.getElementById(target)) {
+                activateSection(target);
+            }
+        }
+    </script>
+</body>
+</html>
