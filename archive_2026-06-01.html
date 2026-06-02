@@ -143,6 +143,12 @@
             line-height: 1.2;
             margin-bottom: 8px;
         }
+        .dash-flow {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            line-height: 1.45;
+            margin-top: 2px;
+        }
         .sparkline-container {
             width: 100%;
             height: 35px;
@@ -513,7 +519,7 @@
 <body>
     <div class="header-controls">
         <h1>오늘의 마켓 & 뉴스 브리핑</h1>
-        <div class="date-title">수집 기준일: 2026.06.01 전일 기사 <br> 최종 갱신: 2026.06.02 13:59 KST</div>
+        <div class="date-title">수집 기준일: 2026.06.01 전일 기사 <br> 최종 갱신: 2026.06.02 16:48 KST</div>
         <div class="archive-picker">
             <label for="history-select">🗓️ 과거기사: </label>
             <select id="history-select"></select>
@@ -528,19 +534,20 @@
         </div>
         <div class="dash-card green" style="cursor: pointer;" onclick="toggleMarketCharts(true)">
             <div class="dash-title">💱 원/달러 환율</div>
-            <div class="dash-value">종가: 1,515.39원</div>
+            <div class="dash-value">종가: 1,517.86원</div>
             <div class="sparkline-container" id="sparkline-fx"></div>
         </div>
         <div class="dash-card orange" style="cursor: pointer;" onclick="toggleMarketCharts(true)">
             <div class="dash-title">📈 코스피 / 코스닥</div>
             <div class="dash-value" style="font-size:1.1rem; font-family:'Outfit';">
-                8,666.35 / 1,021.30
+                8,801.49 / 1,026.03
             </div>
+            <div class="dash-flow">코스피: 개인/외국인/기관 수급을 불러오지 못했습니다.<br>코스닥: 개인/외국인/기관 수급을 불러오지 못했습니다.</div>
             <div class="sparkline-container" id="sparkline-kospi"></div>
         </div>
         <div class="dash-card purple" onclick="activateThemeTab()" style="cursor:pointer;">
             <div class="dash-title">🔥 국내 강세 테마</div>
-            <div class="dash-value" style="font-size:1.1rem; color:var(--primary);">Top 1: 서울고속버스터미널 재개발 수혜</div>
+            <div class="dash-value" style="font-size:1.1rem; color:var(--primary);">Top 1: 생명보험</div>
             <div class="sparkline-container" id="sparkline-theme" style="display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 700; color: var(--primary);">
                 자세히 보기 &rarr;
             </div>
@@ -578,7 +585,7 @@
 <button class="nav-tab" data-target="section-macro">거시경제<span class="tab-count">20</span></button>
 <button class="nav-tab" data-target="section-ai">AI<span class="tab-count">8</span></button>
 <button class="nav-tab" data-target="section-vcac">VC/AC<span class="tab-count">1</span></button>
-<button class="nav-tab" data-target="section-impact">임팩트<span class="tab-count">0</span></button>
+<button class="nav-tab" data-target="section-impact">임팩트<span class="tab-count">5</span></button>
 </div>
 <section id="section-theme" class="content-section active">
         <div class="section-title">국내 강세테마 분석</div>
@@ -586,13 +593,13 @@
             <div class="theme-header-box">
                 <div class="theme-badge-title">
                     <span class="theme-icon-badge">HOT THEME</span>
-                    <span class="theme-title-text">서울고속버스터미널 재개발 수혜</span>
+                    <span class="theme-title-text">생명보험</span>
                 </div>
-                <span class="theme-rate-badge">+9.28%</span>
+                <span class="theme-rate-badge">+7.95%</span>
             </div>
             
-            <div class="theme-subtitle">💡 테마 설명 및 상승 원인</div>
-            <div class="theme-desc-box">서울고속버스터미널 지분 및 인근 부동산 등을 보유, 서울고속버스터미널 재개발 추진 기대감 등에 부각되는 종목군. 서울고속버스터미널 재개발 사업 계획 발표, 인허가 진행, 정책·지자체 관련 발언 등이 이슈화될 때마다 관련주들이 단기적으로 시세를 분출하며 테마를 형성하는 경향이 있음. 다만, 재개발 일정 지연, 사업성 및 실질 수혜 여부가 불확실한 상황에서 기대감 위주로 주가가 선반영되는 경우가 많아 기업 펀더멘털과 무관한 변동성 확대에 유의가 필요함.</div>
+            <div class="theme-subtitle">💡 테마 개요</div>
+            <div class="theme-desc-box">생명보험사업 영위 기업군. 생명보험은 사람의 생사(生死)를 보험사고로 하고, 보험사고 발생시 손해의 유무나 다소를 불문하고 일정 금액을 지급하는 정액보험이란 점에서 보험사고 발생 시 그 손해를 실손보상하는 손해보험과는 차이가 있음.</div>
             
             <div class="theme-subtitle">💎 주요 대장 종목 Top 5</div>
             <div class="stocks-table-wrapper">
@@ -602,44 +609,44 @@
                             <th style="width: 20%;">종목명</th>
                             <th style="width: 15%;">현재가</th>
                             <th style="width: 15%;">등락률</th>
-                            <th style="width: 50%;">테마 관련 원인 / 기업 해설</th>
+                            <th style="width: 50%;">기업 해설</th>
                         </tr>
                     </thead>
                     <tbody>
     
                         <tr>
-                            <td class="stock-name-cell"><a href="https://finance.naver.com/item/main.naver?code=000650" target="_blank">천일고속</a></td>
-                            <td class="stock-price-cell">241,500원</td>
-                            <td class="stock-rate-cell"><span class="up">+21.60%</span></td>
-                            <td class="stock-reason-cell">테마 편입 사유   천일고속 서울고속버스터미널 지분 16.67% 보유.</td>
+                            <td class="stock-name-cell"><a href="https://finance.naver.com/item/main.naver?code=032830" target="_blank">삼성생명</a></td>
+                            <td class="stock-price-cell">480,000원</td>
+                            <td class="stock-rate-cell"><span class="up">+17.07%</span></td>
+                            <td class="stock-reason-cell">테마 편입 사유 삼성생명 삼성그룹 계열의 생명보험사로 국내 생명보험 시장점유율 상위권 업체.</td>
                         </tr>
             
                         <tr>
-                            <td class="stock-name-cell"><a href="https://finance.naver.com/item/main.naver?code=084670" target="_blank">동양고속</a></td>
-                            <td class="stock-price-cell">42,250원</td>
-                            <td class="stock-rate-cell"><span class="up">+19.52%</span></td>
-                            <td class="stock-reason-cell">테마 편입 사유   동양고속 서울고속버스터미널 지분 0.16% 보유.</td>
+                            <td class="stock-name-cell"><a href="https://finance.naver.com/item/main.naver?code=085620" target="_blank">미래에셋생명</a></td>
+                            <td class="stock-price-cell">17,200원</td>
+                            <td class="stock-rate-cell"><span class="up">+14.29%</span></td>
+                            <td class="stock-reason-cell">테마 편입 사유 미래에셋생명 미래에셋금융그룹 계열의 업계 상위 생명보험사. 개인보험(보장성보험, 생사혼합 보험, 생존(연금) 보험, 변액 보험 등)과 단체보험(퇴직연금/보험, 단체보장성보험/저축성보험 등) 상품을 판매. 특히, 노후준비 및 은퇴설계서비스를 제공하기 위한 역량 및 최적화된 포지셔닝을 보유.</td>
                         </tr>
             
                         <tr>
-                            <td class="stock-name-cell"><a href="https://finance.naver.com/item/main.naver?code=004170" target="_blank">신세계</a></td>
-                            <td class="stock-price-cell">549,000원</td>
-                            <td class="stock-rate-cell"><span class="up">+6.40%</span></td>
-                            <td class="stock-reason-cell">테마 편입 사유   신세계 동사가 60%의 지분을 보유한 (주)신세계센트럴(구, 신세계센트럴시티)이 서울고속버스터미널 지분 70.49% 보유.</td>
+                            <td class="stock-name-cell"><a href="https://finance.naver.com/item/main.naver?code=082640" target="_blank">동양생명</a></td>
+                            <td class="stock-price-cell">7,500원</td>
+                            <td class="stock-rate-cell"><span class="up">+4.75%</span></td>
+                            <td class="stock-reason-cell">테마 편입 사유 동양생명 업계 중위권 생명보험사. 2009년 10월 국내 생명보험사 중 최초로 증시에 상장. 2013년 12월 동양그룹 기업어음(CP) 사태 이후 독립경영체제를 구축하기 위해 동양그룹으로부터 계열분리.</td>
                         </tr>
             
                         <tr>
-                            <td class="stock-name-cell"><a href="https://finance.naver.com/item/main.naver?code=006040" target="_blank">동원산업</a></td>
-                            <td class="stock-price-cell">34,200원</td>
-                            <td class="stock-rate-cell"><span class="down">-0.73%</span></td>
-                            <td class="stock-reason-cell">테마 편입 사유   동원산업 100% 자회사 동원로엑스가 서울고속버스터미널 지분 11.11% 보유.</td>
+                            <td class="stock-name-cell"><a href="https://finance.naver.com/item/main.naver?code=003690" target="_blank">코리안리</a></td>
+                            <td class="stock-price-cell">13,100원</td>
+                            <td class="stock-rate-cell"><span class="up">+2.18%</span></td>
+                            <td class="stock-reason-cell">테마 편입 사유 코리안리 국내 유일의 전업 재보험(보험회사가 인수한 계약의 일부를 다른 보험회사에 인수시키는 것으로 “보험을 위한 보험”임) 회사. 손해보험업과 생명보험업 영위.</td>
                         </tr>
             
                         <tr>
-                            <td class="stock-name-cell"><a href="https://finance.naver.com/item/main.naver?code=128820" target="_blank">대성산업</a></td>
-                            <td class="stock-price-cell">5,440원</td>
-                            <td class="stock-rate-cell"><span class="down">-2.51%</span></td>
-                            <td class="stock-reason-cell">테마 편입 사유   대성산업 반포 서울고속버스터미널 인근 부지 보유 및 GS칼텍스 주유소 운영.</td>
+                            <td class="stock-name-cell"><a href="https://finance.naver.com/item/main.naver?code=088350" target="_blank">한화생명</a></td>
+                            <td class="stock-price-cell">4,855원</td>
+                            <td class="stock-rate-cell"><span class="up">+1.46%</span></td>
+                            <td class="stock-reason-cell">테마 편입 사유 한화생명 한화그룹 계열사로 종신보험 등 다양한 보험상품을 판매하는 국내 최초로 설립된 생명보험사.</td>
                         </tr>
             
                     </tbody>
@@ -649,20 +656,20 @@
             <div class="theme-subtitle">📰 테마 관련 주요 최신 뉴스</div>
     
             <div class="news-card">
-                <div class="news-title"><a href="https://news.google.com/rss/articles/CBMieEFVX3lxTFBQMEtwQXE5aWpXa2RMVG8zVy1BSXVjdVZDT3ZIbVdyVWpEZWxFX2xmZEhDVjVrdjFsRk43REhuU2NPYmREQ1JtcGluQk5NWWdyQVRSbDAzM0NONVNmN3RFUllKWnRwclFOcmZ5Z213UTFuUmdrakFGetIBeEFVX3lxTFBQMEtwQXE5aWpXa2RMVG8zVy1BSXVjdVZDT3ZIbVdyVWpEZWxFX2xmZEhDVjVrdjFsRk43REhuU2NPYmREQ1JtcGluQk5NWWdyQVRSbDAzM0NONVNmN3RFUllKWnRwclFOcmZ5Z213UTFuUmdrakFGeg?oc=5" target="_blank">천일·동양고속, 지방선거 앞두고 20%대 급등</a></div>
+                <div class="news-title"><a href="https://news.google.com/rss/articles/CBMiY0FVX3lxTFBYVGtFYjdxRm00UDlRbHZXM3ZUWEVXcjFTX1VtMHdMRlY4Q0hVbDNvVk8zM2VLWk51UWpqMnAxd0tQTnM5bnB5d0hvcEkwTTh4SjhmTVNZWlVFb3ItVnExTDRGVQ?oc=5" target="_blank">뚝 떨어진 생보사 건강보험 초회보험료…20% 감소도 선방</a></div>
                 <div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.02</div>
                 <ul class="news-summary">
-            <li>천일·동양고속, 지방선거 앞두고 20%대 급등 뉴시스</li><li>핵심: 천일·동양고속, 지방선거 앞두고 20%대 급등</li><li>맥락: 서울고속버스터미널 재개발 수혜 테마 관련 뉴스입니다.</li></ul></div>
+            <li>뚝 떨어진 생보사 건강보험 초회보험료…20% 감소도 선방 에너지경제신문</li><li>핵심: 뚝 떨어진 생보사 건강보험 초회보험료…20% 감소도 선방</li><li>맥락: 생명보험 테마 관련 뉴스입니다.</li></ul></div>
             <div class="news-card">
-                <div class="news-title"><a href="https://news.google.com/rss/articles/CBMiiAFBVV95cUxNMG9VTzROQm5UbXZSZ3Uzd1dmdjFSVl8xcU9JbE11MnZLZk9UdmpmRllOOTNOOUU2NTJjSzBHcHR0MHhRUDU4RzdQaUdyZHdoc0VSSE1RMEE3c05id3Vkd2FfNDlKLXpsUnQtS2czbzVvQTlXZm9JYTdieHlGSFBRY3JfNlI2MlFK?oc=5" target="_blank">[특징주] 서울시장 선거 내일.. 고터 재개발 테마주 '급등'</a></div>
+                <div class="news-title"><a href="https://news.google.com/rss/articles/CBMidEFVX3lxTE9uUjRDa0RpZ0liSUdwS1hYcWxnb3htbHJVa2Vpd3R4TEhaYWxmSFl0UmNwb285YlZ6bHFXSWJSZXZwN2ZlWGNOSjU1azVKYWFyR1pJSXhKWTRJMlRJOEExTUJVZDRrU3NSZ3hIT0ZGYnB1Mmp4?oc=5" target="_blank">생보업계 주식 자산 100조 재돌파…삼전 덕 본 삼성생명 |</a></div>
                 <div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.02</div>
                 <ul class="news-summary">
-            <li>고터 재개발 테마주 '급등' 글로벌이코노믹</li><li>핵심: [특징주] 서울시장 선거 내일.. 고터 재개발 테마주 '급등'</li><li>맥락: 서울고속버스터미널 재개발 수혜 테마 관련 뉴스입니다.</li></ul></div>
+            <li>핵심: 생보업계 주식 자산 100조 재돌파…삼전 덕 본 삼성생명 |</li><li>맥락: 생명보험 테마 관련 뉴스입니다.</li><li>출처: Google News에서 확인 가능합니다.</li></ul></div>
             <div class="news-card">
-                <div class="news-title"><a href="https://news.google.com/rss/articles/CBMieEFVX3lxTE5IZ1pFUmFsUXpzSXZKVzRqb1hkeWk2LXZPdnJ1aVMxcUtGMDduWUhvMlplZmc2a3V5SkticU9PVlllNWRHbmszREJSdHJFUGY4ZFczcXJvTUJtTmd2QTFOLTY3QU0zczdRSVJfeWNpTU93X0tYbVJpVQ?oc=5" target="_blank">고속버스株 '쑥'…6·3선거 앞두고 터미널 재개발 기대 겹쳐</a></div>
+                <div class="news-title"><a href="https://news.google.com/rss/articles/CBMiVkFVX3lxTFBhSjJRYlBRNmE1T2ZRLVlXeE9FaDBDUW53LVF3NXZvbkhubTFmcFh6c0hEUnNnc1hpMm92UzN3R2FhbzdNYzB2bVdvRWpKSERPa3hjY3JB?oc=5" target="_blank">KDB생명 예비입찰 흥행…생보 빅3·한투·태광 '5파전'</a></div>
                 <div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.02</div>
                 <ul class="news-summary">
-            <li>고속버스株 '쑥'…6·3선거 앞두고 터미널 재개발 기대 겹쳐 네이트</li><li>핵심: 고속버스株 '쑥'…6·3선거 앞두고 터미널 재개발 기대 겹쳐</li><li>맥락: 서울고속버스터미널 재개발 수혜 테마 관련 뉴스입니다.</li></ul></div>
+            <li>KDB생명 예비입찰 흥행…생보 빅3·한투·태광 '5파전' DealSite경제TV</li><li>핵심: KDB생명 예비입찰 흥행…생보 빅3·한투·태광 '5파전'</li><li>맥락: 생명보험 테마 관련 뉴스입니다.</li></ul></div>
         </div>
     </section>
     <section id="section-macro" class="content-section"><div class="section-title">거시경제</div>
@@ -670,27 +677,27 @@
 <div class="sub-category">📌 경제지표</div>
 <div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMiVEFVX3lxTE1GXzhqT2hHaWJEYUJZVlVGZUdyaWVWTDcyclVPdDh5cl9XMEQ2eE1HSDBoNVppM0dsY0JKcVlHbTdiM2VkSmxqN081WW5tbDFYUmo4VNIBVEFVX3lxTE1GXzhqT2hHaWJEYUJZVlVGZUdyaWVWTDcyclVPdDh5cl9XMEQ2eE1HSDBoNVppM0dsY0JKcVlHbTdiM2VkSmxqN081WW5tbDFYUmo4VA?oc=5" target="_blank">워시가 띄운 물가 지표…근원 물가와 괴리 커졌다</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>워시가 띄운 물가 지표…근원 물가와 괴리 커졌다 한국경제</li><li>핵심: 워시가 띄운 물가 지표…근원 물가와 괴리 커졌다</li><li>맥락: 미국 경기 흐름 기사입니다.</li></ul></div>
 <div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMiVkFVX3lxTE1pV2ptWWNUQUVwY0RLbEZDMUdoa0wyVndURkpuUVNJZ2NUcFlUQ1ZBUjIzVTJ5VTdBdGVRQVRRa0F5dUlzdzlUM1NBN3dhd0wyRlo3dTB3?oc=5" target="_blank">결렬된 평화와 4월 PCE 쇼크…금 값은 어디로</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>결렬된 평화와 4월 PCE 쇼크…금 값은 어디로 지디넷코리아</li><li>핵심: 결렬된 평화와 4월 PCE 쇼크…금 값은 어디로</li><li>맥락: 미국 경기 흐름 기사입니다.</li></ul></div>
-<div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMidEFVX3lxTFBHZlM5cFhjcEs4a09BQmVidlVKbjdmM1lXcXFSaklsaUZYa1plalRaZUVVRVhFRFFPaDQ2eW1lOUFNcDBFazU1ajRxeEpyLWpiTHhUdWtjS2pYQ3ZJZGlaYW5vbzVHTXhTUURRRDRYZExBWm1C?oc=5" target="_blank">[뉴욕은 지금] 물가 70% 폭등에도 급하지 않은 이란 |</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>핵심: [뉴욕은 지금] 물가 70% 폭등에도 급하지 않은 이란 |</li><li>맥락: 미국 경기 흐름 기사입니다.</li><li>출처: Google News에서 확인 가능합니다.</li></ul></div>
+<div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMieEFVX3lxTFBfbWVtRVFzX0RDWlVzTzdPczFjS0pkN0IzclA2Vm1jOTc0ZFBLTENNWkd2dFVOYUZ2U3ZQNDNnclZGQ01WOVNNLXJOYTMzZW5kSnAyRVpfcWt1NWhFWGt1VlJ1ZVJzZjJMMzhNNVRuWmJScmMzcGFOTtIBeEFVX3lxTFBfbWVtRVFzX0RDWlVzTzdPczFjS0pkN0IzclA2Vm1jOTc0ZFBLTENNWkd2dFVOYUZ2U3ZQNDNnclZGQ01WOVNNLXJOYTMzZW5kSnAyRVpfcWt1NWhFWGt1VlJ1ZVJzZjJMMzhNNVRuWmJScmMzcGFOTg?oc=5" target="_blank">[주간 뉴욕증시]고용지표에 쏠린 눈…AI 상승세 이어질까</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>[주간 뉴욕증시]고용지표에 쏠린 눈…AI 상승세 이어질까 뉴시스</li><li>핵심: [주간 뉴욕증시]고용지표에 쏠린 눈…AI 상승세 이어질까</li><li>맥락: 미국 경기 흐름 기사입니다.</li></ul></div>
 <div class="sub-category">📌 관세</div>
-<div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMiRkFVX3lxTFBUd0RrZGFKZHVKQTFtRlQwNUR0Z3NJUzJOM0s4UjJMUktfSVNUVzJobURhcDU5c3lKbVg5SzQtS1UtUXlYRWc?oc=5" target="_blank">관세·중동·성수기까지… 해운운임 1년 5개월만 최고</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>관세·중동·성수기까지… 해운운임 1년 5개월만 최고 v.daum.net</li><li>핵심: 관세·중동·성수기까지… 해운운임 1년 5개월만 최고</li><li>맥락: 미국 무역정책 기사입니다.</li></ul></div>
 <div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMingFBVV95cUxQZGRXOUlWc3ZvZzF3MEg5LTBSck5UN2VjTjRQb1c1am9xMzFTdXJaX2hLcXU2b0NtSmJnS0FQaFg0NHJjZ0pXTnRXZ0RFektmX3M3YXBPZEtNNnY2bzVwRWxRQmFpZi1iVGszUlBRMndZNFFCeG5ucWJESHN4Q0owU3U2WDhNVXJGX1dJQTh4X3VKMWdTZGJZQmlCaGRRZ9IBsgFBVV95cUxObl9xeVNNY2p5dU8wVTVNZkc4eEt0elg1cWtGVzhzMTlBNEJxQUlTZk5wZkNOZVNqRU55d1dwbHFFSnVlcHRLczBCU0hRLUdvS3pnSndBcVdmYUs1bmpPXzRsRXZXTVY2el9Gcy1UTDQydG1zVkM4MWNYMldROV92T0ZONG9YOXRxRGdmQ3ItVXNETDVndlVGS1VINlpiU2F2cGJuV0FuOG9HS2lMVm9WWjJ3?oc=5" target="_blank">‘랍스터의 반란’... 트럼프 핵심 지지층 흔든 관세 역풍 - 조선비즈</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>트럼프 핵심 지지층 흔든 관세 역풍 - 조선비즈 Chosunbiz</li><li>핵심: ‘랍스터의 반란’... 트럼프 핵심 지지층 흔든 관세 역풍 - 조선비즈</li><li>맥락: 미국 무역정책 기사입니다.</li></ul></div>
-<div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMickFVX3lxTFBJcEg1QTNCXzYtejlTYVJRUlpnd0ZLYkFDbXZ2TER3UU1WQ08yVEdnMzM5Y2hucTBDSHpHczl2bXNMdFVzSDdtbDlBeTRJWXJyektrVHVRNXZXanlYMzlIUzF2NFFsdHlqRHpzSm02dUtlZw?oc=5" target="_blank">[李정부 1년④] 관세협상·에너지외교…위기관리 빛난 '실용외교'</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>[李정부 1년④] 관세협상·에너지외교…위기관리 빛난 '실용외교' KB Think</li><li>핵심: [李정부 1년④] 관세협상·에너지외교…위기관리 빛난 '실용외교'</li><li>맥락: 미국 무역정책 기사입니다.</li></ul></div>
+<div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMiTkFVX3lxTE9ibjVWXzc3aUViRmk2WVk4ZmtfWmtZMC1Pb1IzLUpURWJPU1JGR09ONXViRTR4V3FmRk5PVzl1RndqSHlnaWs2UVFUVWxoUQ?oc=5" target="_blank">관세·중동·성수기까지… 해운운임 1년 5개월만 최고</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>관세·중동·성수기까지… 해운운임 1년 5개월만 최고 dt.co.kr</li><li>핵심: 관세·중동·성수기까지… 해운운임 1년 5개월만 최고</li><li>맥락: 미국 무역정책 기사입니다.</li></ul></div>
+<div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMickFVX3lxTFBWYTlKMTRmaDRTU0tXY2lKSGZqUEJmRzNXaEo3Ym9XNE4wTk9NdHRfM3k2UXRwdVNEX2RPUHRkMkE1NVFHVFA1ejRXdkpMeHh2VkFKNkMzSXZKeFQtakRjQ3N2djJ6a0FDb21WdU52RE91Zw?oc=5" target="_blank">美, 관세폭탄 또 꺼내나?...베트남 지식재산권 조사 착수</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>美, 관세폭탄 또 꺼내나?...베트남 지식재산권 조사 착수 아세안데일리 뉴스</li><li>핵심: 美, 관세폭탄 또 꺼내나?...베트남 지식재산권 조사 착수</li><li>맥락: 미국 무역정책 기사입니다.</li></ul></div>
 <div class="sub-category">📌 통화정책</div>
 <div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMib0FVX3lxTE42NHNYTUNLYUNfSkJINGdpc0x4M0U2ME8wU2tUTXkzR0t2NFBNU1czaHgyeEwzc0J1RjZMaFVMMVQyU3lzZlE4b0tBYW5GT1BoeHd6R3g2MHA1SGlsdWVLbG5zT2toaXU3QlJqU3lsd9IBb0FVX3lxTE42NHNYTUNLYUNfSkJINGdpc0x4M0U2ME8wU2tUTXkzR0t2NFBNU1czaHgyeEwzc0J1RjZMaFVMMVQyU3lzZlE4b0tBYW5GT1BoeHd6R3g2MHA1SGlsdWVLbG5zT2toaXU3QlJqU3lsdw?oc=5" target="_blank">‘인플레이션’ 위험 확대… 주요국 기준금리 인상할까</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>‘인플레이션’ 위험 확대… 주요국 기준금리 인상할까 시사위크</li><li>핵심: ‘인플레이션’ 위험 확대… 주요국 기준금리 인상할까</li><li>맥락: 연준 금리 경로 기사입니다.</li></ul></div>
-<div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMiVEFVX3lxTE9ZQUVZUFV2UmVPUGhoQzhfanBxYnpGWFJQUXBUTVBGcWhONFJ4UjBzNmhUWUlxNUNJdGZTdF85RXpUQ0dhQTRMSFRWT3lZbXBIekJYMtIBVEFVX3lxTE9ZQUVZUFV2UmVPUGhoQzhfanBxYnpGWFJQUXBUTVBGcWhONFJ4UjBzNmhUWUlxNUNJdGZTdF85RXpUQ0dhQTRMSFRWT3lZbXBIekJYMg?oc=5" target="_blank">'파죽지세' 코스피, 하반기 리스크는 '이것'…증권가의 워스트 시나리오는?</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>핵심: '파죽지세' 코스피, 하반기 리스크는 '이것'…증권가의 워스트 시나리오는?</li><li>맥락: 연준 금리 경로 기사입니다.</li><li>출처: Google News에서 확인 가능합니다.</li></ul></div>
 <div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMiiAFBVV95cUxNNkR5c2JVSVlCVzEyQWZCR21sbGR3V19lSlloUmM1TnlGQUlYVXVjYkduRzZDODBNY1pGYzREZzdkQm9LOS1hSVhNdUZJTTh1REUzV25nWWRWclJhbFFOeU0wTFphMUx6dDk0c1VVbmozQ2pTQ0JSbGZqdXpSbXJnNjRldjk3Y3dI?oc=5" target="_blank">이란 전쟁 멈춰도 美 금리 인상 가능성…연준, ‘고유가 고착화’ 경계</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>이란 전쟁 멈춰도 美 금리 인상 가능성…연준, ‘고유가 고착화’ 경계 글로벌이코노믹</li><li>핵심: 이란 전쟁 멈춰도 美 금리 인상 가능성…연준, ‘고유가 고착화’ 경계</li><li>맥락: 연준 금리 경로 기사입니다.</li></ul></div>
+<div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMiUEFVX3lxTE4xRVQ4dFB4cXdhUG1oZlpEQzYwZ3dkTVhUeU9LZWZjTTZlZGlLMk9XN2FNb2x4RWtxb1BiekI3RE95NE5PQkk0cVBFc3lpLThj?oc=5" target="_blank">비트유닉스 "채권시장, 금리 인상 없는 금리 인상 반영"</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>비트유닉스 "채권시장, 금리 인상 없는 금리 인상 반영" 블루밍비트</li><li>핵심: 비트유닉스 "채권시장, 금리 인상 없는 금리 인상 반영"</li><li>맥락: 연준 금리 경로 기사입니다.</li></ul></div>
 <div class="sub-category">📌 외교</div>
-<div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMiVEFVX3lxTE5TZTFlZGR5a1pudkdRcEk4VEJrdExtcl81dUVBRk9NSVRwcU9CNWRDZGI3TTlVMW43Y3VQMTI3SDEwU3lTVkR6V3dXekNBaXpYUVhPNA?oc=5" target="_blank">中 관영지 "AI는 미중 협력의 새 영역...美 AI칩 통제는 비판"</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>中 관영지 "AI는 미중 협력의 새 영역...美 AI칩 통제는 비판" v.daum.net</li><li>핵심: 中 관영지 "AI는 미중 협력의 새 영역...美 AI칩 통제는 비판"</li><li>맥락: 미국 대외관계 기사입니다.</li></ul></div>
+<div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMiS0FVX3lxTE9VS3V2TWtkRklzNXEydjczQjNUUmlHaWtoekI4VG8xd0F2ejhNNFdpUUlIQkYtcE1yV3FlSGtqWkV0YXBjLTlreDQ2dw?oc=5" target="_blank">中 관영지 "AI는 미중 협력의 새 영역...美 AI칩 통제는 비판"</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>中 관영지 "AI는 미중 협력의 새 영역...美 AI칩 통제는 비판" v.daum.net</li><li>핵심: 中 관영지 "AI는 미중 협력의 새 영역...美 AI칩 통제는 비판"</li><li>맥락: 미국 대외관계 기사입니다.</li></ul></div>
+<div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMia0FVX3lxTE16a2J2YlFlX0pvNEFFUG5tdWNVUjJzZFVBSUJrT0FIeU5ENy1zOTR6WTVxNnhhdVFzVXlLMVFUZFhyendyLWhYcVprZUw5Wm5YNFRZU24xU1o5enRhdjVGaW04eXFqOTMwcVFV0gFuQVVfeXFMUFh4RGdJeFFrVEVZVF9Lckw2alFHTW9PRnEyQ3lPYTdtOUdwOWRsanJHb3YxVV9YZllSVU10MUNIU3ladUp3X1JJNUkxU0NOLVhxZmN1YnNFS0xRTVBIMElEeG85bjdXY0l0RTRoUGc?oc=5" target="_blank">中, AI 협력 내세웠지만 美 반도체 통제엔 “AI 철막” 반발</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>中, AI 협력 내세웠지만 美 반도체 통제엔 “AI 철막” 반발 The Korea Post</li><li>핵심: 中, AI 협력 내세웠지만 美 반도체 통제엔 “AI 철막” 반발</li><li>맥락: 미국 대외관계 기사입니다.</li></ul></div>
 <div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMiU0FVX3lxTE80Xzk2SkRZNnVERnRhQ0VsM05vM0lDSlpCdGVqbHRVdHc0cWlvdkk1TEhuNGdKcFVIM2d3WnROYlJsamhnWHIxdEg5dFA5SlE4NVRV?oc=5" target="_blank">[아시아라운드업 20260601] 이란 대통령 작심발언 "소수집단 지배에 반대"</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>[아시아라운드업 20260601] 이란 대통령 작심발언 "소수집단 지배에 반대" kor.theasian.asia</li><li>핵심: [아시아라운드업 20260601] 이란 대통령 작심발언 "소수집단 지배에 반대"</li><li>맥락: 미국 대외관계 기사입니다.</li></ul></div>
 <div class="group-title">한국</div>
 <div class="sub-category">📌 경제지표</div>
 <div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMidEFVX3lxTE90U2FzMlpzZW1NRUV5Yi1xNnZDNWw2dGEtZWNibjVHSXlWSy1NbU8ybHEwZ1hKdjV0YVF6RXBpbVJnSWVUOXVwSkczU3p1ZDg5bko0OFV2SmlNSXFLNmc5emJXOWwtRTQxMFlqU0ZlZjZwR1NZ0gF0QVVfeXFMT3RTYXMyWnNlbU1FRXliLXE2dkM1bDZ0YS1lY2JuNUdJeVZLLU1tTzJscTBnWEp2NXRhUXpFcGltUmdJZVQ5dXBKRzNTenVkODluSjQ4VXZKaU1JcUs2Zzl6Ylc5bC1FNDEwWWpTRmVmNnBHU1k?oc=5" target="_blank">[이번주 증시 전망·관전포인트] 상단 뚫린 ‘KOSPI 고공행진’…美 기술주 훈풍속 랠리 이어갈까</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>[이번주 증시 전망·관전포인트] 상단 뚫린 ‘KOSPI 고공행진’…美 기술주 훈풍속 랠리 이어갈까 thefairnews.co.kr</li><li>핵심: [이번주 증시 전망·관전포인트] 상단 뚫린 ‘KOSPI 고공행진’…美 기술주 훈풍속 랠리 이어갈까</li><li>맥락: 한국 실물 경제 기사입니다.</li></ul></div>
 <div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMiVEFVX3lxTE56OE1hRTRPckpmR01PYnFTMVhlTlZHTWxzMXhCcUdfWnhmVXRMbXJxZ1BuVzN6SmlpOHNYeWtXWVVwcThVZWNIUGpJM25NOElKc200Tg?oc=5" target="_blank">韓 경제 떠받치는 반도체⋯수출 1조달러ㆍ명목성장률 10% 이끈다</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>韓 경제 떠받치는 반도체⋯수출 1조달러ㆍ명목성장률 10% 이끈다 이투데이</li><li>핵심: 韓 경제 떠받치는 반도체⋯수출 1조달러ㆍ명목성장률 10% 이끈다</li><li>맥락: 한국 실물 경제 기사입니다.</li></ul></div>
-<div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMiYEFVX3lxTE1PZlFGRmt0LVVVUTRQQVd4cHZuS1pncV9rbFlmdURUR3VELWlHbnRVdDh1Mi1CNUllVDZ5M0o5VzBWeThvcTNCZXNhNG4yMFJoWFN3NmNWUU52TV83bzdNdQ?oc=5" target="_blank">[환율 전망] 길어지는 협상, 갈 길 잃은 환율</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>[환율 전망] 길어지는 협상, 갈 길 잃은 환율 KB Think</li><li>핵심: [환율 전망] 길어지는 협상, 갈 길 잃은 환율</li><li>맥락: 한국 실물 경제 기사입니다.</li></ul></div>
 <div class="sub-category">📌 통화정책</div>
 <div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMiYEFVX3lxTE5oZTVZQVlxa2RQMkloaG04MTU2d3pmeVdBZ1F2ampVQ2JFbUp5Z0NIQjlVNURpLVBCSFFnRWhqSnJyZUpkMnZ1M2ZJT05NRHltOHRXWm92REdLdjBJVm9aa9IBYEFVX3lxTE5oZTVZQVlxa2RQMkloaG04MTU2d3pmeVdBZ1F2ampVQ2JFbUp5Z0NIQjlVNURpLVBCSFFnRWhqSnJyZUpkMnZ1M2ZJT05NRHltOHRXWm92REdLdjBJVm9aaw?oc=5" target="_blank">한은 총재 "韓 성장 굉장히 강력…통화정책 조정 장애물 적어"</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>한은 총재 "韓 성장 굉장히 강력…통화정책 조정 장애물 적어" 연합뉴스</li><li>핵심: 한은 총재 "韓 성장 굉장히 강력…통화정책 조정 장애물 적어"</li><li>맥락: 한국은행 기준금리 기사입니다.</li></ul></div>
 <div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMidEFVX3lxTFBtN1JSYXFadVl2Y21zQmdPNWxDSEZSczNBQTZBVXBRVldsbk5WZTJ6a21CWV8zYVVhU1RPLWFtVkp4eEU3bWtEb1UtbnduRjA0Y2p0S0M3WDcwcXFRQWc2bjlfZUt4RUdOaG43Y0VzSXdIeVJB?oc=5" target="_blank">[한은은 지금] 컨퍼런스에 담긴 신현송과 이창용의 우정 |</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>핵심: [한은은 지금] 컨퍼런스에 담긴 신현송과 이창용의 우정 |</li><li>맥락: 한국은행 기준금리 기사입니다.</li><li>출처: Google News에서 확인 가능합니다.</li></ul></div>
-<div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMiUkFVX3lxTE5nUnlTVERyQU1zdEFfMGUybE1IZFhRSEJzOVVXeGVoUmZXQlRCZTJELVJVX3pEcmxYQ2swRFQ5QldNZFpMdy16NjNkNlFfTEl4WFE?oc=5" target="_blank">"韓 반도체 슈퍼사이클에 통화정책 운용 여력 충분"</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>"韓 반도체 슈퍼사이클에 통화정책 운용 여력 충분" 매일경제 마켓</li><li>핵심: "韓 반도체 슈퍼사이클에 통화정책 운용 여력 충분"</li><li>맥락: 한국은행 기준금리 기사입니다.</li></ul></div>
+<div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMihgFBVV95cUxPaFFLbEN4VGFKeXB6T281OWp1di1EZEQ2MnhQY3hTM1Nsb29CdDhoWTEyel9YUXVtdURoS2IxUlBUdlF3Q01qa2d1dXp2ME53V3pnc3lJd09zR2ZoWnBjbWl2RktRLVRYakFIMmxFUjVialpnTlo4Wk5hNnRHODhBNUpWdUlUUdIBmgFBVV95cUxORllJd1R4NEJybWdhcEtkRXJfdXJXMG80aGtzZjE1d3RmTXN0cjY2TTE1eDNxdnJfRjlmcXNEdWhjSkFDOW9wQkEtTUVlemxfdHo4SlVHRHdON25hNkt2N3RXbG80ckZOcFJINzNWbl93QVBjbW9CYkFwdW5FZEh3S0xfRjgtTmw4RXJnaFNkQ3BLbVdpNkhSUTBn?oc=5" target="_blank">한은 총재, 금리 인상 또 시사... “인플레이션 관련 통화 정책 장애물 적어” - 조선비즈</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>“인플레이션 관련 통화 정책 장애물 적어” - 조선비즈 Chosunbiz</li><li>핵심: 한은 총재, 금리 인상 또 시사... “인플레이션 관련 통화 정책 장애물 적어” - 조선비즈</li><li>맥락: 한국은행 기준금리 기사입니다.</li></ul></div>
 <div class="group-title">유럽</div>
 <div class="sub-category">📌 통화정책</div>
 <div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMiYEFVX3lxTE03MG9UdmtOcFdMdWxfNlIzMGhNSUotN1BvRl8wZF9jbHJZcVNGZ0dUWnc4bHV3VjlnbVA5Y2NpWGhROXcxTUlnLTA5TnpqQjdXanJLVGhDMnVIT0Y4eEthaA?oc=5" target="_blank">신현송 "성장 견조, 통화정책 딜레마 적다"…재차 '금리 인상' 시그널</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>신현송 "성장 견조, 통화정책 딜레마 적다"…재차 '금리 인상' 시그널 뉴스토마토</li><li>핵심: 신현송 "성장 견조, 통화정책 딜레마 적다"…재차 '금리 인상' 시그널</li><li>맥락: ECB 정책 흐름 기사입니다.</li></ul></div>
@@ -706,15 +713,15 @@
 <div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMibkFVX3lxTE9aYVd5UWxfZWw1SS0wZjhwcTZaRm4tZnhXZTJqal9uUFZ3dzBVQ3R3TC1SZ2EtUEE5WGI2VENCeVRWX2ltRURvTFdaRkI3aE53cDV1U0pmbGI1MUlTQ3h5V0F0bExUZlRpOHA0dnZB0gFuQVVfeXFMT1phV3lRbF9lbDVJLTBmOHBxNlpGbi1meFdlMmpqX25QVnd3MFVDdHdMLVJnYS1QQTlYYjZUQ0J5VFZfaW1FRG9MV1pGQjdoTndwNXVTSmZsYjUxSVNDeHlXQXRsTFRmVGk4cDR2dkE?oc=5" target="_blank">"일본, 美 '제네시스 미션' 참여…中과의 기술 경쟁서 우위 확보 의도" - 머니투데이</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>"일본, 美 '제네시스 미션' 참여…中과의 기술 경쟁서 우위 확보 의도" - 머니투데이 머니투데이</li><li>핵심: "일본, 美 '제네시스 미션' 참여…中과의 기술 경쟁서 우위 확보 의도" - 머니투데이</li><li>맥락: 글로벌 빅테크 AI 동향입니다.</li></ul></div>
 <div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMickFVX3lxTE8zMFpLdFFYTnBPc0EzUFI1M2E4eEI3eGUwaUNEblZSNHhRcnRSeTY1NnJfWVFwYzA0U242TkgtSi0zYi0xSF9rRzRWUzM4cDBxc0hJYTNpT1lWT0lMdU1lUVVyWTFJejZIWGxMVm1yZ004UQ?oc=5" target="_blank">AI 경쟁 뒤처질 판인데...카카오 노조, 10일 부분파업 강행(종합)</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>AI 경쟁 뒤처질 판인데...카카오 노조, 10일 부분파업 강행(종합) 중앙이코노미뉴스</li><li>핵심: AI 경쟁 뒤처질 판인데...카카오 노조, 10일 부분파업 강행(종합)</li><li>맥락: 글로벌 빅테크 AI 동향입니다.</li></ul></div>
 <div class="sub-category">📌 AI 인프라/비용</div>
-<div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMiX0FVX3lxTFB4d0ZpcEpuYXhWZk1QU2FILWUtT3prUnM2M25Dd0dyT3czZDVrZGlta1dGNzdOODRHcGJ4akkzX1RKcjc2N3ZESFlPUkZyZ1JDVHZyYWF3X1BYdTdvM09B?oc=5" target="_blank">[ETF업&다운] 삼성 88%vsKB 69%…AI 전력 ETF, 수익률 갈린 이유는?</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>핵심: [ETF업&다운] 삼성 88%vsKB 69%…AI 전력 ETF, 수익률 갈린 이유는?</li><li>맥락: AI 하드웨어 동향입니다.</li><li>출처: Google News에서 확인 가능합니다.</li></ul></div>
 <div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMiUkFVX3lxTE1qTF9xcExpSDUtUVJTcTFab2hqUlk5TlNVS3VTcXh3RG11MVR3MGdOcGNBYnhUeGZYd3RFMmNOcEF2d1phcDMxdndYQkZOd0RURHc?oc=5" target="_blank">1경원 AI 데이터센터 시장 잡아라 … 전력·냉각업체도 가세</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>1경원 AI 데이터센터 시장 잡아라 … 전력·냉각업체도 가세 매일경제</li><li>핵심: 1경원 AI 데이터센터 시장 잡아라 … 전력·냉각업체도 가세</li><li>맥락: AI 하드웨어 동향입니다.</li></ul></div>
-<div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMiaEFVX3lxTFB2LUNxd3pEaS1Yb1JqOWVLWGxCMTJNY1c3VHcxOGJueVFwYkx2V19BaWl2OE5EbEQ0MUlrQnNyNXRnN2txT1VUUDhkaksxdVdZOUhqYkFWZDk5TzJWaE1RMXVPQVNKb2c0?oc=5" target="_blank">아주대병원, 신관 건립ㆍAI 스마트병원 대비 전력 인프라 확충 外</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>아주대병원, 신관 건립ㆍAI 스마트병원 대비 전력 인프라 확충 外 의약뉴스</li><li>핵심: 아주대병원, 신관 건립ㆍAI 스마트병원 대비 전력 인프라 확충 外</li><li>맥락: AI 하드웨어 동향입니다.</li></ul></div>
+<div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMiX0FVX3lxTFB4d0ZpcEpuYXhWZk1QU2FILWUtT3prUnM2M25Dd0dyT3czZDVrZGlta1dGNzdOODRHcGJ4akkzX1RKcjc2N3ZESFlPUkZyZ1JDVHZyYWF3X1BYdTdvM09B?oc=5" target="_blank">[ETF업&다운] 삼성 88%vsKB 69%…AI 전력 ETF, 수익률 갈린 이유는?</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>핵심: [ETF업&다운] 삼성 88%vsKB 69%…AI 전력 ETF, 수익률 갈린 이유는?</li><li>맥락: AI 하드웨어 동향입니다.</li><li>출처: Google News에서 확인 가능합니다.</li></ul></div>
+<div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMiZEFVX3lxTFBrSlhHUVQ1UmpKTGJKT0w3aWl2RTVSRVVMZmhkNndyTFRnSy1ESUp4X2RjUEVwRXA5ZEJuZm9tUGFMTFE3MzFyaHFOV0FkUGdjYURteGFXTWZSNk1oVlJxMFFNVzc?oc=5" target="_blank">AI 데이터센터發 전력 인프라 수요 폭증…가온전선 '북미 승부수'</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>AI 데이터센터發 전력 인프라 수요 폭증…가온전선 '북미 승부수' 매일일보</li><li>핵심: AI 데이터센터發 전력 인프라 수요 폭증…가온전선 '북미 승부수'</li><li>맥락: AI 하드웨어 동향입니다.</li></ul></div>
 <div class="sub-category">📌 AI 융합 산업</div>
 <div class='no-news'>전일 수집된 뉴스가 없습니다.</div>
 <div class="sub-category">📌 규제 이슈</div>
-<div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMiRkFVX3lxTE1OYWtSeEZjMUlDcFdKbVAyWmpkaTFvQmNwNWlWSU1KLVZZWnIxaDBJOTJOLWZxVnBGRjFkUktsa3ZrSWF1VkE?oc=5" target="_blank">[이혜선의 차이나는 테크] 中, AI 단일법 만든다… 글로벌 규범 경쟁 가속</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>[이혜선의 차이나는 테크] 中, AI 단일법 만든다… 글로벌 규범 경쟁 가속 v.daum.net</li><li>핵심: [이혜선의 차이나는 테크] 中, AI 단일법 만든다… 글로벌 규범 경쟁 가속</li><li>맥락: AI 규제 동향입니다.</li></ul></div>
 <div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMiakFVX3lxTFBaUzZIVDl6OUpzeUZ5RTNYdkRMaWc4WkpfRlZFUFl1Ni1wLUFaMFVvQlJnLXAyemFrUnI2ODJ1b3VHdExmbmhrRDFNMEphQUQ1M0QxbU9kYVo4UWdUTHFBVTdLZnZBRVMwdkE?oc=5" target="_blank">"AI에 의존 말고 함께 사고하는 인재로"···KAIST AI대학 비전 선포</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>"AI에 의존 말고 함께 사고하는 인재로"···KAIST AI대학 비전 선포 헬로디디</li><li>핵심: "AI에 의존 말고 함께 사고하는 인재로"···KAIST AI대학 비전 선포</li><li>맥락: AI 규제 동향입니다.</li></ul></div>
-<div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMiYEFVX3lxTE5XakJiNGMwVGVUUlhCUG5OcDFfTU9xUkxnNVROTEpRWXV6bmRmV3Juel8wNG5JdnAzam1tc1VuVUVNYTBIOHNhZmFWYkM5M2FTVUVhc0pVTlZ2TUVvcXVoadIBYEFVX3lxTE5XakJiNGMwVGVUUlhCUG5OcDFfTU9xUkxnNVROTEpRWXV6bmRmV3Juel8wNG5JdnAzam1tc1VuVUVNYTBIOHNhZmFWYkM5M2FTVUVhc0pVTlZ2TUVvcXVoaQ?oc=5" target="_blank">방미통위, AI 디지털윤리 공모전 개최</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>방미통위, AI 디지털윤리 공모전 개최 연합뉴스</li><li>핵심: 방미통위, AI 디지털윤리 공모전 개최</li><li>맥락: AI 규제 동향입니다.</li></ul></div>
+<div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMiRkFVX3lxTE1OYWtSeEZjMUlDcFdKbVAyWmpkaTFvQmNwNWlWSU1KLVZZWnIxaDBJOTJOLWZxVnBGRjFkUktsa3ZrSWF1VkE?oc=5" target="_blank">[이혜선의 차이나는 테크] 中, AI 단일법 만든다… 글로벌 규범 경쟁 가속</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>[이혜선의 차이나는 테크] 中, AI 단일법 만든다… 글로벌 규범 경쟁 가속 v.daum.net</li><li>핵심: [이혜선의 차이나는 테크] 中, AI 단일법 만든다… 글로벌 규범 경쟁 가속</li><li>맥락: AI 규제 동향입니다.</li></ul></div>
+<div class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMiS0FVX3lxTE9fNG14Z1pheXowcno1OHlhTFVldktUTkkxT21PR1JLcnFKOXlMUDdZU3Q3Nm1GOXZ6U0o3aEdRQ0JFOHRIMXVncWNsQQ?oc=5" target="_blank">교황이 던진 질문, AI에 정치적 입장이 있어야 할까</a></div><div class="news-date">출처: 구글뉴스 | 발행일: 2026.06.01</div><ul class="news-summary"><li>교황이 던진 질문, AI에 정치적 입장이 있어야 할까 바이라인네트워크</li><li>핵심: 교황이 던진 질문, AI에 정치적 입장이 있어야 할까</li><li>맥락: AI 규제 동향입니다.</li></ul></div>
 </section>
 <section id="section-vcac" class="content-section"><div class="section-title">VC/AC</div>
 <div class="group-title">VC/AC</div>
@@ -727,13 +734,16 @@
 </section>
 <section id="section-impact" class="content-section"><div class="section-title">글로벌 & 국내 임팩트 브리핑</div>
 <div class="sub-category">📌 국내 임팩트 뉴스</div>
-<div class='no-news'>수집된 기사가 없습니다.</div>
+<div class="news-card"><div class="news-title"><a href="https://www.impacton.net/news/articleView.html?idxno=19075" target="_blank">【ESG 채용】한국경영인증원, 아주기업경영연구소</a></div><div class="news-date">출처: 임팩트온 | 발행일: 2026.06.01</div><ul class="news-summary"><li>국내 주요 ESG 및 임팩트 비즈니스 이슈입니다.</li></ul></div>
+<div class="news-card"><div class="news-title"><a href="https://www.impacton.net/news/articleView.html?idxno=19071" target="_blank">엔비디아 서버도 전기 없인 못 돈다…AI 병목, GPU서 전력으로</a></div><div class="news-date">출처: 임팩트온 | 발행일: 2026.06.01</div><ul class="news-summary"><li>국내 주요 ESG 및 임팩트 비즈니스 이슈입니다.</li></ul></div>
+<div class="news-card"><div class="news-title"><a href="https://www.impacton.net/news/articleView.html?idxno=19070" target="_blank">美 SEC, 기후공시 폐기 본격화…투자자 보호 vs 규제 부담 논쟁 점화</a></div><div class="news-date">출처: 임팩트온 | 발행일: 2026.06.01</div><ul class="news-summary"><li>국내 주요 ESG 및 임팩트 비즈니스 이슈입니다.</li></ul></div>
+<div class="news-card"><div class="news-title"><a href="https://www.impacton.net/news/articleView.html?idxno=19065" target="_blank">고유가에 캘리포니아 탄소시장 후퇴...무상배출권 5조5000억 풀어</a></div><div class="news-date">출처: 임팩트온 | 발행일: 2026.06.01</div><ul class="news-summary"><li>국내 주요 ESG 및 임팩트 비즈니스 이슈입니다.</li></ul></div>
 <div class="sub-category">📌 글로벌 임팩트 뉴스</div>
-<div class='no-news'>수집된 기사가 없습니다.</div>
+<div class="news-card"><div class="news-title"><a href="https://www.impacton.net/news/articleView.html?idxno=19073" target="_blank">EU, 메탄 규제 벌금 3년 유예 추진…LNG 공급난에 기후규제 후퇴</a></div><div class="news-date">출처: 임팩트온 | 발행일: 2026.06.01</div><ul class="news-summary"><li>국내 주요 ESG 및 임팩트 비즈니스 이슈입니다.</li></ul></div>
 </section>
 
     <script>
-        const chartData = {"us_10y": {"dates": ["04/21", "04/22", "04/23", "04/24", "04/27", "04/28", "04/29", "04/30", "05/01", "05/04", "05/05", "05/06", "05/07", "05/08", "05/11", "05/12", "05/13", "05/14", "05/15", "05/18", "05/19", "05/20", "05/21", "05/22", "05/25", "05/26", "05/27", "05/28", "05/29", "06/01"], "values": [4.292, 4.294, 4.323, 4.31, 4.336, 4.354, 4.418, 4.39, 4.378, 4.446, 4.416, 4.356, 4.392, 4.364, 4.41, 4.463, 4.481, 4.461, 4.595, 4.623, 4.667, 4.572, 4.586, 4.558, 4.558, 4.493, 4.481, 4.455, 4.453, 4.475]}, "fx": {"dates": ["04/23", "04/24", "04/27", "04/28", "04/29", "04/30", "05/01", "05/04", "05/05", "05/06", "05/07", "05/08", "05/11", "05/12", "05/13", "05/14", "05/15", "05/18", "05/19", "05/20", "05/21", "05/22", "05/25", "05/26", "05/27", "05/28", "05/29", "06/01", "06/02", "06/02"], "values": [1477.96, 1479.95, 1474.69, 1473.0, 1471.99, 1487.38, 1474.01, 1471.73, 1476.05, 1473.96, 1444.45, 1454.79, 1460.55, 1474.45, 1492.99, 1489.84, 1493.34, 1497.15, 1492.32, 1507.85, 1499.77, 1504.4, 1512.83, 1514.79, 1505.44, 1503.11, 1495.29, 1506.84, 1506.84, 1515.48]}, "kospi": {"dates": ["04/17", "04/20", "04/21", "04/22", "04/23", "04/24", "04/27", "04/28", "04/29", "04/30", "05/04", "05/06", "05/07", "05/08", "05/11", "05/12", "05/13", "05/14", "05/15", "05/18", "05/19", "05/20", "05/21", "05/22", "05/26", "05/27", "05/28", "05/29", "06/01", "06/02"], "values": [6191.92, 6219.09, 6388.47, 6417.93, 6475.81, 6475.63, 6615.03, 6641.02, 6690.9, 6598.87, 6936.99, 7384.56, 7490.05, 7498.0, 7822.24, 7643.15, 7844.01, 7981.41, 7493.18, 7516.04, 7271.66, 7208.95, 7815.59, 7847.71, 8047.51, 8228.7, 8185.29, 8476.15, 8788.38, 8597.46]}, "kosdaq": {"dates": ["04/17", "04/20", "04/21", "04/22", "04/23", "04/24", "04/27", "04/28", "04/29", "04/30", "05/04", "05/06", "05/07", "05/08", "05/11", "05/12", "05/13", "05/14", "05/15", "05/18", "05/19", "05/20", "05/21", "05/22", "05/26", "05/27", "05/28", "05/29", "06/01", "06/02"], "values": [1170.04, 1174.85, 1179.03, 1181.12, 1174.31, 1203.84, 1226.18, 1215.58, 1220.26, 1192.35, 1213.74, 1210.17, 1199.18, 1207.72, 1207.34, 1179.29, 1176.93, 1191.09, 1129.82, 1111.09, 1084.36, 1056.07, 1105.97, 1161.13, 1172.52, 1133.13, 1104.36, 1074.8, 1050.03, 1020.98]}};
+        const chartData = {"us_10y": {"dates": ["04/21", "04/22", "04/23", "04/24", "04/27", "04/28", "04/29", "04/30", "05/01", "05/04", "05/05", "05/06", "05/07", "05/08", "05/11", "05/12", "05/13", "05/14", "05/15", "05/18", "05/19", "05/20", "05/21", "05/22", "05/25", "05/26", "05/27", "05/28", "05/29", "06/01"], "values": [4.292, 4.294, 4.323, 4.31, 4.336, 4.354, 4.418, 4.39, 4.378, 4.446, 4.416, 4.356, 4.392, 4.364, 4.41, 4.463, 4.481, 4.461, 4.595, 4.623, 4.667, 4.572, 4.586, 4.558, 4.558, 4.493, 4.481, 4.455, 4.453, 4.475]}, "fx": {"dates": ["04/23", "04/24", "04/27", "04/28", "04/29", "04/30", "05/01", "05/04", "05/05", "05/06", "05/07", "05/08", "05/11", "05/12", "05/13", "05/14", "05/15", "05/18", "05/19", "05/20", "05/21", "05/22", "05/25", "05/26", "05/27", "05/28", "05/29", "06/01", "06/02", "06/02"], "values": [1477.96, 1479.95, 1474.69, 1473.0, 1471.99, 1487.38, 1474.01, 1471.73, 1476.05, 1473.96, 1444.45, 1454.79, 1460.55, 1474.45, 1492.99, 1489.84, 1493.34, 1497.15, 1492.32, 1507.85, 1499.77, 1504.4, 1512.83, 1514.79, 1505.44, 1503.11, 1495.29, 1506.84, 1506.84, 1517.86]}, "kospi": {"dates": ["04/17", "04/20", "04/21", "04/22", "04/23", "04/24", "04/27", "04/28", "04/29", "04/30", "05/04", "05/06", "05/07", "05/08", "05/11", "05/12", "05/13", "05/14", "05/15", "05/18", "05/19", "05/20", "05/21", "05/22", "05/26", "05/27", "05/28", "05/29", "06/01", "06/02"], "values": [6191.92, 6219.09, 6388.47, 6417.93, 6475.81, 6475.63, 6615.03, 6641.02, 6690.9, 6598.87, 6936.99, 7384.56, 7490.05, 7498.0, 7822.24, 7643.15, 7844.01, 7981.41, 7493.18, 7516.04, 7271.66, 7208.95, 7815.59, 7847.71, 8047.51, 8228.7, 8185.29, 8476.15, 8788.38, 8801.49]}, "kosdaq": {"dates": ["04/17", "04/20", "04/21", "04/22", "04/23", "04/24", "04/27", "04/28", "04/29", "04/30", "05/04", "05/06", "05/07", "05/08", "05/11", "05/12", "05/13", "05/14", "05/15", "05/18", "05/19", "05/20", "05/21", "05/22", "05/26", "05/27", "05/28", "05/29", "06/01", "06/02"], "values": [1170.04, 1174.85, 1179.03, 1181.12, 1174.31, 1203.84, 1226.18, 1215.58, 1220.26, 1192.35, 1213.74, 1210.17, 1199.18, 1207.72, 1207.34, 1179.29, 1176.93, 1191.09, 1129.82, 1111.09, 1084.36, 1056.07, 1105.97, 1161.13, 1172.52, 1133.13, 1104.36, 1074.8, 1050.03, 1026.03]}};
         
         // Tabs logic
         const tabs = document.querySelectorAll(".nav-tab");

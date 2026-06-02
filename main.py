@@ -11,8 +11,12 @@ from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urlparse
 from xml.etree import ElementTree
-import requests
 from bs4 import BeautifulSoup
+
+try:
+    import requests
+except ImportError:  # pragma: no cover - fallback for bundled runtime
+    requests = None
 
 KST = timezone(timedelta(hours=9))
 BASE_DIR = Path(__file__).resolve().parent
@@ -24,14 +28,36 @@ HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
 }
 
+def http_get_text(url, timeout=10, encoding=None):
+    if requests is not None:
+        res = requests.get(url, headers=HEADERS, timeout=timeout)
+        if encoding:
+            res.encoding = encoding
+            return res.text
+        return res.text
+
+    req = urllib.request.Request(url, headers=HEADERS)
+    with urllib.request.urlopen(req, timeout=timeout) as response:
+        body = response.read()
+        charset = encoding or response.headers.get_content_charset() or "utf-8"
+        return body.decode(charset, errors="replace")
+
+def http_get_json(url, timeout=10):
+    if requests is not None:
+        res = requests.get(url, headers=HEADERS, timeout=timeout)
+        return res.json()
+    return json.loads(http_get_text(url, timeout=timeout))
+
 MAX_IMPACT_NEWS = 5
+MAX_GLOBAL_IMPACT_NEWS_PER_SOURCE = 2
 MAX_NEWS_PER_CATEGORY = 3
 SUMMARY_LINE_COUNT = 3
 SUMMARY_MAX_CHARS = 110
 
 GLOBAL_IMPACT_FEEDS = [
-    ("Trellis", "https://www.trellis.net/feed/"),
+    ("Trellis Network", "https://www.trellis.net/feed/"),
     ("CTVC", "https://www.ctvc.co/feed/"),
+    ("Powerstack", "https://powerstack.sightlineclimate.com/feed/"),
     ("ImpactAlpha", "https://impactalpha.com/feed/")
 ]
 
@@ -105,8 +131,7 @@ NAV_SECTIONS = (("theme", "🔥 강세테마"), ("macro", "거시경제"), ("ai"
 def fetch_historical_chart_data(ticker, range_str="30d"):
     try:
         url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range={range_str}"
-        res = requests.get(url, headers=HEADERS, timeout=10)
-        data = res.json()
+        data = http_get_json(url, timeout=10)
         result = data["chart"]["result"][0]
         timestamps = result.get("timestamp", [])
         closes = result.get("indicators", {}).get("quote", [{}])[0].get("close", [])
@@ -136,6 +161,68 @@ def fetch_historical_chart_data(ticker, range_str="30d"):
         print(f"Error fetching historical for {ticker}: {e}")
         return {"dates": [], "values": []}
 
+def normalize_flow_value(text):
+    text = normalize_space(text).replace("억", "").replace("백만", "").replace("천주", "")
+    if not text:
+        return ""
+    return text
+
+def flow_text_from_row(cells):
+    if len(cells) < 4:
+        return ""
+    return f"개인 {normalize_flow_value(cells[1])} / 외국인 {normalize_flow_value(cells[2])} / 기관 {normalize_flow_value(cells[3])}"
+
+def parse_market_flow_from_html(html_text, market_name):
+    soup = BeautifulSoup(html_text, "html.parser")
+    market_patterns = {
+        "KOSPI": re.compile(r"(KOSPI|코스피|종합주가지수)", re.I),
+        "KOSDAQ": re.compile(r"(KOSDAQ|코스닥)", re.I),
+    }
+    pattern = market_patterns[market_name]
+
+    for table in soup.find_all("table"):
+        rows = table.find_all("tr")
+        for row in rows:
+            cells = [normalize_space(cell.get_text(" ", strip=True)) for cell in row.find_all(["th", "td"])]
+            if len(cells) < 4:
+                continue
+            if not pattern.search(cells[0]):
+                continue
+            candidate = flow_text_from_row(cells)
+            if candidate:
+                return candidate
+
+    flat_text = normalize_space(soup.get_text(" ", strip=True))
+    flat_text = flat_text.replace("개인", " 개인 ").replace("외국인", " 외국인 ").replace("기관", " 기관 ")
+    match = re.search(
+        rf"{pattern.pattern}.*?개인\s*([+\-]?\d[\d,]*)\s*.*?외국인\s*([+\-]?\d[\d,]*)\s*.*?기관\s*([+\-]?\d[\d,]*)",
+        flat_text,
+        flags=re.I | re.S,
+    )
+    if match:
+        p, f, i = match.groups()
+        return f"개인 {p} / 외국인 {f} / 기관 {i}"
+    return "개인/외국인/기관 수급을 불러오지 못했습니다."
+
+def fetch_market_flows():
+    result = {"KOSPI": "개인/외국인/기관 수급을 불러오지 못했습니다.", "KOSDAQ": "개인/외국인/기관 수급을 불러오지 못했습니다."}
+    candidate_urls = [
+        "https://finance.naver.com/sise/",
+        "https://finance.naver.com/sise/sise_index.naver?code=KOSPI",
+        "https://finance.naver.com/sise/sise_index.naver?code=KOSDAQ",
+    ]
+    for market_name in ("KOSPI", "KOSDAQ"):
+        for url in candidate_urls:
+            try:
+                html_text = http_get_text(url, timeout=10, encoding="euc-kr")
+                parsed = parse_market_flow_from_html(html_text, market_name)
+                if "불러오지 못했습니다" not in parsed:
+                    result[market_name] = parsed
+                    break
+            except Exception:
+                continue
+    return result
+
 # ==========================================
 # 🌟 대시보드 크롤링 (Yahoo API로 에러 제로화!)
 # ==========================================
@@ -144,6 +231,8 @@ def fetch_dashboard_data():
         "us_10y": "조회 불가",
         "fx_info": "조회 불가",
         "kospi_info": "조회 불가", "kosdaq_info": "조회 불가",
+        "kospi_flow": "개인/외국인/기관 수급을 불러오지 못했습니다.",
+        "kosdaq_flow": "개인/외국인/기관 수급을 불러오지 못했습니다.",
         "theme_name": "강세테마 대기중"
     }
     print("\n[Dashboard] 금융 대시보드 데이터 수집 중...")
@@ -152,8 +241,7 @@ def fetch_dashboard_data():
     # 기호: ^TNX (10-Year T-Note)
     try:
         url = "https://query1.finance.yahoo.com/v8/finance/chart/^TNX?interval=1d&range=2d"
-        res = requests.get(url, headers=HEADERS, timeout=10)
-        data = res.json()
+        data = http_get_json(url, timeout=10)
         yield_val = data["chart"]["result"][0]["meta"]["regularMarketPrice"]
         dashboard["us_10y"] = f"{yield_val:.3f}%"
     except Exception as e: print("US 10Y Error:", e)
@@ -162,17 +250,14 @@ def fetch_dashboard_data():
     # 기호: KRW=X
     try:
         url = "https://query1.finance.yahoo.com/v8/finance/chart/KRW=X?interval=1d&range=2d"
-        res = requests.get(url, headers=HEADERS, timeout=10)
-        data = res.json()
+        data = http_get_json(url, timeout=10)
         fx_val = data["chart"]["result"][0]["meta"]["regularMarketPrice"]
         dashboard["fx_info"] = f"종가: {fx_val:,.2f}원"
     except Exception as e: print("FX Error:", e)
 
     # 🌟 3. 코스피 / 코스닥 (네이버 메인화면 수치 크롤링 - 가장 확실함)
     try:
-        res = requests.get("https://finance.naver.com/", headers=HEADERS, timeout=10)
-        res.encoding = 'euc-kr'
-        soup = BeautifulSoup(res.text, 'html.parser')
+        soup = BeautifulSoup(http_get_text("https://finance.naver.com/", timeout=10, encoding="euc-kr"), 'html.parser')
         
         # 코스피
         kospi_val = soup.select_one(".kospi_area .num").text.strip()
@@ -182,6 +267,13 @@ def fetch_dashboard_data():
         kosdaq_val = soup.select_one(".kosdaq_area .num").text.strip()
         dashboard["kosdaq_info"] = kosdaq_val
     except Exception as e: print("Index Error:", e)
+
+    # 4. 코스피 / 코스닥 수급
+    try:
+        market_flows = fetch_market_flows()
+        dashboard["kospi_flow"] = market_flows.get("KOSPI", dashboard["kospi_flow"])
+        dashboard["kosdaq_flow"] = market_flows.get("KOSDAQ", dashboard["kosdaq_flow"])
+    except Exception as e: print("Flow Error:", e)
 
     return dashboard
 
@@ -198,9 +290,7 @@ def fetch_strong_theme():
     }
     print("\n[Theme] 국내 강세 테마 수집 중...")
     try:
-        res = requests.get("https://finance.naver.com/sise/theme.naver", headers=HEADERS, timeout=10)
-        res.encoding = 'euc-kr'
-        soup = BeautifulSoup(res.text, 'html.parser')
+        soup = BeautifulSoup(http_get_text("https://finance.naver.com/sise/theme.naver", timeout=10, encoding="euc-kr"), 'html.parser')
         
         table = soup.select_one(".type_1.theme")
         if not table:
@@ -220,9 +310,7 @@ def fetch_strong_theme():
                 
                 # Fetch details
                 detail_url = "https://finance.naver.com" + theme_href
-                d_res = requests.get(detail_url, headers=HEADERS, timeout=10)
-                d_res.encoding = 'euc-kr'
-                d_soup = BeautifulSoup(d_res.text, 'html.parser')
+                d_soup = BeautifulSoup(http_get_text(detail_url, timeout=10, encoding="euc-kr"), 'html.parser')
                 
                 # Extract theme description
                 desc_td = d_soup.select_one(".type_1 td[style*='padding-left']")
@@ -232,7 +320,7 @@ def fetch_strong_theme():
                     if info_p:
                         theme_desc = info_p.text.strip()
                 
-                theme["desc"] = theme_desc if theme_desc else f"{theme_name} 관련 강세 테마입니다."
+                theme["desc"] = brief_company_overview(theme_desc if theme_desc else f"{theme_name} 관련 강세 테마입니다.", theme_name)
                 
                 # Extract related stocks
                 stock_table = d_soup.select_one(".type_5")
@@ -249,7 +337,7 @@ def fetch_strong_theme():
                                 s_code = s_href.split("code=")[1]
                             tds_s = s_row.select("td")
                             if len(tds_s) > 4:
-                                s_reason = tds_s[1].text.strip().replace("\n", " ").replace("기업개요", "").replace("테마 관련", "").strip()
+                                s_reason = brief_company_overview(tds_s[1].text.strip().replace("\n", " ").replace("기업개요", "").replace("테마 관련", ""), s_name)
                                 s_price = tds_s[2].text.strip()
                                 s_rate = tds_s[4].text.strip()
                                 stocks.append({
@@ -323,11 +411,20 @@ def is_similar_title(t1, t2, threshold=0.40):
 
 def is_domestic_news(title, summary, source):
     text = (title + " " + " ".join(summary)).lower()
-    dom_count = sum(1 for kw in ["한국", "국내", "정부", "서울", "금융위", "sk", "삼성", "현대", "korea"] if kw in text)
-    glob_count = sum(1 for kw in ["미국", "유럽", "eu", "글로벌", "해외", "바이든", "트럼프", "중국"] if kw in text)
-    if dom_count > 0 and dom_count >= glob_count: return True
-    elif glob_count > 0: return False
-    return source == "임팩트온"
+    domestic_keywords = [
+        "국내", "서울", "코스피", "코스닥", "원전", "반도체", "전력",
+        "에너지", "정책", "금융", "정부", "산업", "기업", "수출", "주가",
+        "한국"
+    ]
+    global_keywords = [
+        "global", "us ", "u.s.", "fed", "ecb", "europe", "eu",
+        "china", "india", "climate", "carbon", "cop"
+    ]
+    dom_count = sum(1 for kw in domestic_keywords if kw in text)
+    glob_count = sum(1 for kw in global_keywords if kw in text)
+    if dom_count == glob_count:
+        return False
+    return dom_count > glob_count
 
 def fetch_text(url, timeout=15):
     with urllib.request.urlopen(urllib.request.Request(url, headers=HEADERS), timeout=timeout) as response:
@@ -335,6 +432,86 @@ def fetch_text(url, timeout=15):
 
 def strip_tags(raw_html):
     return normalize_space(html.unescape(re.sub(r"<[^>]+>", " ", re.sub(r"<(script|style)\b[^>]*>.*?</\1>", " ", raw_html, flags=re.IGNORECASE | re.DOTALL))))
+
+def truncate_text(text, limit=90):
+    text = normalize_space(text)
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 1)].rstrip() + "…"
+
+def brief_company_overview(raw_text, stock_name="", limit=None):
+    text = normalize_space(raw_text)
+    if not text:
+        return f"{stock_name} 관련 기업개요를 확인해 주세요." if stock_name else "기업개요를 확인해 주세요."
+
+    text = re.sub(r"(기업개요|테마 관련|테마관련|관련주|수혜주|관련 원인|기업 해설)", " ", text)
+    text = re.sub(r"\s+", " ", text).strip(" ,·/-")
+    if stock_name and stock_name not in text:
+        text = f"{stock_name} {text}"
+    return truncate_text(text, limit) if limit else text
+
+def parse_datetime_string(text):
+    if not text:
+        return None
+    text = normalize_space(text)
+    for candidate in (text, text.replace("Z", "+00:00")):
+        try:
+            dt = parsedate_to_datetime(candidate)
+            if dt is not None:
+                return dt.astimezone(KST)
+        except Exception:
+            pass
+        try:
+            dt = datetime.fromisoformat(candidate)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=KST)
+            return dt.astimezone(KST)
+        except Exception:
+            pass
+    return None
+
+def extract_feed_item_date(item):
+    for tag_name in ("pubdate", "published", "updated", "date", "dc:date"):
+        tag = item.find(tag_name)
+        if not tag or not tag.text:
+            continue
+        dt = parse_datetime_string(tag.text)
+        if dt:
+            return dt
+    return None
+
+def extract_feed_item_link(item):
+    link_tag = item.find("link")
+    if not link_tag:
+        return ""
+    href = link_tag.get("href", "").strip()
+    if href:
+        return href
+    return normalize_space(link_tag.text)
+
+def extract_feed_item_title(item):
+    title_tag = item.find("title")
+    if not title_tag:
+        return ""
+    return normalize_space(title_tag.text)
+
+def extract_html_datetime(text):
+    if not text:
+        return None
+    for pattern in [
+        r'property=["\']article:published_time["\'][^>]*content=["\']([^"\']+)["\']',
+        r'property=["\']article:modified_time["\'][^>]*content=["\']([^"\']+)["\']',
+        r'name=["\']pubdate["\'][^>]*content=["\']([^"\']+)["\']',
+        r'name=["\']date["\'][^>]*content=["\']([^"\']+)["\']',
+        r'"datePublished"\s*:\s*"([^"]+)"',
+        r'"dateModified"\s*:\s*"([^"]+)"',
+        r'<time[^>]*datetime=["\']([^"\']+)["\']',
+    ]:
+        for candidate in re.findall(pattern, text, flags=re.IGNORECASE):
+            dt = parse_datetime_string(candidate)
+            if dt:
+                return dt
+    return None
 
 def make_three_line_summary(title, raw_text="", source="", context=""):
     title = normalize_space(title)
@@ -372,33 +549,41 @@ class ArticleLinkParser(HTMLParser):
         if self._capture_depth == 0 and self._href:
             self.links.append((normalize_space(html.unescape(" ".join(self._text_parts))), self._href))
 
+def extract_impact_date(article_html):
+    dt = extract_html_datetime(article_html)
+    return dt.strftime("%Y.%m.%d") if dt else None
+
 # --- News Fetching Logic ---
 def fetch_global_impact(target_date, seen_links, seen_titles):
     target_dot = target_date.strftime("%Y.%m.%d")
     global_news = []
     for source_name, feed_url in GLOBAL_IMPACT_FEEDS:
         try:
-            soup = BeautifulSoup(fetch_text(feed_url), 'html.parser')
+            feed_text = fetch_text(feed_url)
+            soup = BeautifulSoup(feed_text, 'html.parser')
             items = soup.find_all(["item", "entry"])
             count = 0
             for item in items:
-                if count >= 2: break
-                title = normalize_space(item.find("title").text if item.find("title") else "")
-                link_tag = item.find("link")
-                link = link_tag.text.strip() if link_tag and link_tag.text else (link_tag.get("href", "") if link_tag else "")
-                date_tag = item.find("pubdate") or item.find("updated") or item.find("date")
+                if count >= MAX_GLOBAL_IMPACT_NEWS_PER_SOURCE: break
+                title = extract_feed_item_title(item)
+                link = extract_feed_item_link(item)
+                date_tag = extract_feed_item_date(item)
                 
-                if not title or not link or not date_tag: continue
-                try:
-                    try: pub_dt = parsedate_to_datetime(date_tag.text).astimezone(KST)
-                    except: pub_dt = datetime.fromisoformat(date_tag.text.replace("Z", "+00:00")).astimezone(KST)
-                    if pub_dt.strftime("%Y.%m.%d") != target_dot: continue
-                except: continue
+                if not title or not link: continue
+                if date_tag and date_tag.strftime("%Y.%m.%d") != target_dot: continue
+                if not date_tag:
+                    article_dt = None
+                    try:
+                        article_dt = extract_html_datetime(fetch_text(link))
+                    except Exception:
+                        pass
+                    if article_dt and article_dt.strftime("%Y.%m.%d") != target_dot:
+                        continue
                     
                 if any(is_similar_title(title, st) for st in seen_titles) or link in seen_links: continue
                 
                 desc_tag = item.find("description") or item.find("summary") or item.find("content")
-                summary = make_three_line_summary(title, strip_tags(desc_tag.text if desc_tag else ""), source_name, "글로벌 기후테크 최신 동향입니다.")
+                summary = make_three_line_summary(title, strip_tags(desc_tag.text if desc_tag else ""), source_name, "글로벌 기후/임팩트 최신 동향입니다.")
                 
                 seen_links.add(link); seen_titles.append(title)
                 global_news.append({"title": title, "link": link, "date": target_dot, "source": source_name, "summary": summary})
@@ -600,6 +785,12 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
             color: var(--text-main);
             line-height: 1.2;
             margin-bottom: 8px;
+        }}
+        .dash-flow {{
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            line-height: 1.45;
+            margin-top: 2px;
         }}
         .sparkline-container {{
             width: 100%;
@@ -994,6 +1185,7 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
             <div class="dash-value" style="font-size:1.1rem; font-family:'Outfit';">
                 {dashboard['kospi_info']} / {dashboard['kosdaq_info']}
             </div>
+            <div class="dash-flow">코스피: {dashboard['kospi_flow']}<br>코스닥: {dashboard['kosdaq_flow']}</div>
             <div class="sparkline-container" id="sparkline-kospi"></div>
         </div>
         <div class="dash-card purple" onclick="activateThemeTab()" style="cursor:pointer;">
@@ -1050,7 +1242,7 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
                 <span class="theme-rate-badge">{strong_theme['rate']}</span>
             </div>
             
-            <div class="theme-subtitle">💡 테마 설명 및 상승 원인</div>
+            <div class="theme-subtitle">💡 테마 개요</div>
             <div class="theme-desc-box">{strong_theme['desc']}</div>
             
             <div class="theme-subtitle">💎 주요 대장 종목 Top 5</div>
@@ -1061,7 +1253,7 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
                             <th style="width: 20%;">종목명</th>
                             <th style="width: 15%;">현재가</th>
                             <th style="width: 15%;">등락률</th>
-                            <th style="width: 50%;">테마 관련 원인 / 기업 해설</th>
+                            <th style="width: 50%;">기업 해설</th>
                         </tr>
                     </thead>
                     <tbody>
