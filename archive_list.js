@@ -1,1 +1,1 @@
-const archiveDates = ["2026-06-01"];
+const archiveDates = ["2026-06-04", "2026-06-02", "2026-06-01"];
