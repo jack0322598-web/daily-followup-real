@@ -1,11 +1,14 @@
 import argparse
 import html
+import imaplib
 import json
 import re
 import time
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
+from email import message_from_bytes
+from email.header import decode_header
 from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from pathlib import Path
@@ -21,6 +24,7 @@ except ImportError:  # pragma: no cover - fallback for bundled runtime
 KST = timezone(timedelta(hours=9))
 BASE_DIR = Path(__file__).resolve().parent
 OUTPUT_FILE = BASE_DIR / "index.html"
+SHARE_OUTPUT_FILE = BASE_DIR / "share_index.html"
 ARCHIVE_JS_FILE = BASE_DIR / "archive_list.js"
 
 HEADERS = {
@@ -55,8 +59,6 @@ SUMMARY_LINE_COUNT = 3
 SUMMARY_MAX_CHARS = 110
 
 GLOBAL_IMPACT_FEEDS = [
-    ("Trellis Network", "https://www.trellis.net/feed/"),
-    ("CTVC", "https://www.ctvc.co/feed/"),
     ("Powerstack", "https://powerstack.sightlineclimate.com/feed/"),
     ("ImpactAlpha", "https://impactalpha.com/feed/")
 ]
@@ -123,7 +125,7 @@ SEARCH_SECTIONS = [
     },
 ]
 
-NAV_SECTIONS = (("theme", "🔥 강세테마"), ("macro", "거시경제"), ("ai", "AI"), ("vcac", "VC/AC"), ("impact", "임팩트"))
+NAV_SECTIONS = (("impact", "임팩트"), ("vcac", "VC/AC"), ("ai", "AI"), ("macro", "거시경제"), ("theme", "🔥 강세테마"))
 
 # ==========================================
 # 🌟 금융 지표 30일 추이 데이터 수집 (Yahoo Finance API 활용)
@@ -205,22 +207,52 @@ def parse_market_flow_from_html(html_text, market_name):
     return "개인/외국인/기관 수급을 불러오지 못했습니다."
 
 def fetch_market_flows():
-    result = {"KOSPI": "개인/외국인/기관 수급을 불러오지 못했습니다.", "KOSDAQ": "개인/외국인/기관 수급을 불러오지 못했습니다."}
-    candidate_urls = [
-        "https://finance.naver.com/sise/",
-        "https://finance.naver.com/sise/sise_index.naver?code=KOSPI",
-        "https://finance.naver.com/sise/sise_index.naver?code=KOSDAQ",
-    ]
-    for market_name in ("KOSPI", "KOSDAQ"):
-        for url in candidate_urls:
-            try:
-                html_text = http_get_text(url, timeout=10, encoding="euc-kr")
-                parsed = parse_market_flow_from_html(html_text, market_name)
-                if "불러오지 못했습니다" not in parsed:
-                    result[market_name] = parsed
-                    break
-            except Exception:
+    result = {
+        "KOSPI": "개인/외국인/기관 수급을 불러오지 못했습니다.",
+        "KOSDAQ": "개인/외국인/기관 수급을 불러오지 못했습니다.",
+    }
+
+    try:
+        html_text = http_get_text("https://finance.naver.com/sise/", timeout=10, encoding="euc-kr")
+        soup = BeautifulSoup(html_text, "html.parser")
+        mapping = {
+            "KOSPI": "tab_sel1_deal_trend",
+            "KOSDAQ": "tab_sel2_deal_trend",
+        }
+        for market_name, element_id in mapping.items():
+            ul = soup.select_one(f"ul#{element_id}")
+            if not ul:
                 continue
+            values = {}
+            for li in ul.select("li"):
+                title_node = li.select_one(".tit")
+                value_node = li.select_one(".val em")
+                if not title_node or not value_node:
+                    continue
+                title = normalize_space(title_node.get_text(" ", strip=True))
+                value = normalize_space(value_node.get_text(" ", strip=True))
+                if title in {"개인", "외국인", "기관"}:
+                    values[title] = value
+            if {"개인", "외국인", "기관"} <= set(values):
+                result[market_name] = f"개인 {values['개인']} / 외국인 {values['외국인']} / 기관 {values['기관']}"
+    except Exception:
+        pass
+
+    for market_name in ("KOSPI", "KOSDAQ"):
+        if "불러오지 못했습니다" in result[market_name]:
+            for url in (
+                "https://finance.naver.com/sise/",
+                "https://finance.naver.com/sise/sise_index.naver?code=KOSPI",
+                "https://finance.naver.com/sise/sise_index.naver?code=KOSDAQ",
+            ):
+                try:
+                    html_text = http_get_text(url, timeout=10, encoding="euc-kr")
+                    parsed = parse_market_flow_from_html(html_text, market_name)
+                    if "불러오지 못했습니다" not in parsed:
+                        result[market_name] = parsed
+                        break
+                except Exception:
+                    continue
     return result
 
 # ==========================================
@@ -357,9 +389,7 @@ def fetch_strong_theme():
                     query = urllib.parse.quote(f"({theme_name}) -블로그 -카페 -blog -cafe when:2d")
                     rss_text = fetch_text(f"https://news.google.com/rss/search?q={query}&hl=ko&gl=KR")
                     for item in ElementTree.fromstring(rss_text).findall(".//item")[:3]:
-                        title = normalize_space(item.findtext("title", ""))
-                        if " - " in title: 
-                            title = title.rsplit(" - ", 1)[0].strip()
+                        title, source_name = parse_google_news_item(item)
                         link = item.findtext("link", "")
                         try:
                             pub_date = parsedate_to_datetime(item.findtext("pubDate", "")).astimezone(KST).strftime("%Y.%m.%d")
@@ -370,9 +400,9 @@ def fetch_strong_theme():
                         news_list.append({
                             "title": title,
                             "link": link,
-                            "source": "구글뉴스",
+                            "source": source_name,
                             "date": pub_date,
-                            "summary": make_three_line_summary(title, strip_tags(desc_text), "Google News", f"{theme_name} 테마 관련 뉴스입니다.")
+                            "summary": make_three_line_summary(title, strip_tags(desc_text), source_name, f"{theme_name} theme coverage.")
                         })
                 except Exception as ne:
                     print(f"Theme News Error for {theme_name}: {ne}")
@@ -397,6 +427,46 @@ def get_target_date(date_arg=None):
     return datetime.strptime(date_arg.strip().replace(".", "-"), "%Y-%m-%d").date()
 
 def normalize_space(text): return re.sub(r"\s+", " ", text or "").strip()
+
+def split_google_news_title(raw_title):
+    title = normalize_space(raw_title)
+    source = "Google News"
+    if " - " in title:
+        head, tail = title.rsplit(" - ", 1)
+        if head.strip() and tail.strip():
+            title = head.strip()
+            source = tail.strip()
+    return title, source
+
+def parse_google_news_item(item):
+    raw_title = item.findtext("title", "")
+    title, fallback_source = split_google_news_title(raw_title)
+    source_name = normalize_space(item.findtext("source", "")) or fallback_source
+    return title, source_name
+
+def normalize_source_name(source_name):
+    source_name = normalize_space(source_name)
+    source_map = {
+        "v.daum.net": "파이낸셜뉴스",
+    }
+    return source_map.get(source_name, source_name)
+
+def should_skip_search_item(section_id, category_name, source_name):
+    normalized = normalize_source_name(source_name)
+    if section_id == "macro" and category_name == "외교" and normalized == "브런치":
+        return True
+    return False
+
+def build_shareable_html(html_text):
+    html_text = html_text.replace('<script src="archive_list.js"></script>', "")
+    html_text = re.sub(
+        r'\s*<div class="archive-picker">.*?</div>\s*</div>',
+        '\n    </div>',
+        html_text,
+        count=1,
+        flags=re.DOTALL,
+    )
+    return html_text
 
 def is_valid_vcac_title(title):
     t = title.replace(" ", "").lower()
@@ -517,8 +587,10 @@ def make_three_line_summary(title, raw_text="", source="", context=""):
     title = normalize_space(title)
     lines, seen = [], set()
     text = strip_tags(raw_text)
+    text = re.sub(r"\bv\.daum\.net\b", "파이낸셜뉴스", text, flags=re.IGNORECASE)
     text = re.sub(r"([.!?])\s+", r"\1|", text)
     for sentence in [normalize_space(p) for p in text.split("|") if normalize_space(p)]:
+        sentence = re.sub(r"\bv\.daum\.net\b", "파이낸셜뉴스", sentence, flags=re.IGNORECASE)
         if len(sentence) < 15 or any(k in sentence.lower() for k in SUMMARY_SKIP_KEYWORDS) or sentence in title: continue
         key = sentence.casefold()
         if key not in seen:
@@ -552,6 +624,171 @@ class ArticleLinkParser(HTMLParser):
 def extract_impact_date(article_html):
     dt = extract_html_datetime(article_html)
     return dt.strftime("%Y.%m.%d") if dt else None
+
+def decode_mime_header(value):
+    if not value:
+        return ""
+    parts = []
+    for chunk, encoding in decode_header(value):
+        if isinstance(chunk, bytes):
+            parts.append(chunk.decode(encoding or "utf-8", errors="replace"))
+        else:
+            parts.append(chunk)
+    return normalize_space("".join(parts))
+
+def extract_newsletter_items_from_html(html_text, source_name, target_dot):
+    soup = BeautifulSoup(html_text or "", "html.parser")
+    items = []
+    seen_links = set()
+    blocked = (
+        "unsubscribe",
+        "preferences",
+        "account",
+        "login",
+        "signup",
+        "instagram.com",
+        "linkedin.com",
+        "facebook.com",
+        "x.com",
+        "twitter.com",
+        "youtube.com",
+        "mailto:",
+    )
+    for anchor in soup.find_all("a", href=True):
+        link = anchor.get("href", "").strip()
+        if not link.startswith("http"):
+            continue
+        low = link.lower()
+        if any(token in low for token in blocked):
+            continue
+        title = normalize_space(anchor.get_text(" ", strip=True))
+        if len(title) < 12:
+            continue
+        if link in seen_links:
+            continue
+        seen_links.add(link)
+        parent_text = normalize_space(anchor.parent.get_text(" ", strip=True))
+        summary = make_three_line_summary(title, parent_text, source_name, f"{source_name} newsletter article.")
+        items.append({
+            "title": title,
+            "link": link,
+            "date": target_dot,
+            "source": source_name,
+            "summary": summary,
+        })
+        if len(items) >= 6:
+            break
+    return items
+
+def extract_newsletter_primary_link(html_text):
+    soup = BeautifulSoup(html_text or "", "html.parser")
+    blocked = (
+        "unsubscribe",
+        "preferences",
+        "account",
+        "login",
+        "signup",
+        "instagram.com",
+        "linkedin.com",
+        "facebook.com",
+        "x.com",
+        "twitter.com",
+        "youtube.com",
+        "mailto:",
+    )
+    for anchor in soup.find_all("a", href=True):
+        link = anchor.get("href", "").strip()
+        if not link.startswith("http"):
+            continue
+        if any(token in link.lower() for token in blocked):
+            continue
+        return link
+    return ""
+
+def fetch_newsletter_emails(gmail_user, gmail_password, target_date, seen_links, seen_titles):
+    target_dot = target_date.strftime("%Y.%m.%d")
+    source_rules = [
+        ("CTVC", lambda subject, sender: "ctvc" in sender or "ctvc" in subject or "climate tech vc" in subject),
+        ("Bloomberg Green", lambda subject, sender: "bloomberg green" in sender or "bloomberg green" in subject),
+    ]
+    collected = []
+    try:
+        mail = imaplib.IMAP4_SSL("imap.gmail.com")
+        mail.login(gmail_user, gmail_password)
+        mail.select("INBOX")
+        since = (target_date - timedelta(days=1)).strftime("%d-%b-%Y")
+        status, data = mail.search(None, f'(SINCE "{since}")')
+        if status != "OK":
+            return collected
+        for num in reversed(data[0].split()):
+            status, msg_data = mail.fetch(num, "(RFC822)")
+            if status != "OK" or not msg_data or not msg_data[0]:
+                continue
+            msg = message_from_bytes(msg_data[0][1])
+            subject = decode_mime_header(msg.get("Subject", "")).lower()
+            sender = decode_mime_header(msg.get("From", "")).lower()
+            msg_date = parse_datetime_string(msg.get("Date", ""))
+            if msg_date and msg_date.strftime("%Y.%m.%d") != target_dot:
+                continue
+
+            source_name = None
+            for candidate, matcher in source_rules:
+                if matcher(subject, sender):
+                    source_name = candidate
+                    break
+            if not source_name:
+                continue
+
+            html_body = ""
+            text_body = ""
+            if msg.is_multipart():
+                for part in msg.walk():
+                    content_type = part.get_content_type()
+                    disposition = str(part.get("Content-Disposition", ""))
+                    if "attachment" in disposition.lower():
+                        continue
+                    payload = part.get_payload(decode=True) or b""
+                    charset = part.get_content_charset() or "utf-8"
+                    decoded = payload.decode(charset, errors="replace")
+                    if content_type == "text/html" and not html_body:
+                        html_body = decoded
+                    elif content_type == "text/plain" and not text_body:
+                        text_body = decoded
+            else:
+                payload = msg.get_payload(decode=True) or b""
+                charset = msg.get_content_charset() or "utf-8"
+                decoded = payload.decode(charset, errors="replace")
+                if msg.get_content_type() == "text/html":
+                    html_body = decoded
+                else:
+                    text_body = decoded
+
+            items = extract_newsletter_items_from_html(html_body or text_body, source_name, target_dot)
+            primary_link = extract_newsletter_primary_link(html_body or text_body)
+            body_text = strip_tags(html_body) if html_body else text_body
+            subject_title = normalize_space(decode_mime_header(msg.get("Subject", "")))
+            if primary_link and len(subject_title) >= 12:
+                subject_item = {
+                    "title": subject_title,
+                    "link": primary_link,
+                    "date": target_dot,
+                    "source": source_name,
+                    "summary": make_three_line_summary(subject_title, body_text, source_name, f"{source_name} newsletter lead story.")
+                }
+                if source_name == "Bloomberg Green":
+                    items = [subject_item]
+                else:
+                    items = [subject_item] + [item for item in items if item["title"] != subject_title]
+            for item in items:
+                if item["link"] in seen_links or any(is_similar_title(item["title"], title) for title in seen_titles):
+                    continue
+                seen_links.add(item["link"])
+                seen_titles.append(item["title"])
+                collected.append(item)
+        mail.logout()
+    except Exception as e:
+        print(f"  - Newsletter fetch failed: {e}")
+    return collected
 
 # --- News Fetching Logic ---
 def fetch_global_impact(target_date, seen_links, seen_titles):
@@ -591,6 +828,221 @@ def fetch_global_impact(target_date, seen_links, seen_titles):
         except Exception as e: print(f"  - {source_name} 수집 실패: {e}")
     return global_news
 
+def parse_sitemap_entries(xml_text):
+    entries = []
+    root = ElementTree.fromstring(xml_text)
+    for url_node in root.findall(".//{*}url"):
+        loc_node = url_node.find("{*}loc")
+        if loc_node is None or not loc_node.text:
+            continue
+        lastmod_node = url_node.find("{*}lastmod")
+        news_node = url_node.find("{*}news")
+        pub_node = news_node.find("{*}publication_date") if news_node is not None else None
+        title_node = news_node.find("{*}title") if news_node is not None else None
+        entries.append({
+            "loc": loc_node.text.strip(),
+            "lastmod": lastmod_node.text.strip() if lastmod_node is not None and lastmod_node.text else "",
+            "publication_date": pub_node.text.strip() if pub_node is not None and pub_node.text else "",
+            "title": normalize_space(title_node.text) if title_node is not None and title_node.text else "",
+        })
+    return entries
+
+def should_skip_news_url(url):
+    parsed = urlparse(url)
+    path = parsed.path.lower()
+    query = parsed.query.lower()
+    if "/admin/" in path:
+        return True
+    if "/search/" in path:
+        return True
+    if "/wp-json/" in path:
+        return True
+    if "/page/" in path and "s=" in query:
+        return True
+    if "s=" in query or "rest_route=" in query:
+        return True
+    return False
+
+def extract_best_article_text(soup):
+    candidates = []
+    selectors = [
+        "#article-view-content-div",
+        "article",
+        "main",
+        "[class*='prose']",
+        "[class*='content']",
+        "[class*='article']",
+    ]
+    for selector in selectors:
+        candidates.extend(soup.select(selector))
+    if not candidates:
+        candidates = [soup.body or soup]
+    best = max(candidates, key=lambda node: len(normalize_space(node.get_text(" ", strip=True))))
+    for tag in best.find_all(["script", "style", "noscript", "svg", "iframe", "button"]):
+        tag.decompose()
+    return normalize_space(best.get_text(" ", strip=True)) or normalize_space(soup.get_text(" ", strip=True))
+
+def extract_page_title(soup):
+    meta = soup.find("meta", attrs={"property": "og:title"})
+    if meta and meta.get("content"):
+        return normalize_space(meta.get("content"))
+    if soup.title and soup.title.string:
+        return normalize_space(soup.title.string)
+    h1 = soup.find("h1")
+    if h1:
+        return normalize_space(h1.get_text(" ", strip=True))
+    return ""
+
+def extract_page_author(soup):
+    meta = soup.find("meta", attrs={"name": "author"})
+    if meta and meta.get("content"):
+        return normalize_space(meta.get("content"))
+    meta = soup.find("meta", attrs={"property": "article:author"})
+    if meta and meta.get("content"):
+        return normalize_space(meta.get("content"))
+    return ""
+
+def fetch_sitemap_news_source(source_name, sitemap_url, target_date, seen_links, seen_titles, context, limit=None, delay_seconds=2.0):
+    news_items = []
+    try:
+        sitemap_text = fetch_text(sitemap_url, timeout=20)
+        entries = parse_sitemap_entries(sitemap_text)
+        for entry in entries:
+            if limit is not None and len(news_items) >= limit:
+                break
+            link = normalize_space(entry.get("loc", ""))
+            if not link or should_skip_news_url(link) or link in seen_links:
+                continue
+            source_dt = entry.get("publication_date") or entry.get("lastmod")
+            dt = parse_datetime_string(source_dt)
+            if not dt or dt.strftime("%Y.%m.%d") != target_date.strftime("%Y.%m.%d"):
+                continue
+            try:
+                article_html = fetch_text(link, timeout=20)
+                soup = BeautifulSoup(article_html, "html.parser")
+                title = extract_page_title(soup) or entry.get("title") or link
+                body = extract_best_article_text(soup)
+                summary = make_three_line_summary(title, body, source_name, context)
+                news_items.append({
+                    "title": title,
+                    "link": link,
+                    "date": target_date.strftime("%Y.%m.%d"),
+                    "source": source_name,
+                    "summary": summary,
+                })
+                seen_links.add(link)
+                seen_titles.append(title)
+            except Exception as e:
+                print(f"  - {source_name} article failed: {e}")
+            time.sleep(delay_seconds)
+    except Exception as e:
+        print(f"  - {source_name} sitemap failed: {e}")
+    return news_items
+
+def parse_causeartist_listing_items(html_text, page_url):
+    soup = BeautifulSoup(html_text, "html.parser")
+    items = []
+    for anchor in soup.select('a[href^="/blog/"], a[href^="/case-studies/"], a[href^="/podcast/"]'):
+        href = anchor.get("href", "").strip()
+        if not href:
+            continue
+        link = urllib.parse.urljoin(page_url, href)
+        if any(skip in link for skip in ["/about", "/contact", "/privacy", "/tag/", "/companies/", "/funders/"]):
+            continue
+        title_node = anchor.select_one("span.font-semibold")
+        title = normalize_space(title_node.get_text(" ", strip=True)) if title_node else normalize_space(anchor.get_text(" ", strip=True))
+        if not title or len(title) < 5:
+            continue
+        date_text = ""
+        for span in anchor.find_all("span"):
+            span_text = normalize_space(span.get_text(" ", strip=True))
+            if re.match(r"^[A-Z][a-z]+ \d{1,2}, \d{4}$", span_text):
+                date_text = span_text
+                break
+        if not date_text:
+            continue
+        items.append({"title": title, "link": link, "date_text": date_text})
+    return items
+
+def fetch_causeartist_news(target_date, seen_links, seen_titles):
+    pages = [
+        "https://www.causeartist.com/",
+        "https://www.causeartist.com/blog",
+        "https://www.causeartist.com/case-studies",
+        "https://www.causeartist.com/podcast",
+    ]
+    news_items = []
+    seen_page_links = set()
+    for page_url in pages:
+        try:
+            page_html = fetch_text(page_url, timeout=20)
+            for item in parse_causeartist_listing_items(page_html, page_url):
+                if item["link"] in seen_page_links:
+                    continue
+                seen_page_links.add(item["link"])
+                if item["link"] in seen_links:
+                    continue
+                try:
+                    listed_dt = datetime.strptime(item["date_text"], "%b %d, %Y").date()
+                except Exception:
+                    continue
+                if listed_dt != target_date:
+                    continue
+                if any(is_similar_title(item["title"], st) for st in seen_titles):
+                    continue
+                try:
+                    article_html = fetch_text(item["link"], timeout=20)
+                    soup = BeautifulSoup(article_html, "html.parser")
+                    title = extract_page_title(soup) or item["title"]
+                    body = extract_best_article_text(soup)
+                    summary = make_three_line_summary(title, body, "Causeartist", "Global impact and sustainability content.")
+                    news_items.append({
+                        "title": title,
+                        "link": item["link"],
+                        "date": target_date.strftime("%Y.%m.%d"),
+                        "source": "Causeartist",
+                        "summary": summary,
+                    })
+                    seen_links.add(item["link"])
+                    seen_titles.append(title)
+                except Exception as e:
+                    print(f"  - Causeartist article failed: {e}")
+            time.sleep(1.5)
+        except Exception as e:
+            print(f"  - Causeartist page failed ({page_url}): {e}")
+    return news_items
+
+def fetch_trellis_news(target_date, seen_links, seen_titles):
+    try:
+        from trellis_scraper import collect_yesterday_articles
+    except Exception as e:
+        print(f"  - Trellis module failed: {e}")
+        return []
+    news_items = []
+    try:
+        articles = collect_yesterday_articles(target_date=target_date, delay_seconds=3.5, limit=None)
+        for article in articles:
+            link = article.url
+            if link in seen_links:
+                continue
+            if any(is_similar_title(article.title, st) for st in seen_titles):
+                continue
+            title = article.title or link
+            body = article.content or article.description or ""
+            summary = make_three_line_summary(title, body, "Trellis", "Global climate and impact news.")
+            news_items.append({
+                "title": title,
+                "link": link,
+                "date": target_date.strftime("%Y.%m.%d"),
+                "source": "Trellis",
+                "summary": summary,
+            })
+            seen_links.add(link)
+            seen_titles.append(title)
+    except Exception as e:
+        print(f"  - Trellis failed: {e}")
+    return news_items
+
 def fetch_search_sections(target_date, seen_links, seen_titles):
     results = []
     target_dot = target_date.strftime("%Y.%m.%d")
@@ -605,11 +1057,12 @@ def fetch_search_sections(target_date, seen_links, seen_titles):
                     rss_text = fetch_text(f"https://news.google.com/rss/search?q={query}&hl=ko&gl=KR")
                     for item in ElementTree.fromstring(rss_text).findall(".//item"):
                         if len(news_list) >= MAX_NEWS_PER_CATEGORY: break
-                        title = normalize_space(item.findtext("title", ""))
-                        if " - " in title: title = title.rsplit(" - ", 1)[0].strip()
+                        title, source_name = parse_google_news_item(item)
+                        source_name = normalize_source_name(source_name)
                         link = item.findtext("link", "")
                         
                         if section["id"] == "vcac" and not is_valid_vcac_title(title): continue
+                        if should_skip_search_item(section["id"], category["name"], source_name): continue
                             
                         try:
                             if parsedate_to_datetime(item.findtext("pubDate", "")).astimezone(KST).strftime("%Y.%m.%d") != target_dot: continue
@@ -619,8 +1072,8 @@ def fetch_search_sections(target_date, seen_links, seen_titles):
                         
                         seen_links.add(link); seen_titles.append(title)
                         news_list.append({
-                            "title": title, "link": link, "source": "구글뉴스", "date": target_dot,
-                            "summary": make_three_line_summary(title, strip_tags(item.findtext("description", "")), "Google News", category["context"])
+                            "title": title, "link": link, "source": source_name, "date": target_dot,
+                            "summary": make_three_line_summary(title, strip_tags(item.findtext("description", "")), source_name, category["context"])
                         })
                 except Exception as e: print("수집 오류:", e)
                 group_result["categories"].append({"name": category["name"], "news": news_list})
@@ -640,6 +1093,28 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
     counts["theme"] = 1 if strong_theme and strong_theme["name"] != "강세테마 대기중" else 0
 
     chart_json = json.dumps(chart_data)
+
+    def format_flow_html(flow_text):
+        parts = []
+        for piece in normalize_space(flow_text).split("/"):
+            segment = normalize_space(piece)
+            if not segment:
+                continue
+            if " " not in segment:
+                parts.append(segment)
+                continue
+            label, value = segment.split(" ", 1)
+            css_class = "neutral"
+            if value.startswith("+"):
+                css_class = "up"
+            elif value.startswith("-"):
+                css_class = "down"
+            parts.append(f'{label} <span class="flow-value {css_class}">{value}</span>')
+        return " / ".join(parts)
+
+    impact_groups = {}
+    for news in domestic_impact + global_impact:
+        impact_groups.setdefault(news["source"], []).append(news)
 
     html_content = f"""<!DOCTYPE html>
 <html lang="ko">
@@ -672,7 +1147,7 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
             font-family: 'Inter', 'Noto Sans KR', sans-serif;
             background-color: var(--bg-main);
             color: var(--text-main);
-            max-width: 1120px;
+            max-width: 1220px;
             margin: 0 auto;
             padding: 40px 18px 60px;
             line-height: 1.5;
@@ -733,12 +1208,12 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
         .dashboard-container {{
             display: grid;
             grid-template-columns: repeat(4, 1fr);
-            gap: 15px;
+            gap: 18px;
             margin-bottom: 18px;
         }}
         .dash-card {{
             background-color: var(--bg-card);
-            padding: 16px;
+            padding: 18px;
             border-radius: 16px;
             border: 1px solid var(--border-color);
             box-shadow: 0 4px 15px rgba(0,0,0,0.02);
@@ -748,7 +1223,7 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
             display: flex;
             flex-direction: column;
             justify-content: space-between;
-            min-height: 135px;
+            min-height: 148px;
         }}
         .dash-card:hover {{
             transform: translateY(-4px);
@@ -787,10 +1262,44 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
             margin-bottom: 8px;
         }}
         .dash-flow {{
-            font-size: 0.78rem;
+            font-size: 0.8rem;
             color: var(--text-muted);
-            line-height: 1.45;
+            line-height: 1.5;
             margin-top: 2px;
+        }}
+        .market-block + .market-block {{
+            margin-top: 10px;
+        }}
+        .market-label {{
+            font-size: 0.76rem;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            margin-bottom: 4px;
+        }}
+        .market-index {{
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-size: 1rem;
+            font-weight: 800;
+            color: var(--text-main);
+            line-height: 1.25;
+            margin-bottom: 4px;
+        }}
+        .flow-row {{
+            white-space: nowrap;
+        }}
+        .flow-value {{
+            font-weight: 700;
+        }}
+        .flow-value.up {{
+            color: var(--accent-red);
+        }}
+        .flow-value.down {{
+            color: var(--accent-blue);
+        }}
+        .flow-value.neutral {{
+            color: var(--text-main);
         }}
         .sparkline-container {{
             width: 100%;
@@ -1182,10 +1691,18 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
         </div>
         <div class="dash-card orange" style="cursor: pointer;" onclick="toggleMarketCharts(true)">
             <div class="dash-title">📈 코스피 / 코스닥</div>
-            <div class="dash-value" style="font-size:1.1rem; font-family:'Outfit';">
-                {dashboard['kospi_info']} / {dashboard['kosdaq_info']}
+            <div class="dash-flow">
+                <div class="market-block">
+                    <div class="market-label">코스피 지수</div>
+                    <div class="market-index">{dashboard['kospi_info']}</div>
+                    <div class="flow-row">{format_flow_html(dashboard['kospi_flow'])}</div>
+                </div>
+                <div class="market-block">
+                    <div class="market-label">코스닥 지수</div>
+                    <div class="market-index">{dashboard['kosdaq_info']}</div>
+                    <div class="flow-row">{format_flow_html(dashboard['kosdaq_flow'])}</div>
+                </div>
             </div>
-            <div class="dash-flow">코스피: {dashboard['kospi_flow']}<br>코스닥: {dashboard['kosdaq_flow']}</div>
             <div class="sparkline-container" id="sparkline-kospi"></div>
         </div>
         <div class="dash-card purple" onclick="activateThemeTab()" style="cursor:pointer;">
@@ -1231,7 +1748,7 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
     html_content += "</div>\n"
 
     # 🔥 1. 강세테마 탭 내용
-    html_content += f"""<section id="section-theme" class="content-section active">
+    html_content += f"""<section id="section-theme" class="content-section">
         <div class="section-title">국내 강세테마 분석</div>
         <div class="theme-container">
             <div class="theme-header-box">
@@ -1301,7 +1818,11 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
     """
 
     # Other categories sections
-    for idx, section in enumerate(search_sections):
+    section_map = {section["id"]: section for section in search_sections}
+    for sid in ("vcac", "ai", "macro"):
+        section = section_map.get(sid)
+        if not section:
+            continue
         html_content += f'<section id="section-{section["id"]}" class="content-section"><div class="section-title">{section["label"]}</div>\n'
         for group in section["groups"]:
             html_content += f'<div class="group-title">{group["title"]}</div>\n'
@@ -1315,10 +1836,11 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
                     html_content += "</ul></div>\n"
         html_content += "</section>\n"
 
-    html_content += '<section id="section-impact" class="content-section"><div class="section-title">글로벌 & 국내 임팩트 브리핑</div>\n'
-    for title, news_list in [("📌 국내 임팩트 뉴스", domestic_impact), ("📌 글로벌 임팩트 뉴스", global_impact)]:
-        html_content += f'<div class="sub-category">{title}</div>\n'
-        if not news_list: html_content += "<div class='no-news'>수집된 기사가 없습니다.</div>\n"
+    html_content += '<section id="section-impact" class="content-section active"><div class="section-title">임팩트 브리핑</div>\n'
+    if not impact_groups:
+        html_content += "<div class='no-news'>수집된 기사가 없습니다.</div>\n"
+    for source_name, news_list in impact_groups.items():
+        html_content += f'<div class="sub-category">📌 {source_name}</div>\n'
         for news in news_list:
             html_content += f'<div class="news-card"><div class="news-title"><a href="{news["link"]}" target="_blank">{news["title"]}</a></div>'
             html_content += f'<div class="news-date">출처: {news["source"]} | 발행일: {news["date"]}</div><ul class="news-summary">'
@@ -1470,6 +1992,44 @@ def main():
 
     # 3. 뉴스 수집
     global_impact = fetch_global_impact(target_date, seen_links, seen_titles)
+    trellis_news = fetch_trellis_news(target_date, seen_links, seen_titles)
+    causeartist_news = fetch_causeartist_news(target_date, seen_links, seen_titles)
+    socialimpact_news = fetch_sitemap_news_source(
+        "소셜임팩트뉴스",
+        "https://www.socialimpactnews.net/sitemap.xml",
+        target_date,
+        seen_links,
+        seen_titles,
+        "Korean social impact and mission-driven business news.",
+        limit=10,
+        delay_seconds=2.0,
+    )
+    eroun_news = fetch_sitemap_news_source(
+        "이로운넷",
+        "https://www.eroun.net/sitemap.xml",
+        target_date,
+        seen_links,
+        seen_titles,
+        "Korean social economy and impact ecosystem news.",
+        limit=10,
+        delay_seconds=2.0,
+    )
+
+    env = {}
+    env_path = BASE_DIR / ".env"
+    if env_path.exists():
+        for raw_line in env_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            env[key.strip()] = value.strip().strip('"').strip("'")
+
+    newsletter_news = []
+    gmail_user = env.get("GMAIL_USER", "")
+    gmail_password = env.get("GMAIL_APP_PASSWORD", "")
+    if gmail_user and gmail_password:
+        newsletter_news = fetch_newsletter_emails(gmail_user, gmail_password, target_date, seen_links, seen_titles)
     
     impact_news = []
     try:
@@ -1490,7 +2050,7 @@ def main():
             except: continue
     except: pass
 
-    all_impact = impact_news + global_impact
+    all_impact = impact_news + global_impact + trellis_news + causeartist_news + socialimpact_news + eroun_news + newsletter_news
     domestic_impact, global_impact = [], []
     for news in all_impact:
         if is_domestic_news(news["title"], news["summary"], news["source"]): domestic_impact.append(news)
@@ -1506,7 +2066,9 @@ def main():
     ARCHIVE_JS_FILE.write_text(f"const archiveDates = {json.dumps(dates)};", encoding="utf-8")
 
     html_content = render_html(target_date, domestic_impact, global_impact, search_sections, target_dash, dashboard_data, strong_theme, chart_data)
+    share_html_content = build_shareable_html(html_content)
     OUTPUT_FILE.write_text(html_content, encoding="utf-8")
+    SHARE_OUTPUT_FILE.write_text(share_html_content, encoding="utf-8")
     (BASE_DIR / f"archive_{target_dash}.html").write_text(html_content, encoding="utf-8")
     print(f"\n[Success] 완료! 대시보드가 추가된 파일이 생성되었습니다: {OUTPUT_FILE}")
 
