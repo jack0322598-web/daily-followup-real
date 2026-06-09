@@ -6,6 +6,7 @@ import re
 import time
 import urllib.parse
 import urllib.request
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from email import message_from_bytes
 from email.header import decode_header
@@ -31,25 +32,68 @@ BASE_DIR = Path(__file__).resolve().parent
 OUTPUT_FILE = BASE_DIR / "index.html"
 SHARE_OUTPUT_FILE = BASE_DIR / "share_index.html"
 ARCHIVE_JS_FILE = BASE_DIR / "archive_list.js"
+TREND_KEYWORDS_FILE = BASE_DIR / "weekly_keywords.json"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
 }
+
+def extract_charset_from_content_type(content_type):
+    match = re.search(r"charset\s*=\s*['\"]?([^;,'\"\s]+)", content_type or "", flags=re.IGNORECASE)
+    return match.group(1).strip() if match else None
+
+def decode_response_body(body, charset=None):
+    body = body or b""
+    candidates = []
+    seen = set()
+
+    def add_candidate(value):
+        value = re.sub(r"\s+", " ", str(value or "")).strip("'\" ").lower()
+        if not value or value in seen:
+            return
+        seen.add(value)
+        candidates.append(value)
+
+    add_candidate(charset)
+    head = body[:4096]
+    for match in re.findall(br"charset\s*=\s*['\"]?\s*([A-Za-z0-9._-]+)", head, flags=re.IGNORECASE):
+        try:
+            add_candidate(match.decode("ascii", errors="ignore"))
+        except Exception:
+            pass
+    for fallback in ("utf-8", "cp949", "euc-kr"):
+        add_candidate(fallback)
+
+    best_text = ""
+    best_score = None
+    for index, encoding_name in enumerate(candidates):
+        try:
+            text = body.decode(encoding_name, errors="replace")
+        except LookupError:
+            continue
+        replacement_count = text.count("\ufffd")
+        hangul_count = len(re.findall(r"[가-힣]", text))
+        suspicious_count = sum(1 for ch in text if "\u0080" <= ch <= "\u00ff")
+        score = (replacement_count * 1000 + suspicious_count - min(hangul_count, 500), index)
+        if best_score is None or score < best_score:
+            best_score = score
+            best_text = text
+
+    return best_text if best_text else body.decode("utf-8", errors="replace")
 
 def http_get_text(url, timeout=10, encoding=None):
     if requests is not None:
         res = requests.get(url, headers=HEADERS, timeout=timeout)
-        if encoding:
-            res.encoding = encoding
-            return res.text
-        return res.text
+        charset = encoding or extract_charset_from_content_type(res.headers.get("content-type", ""))
+        return decode_response_body(res.content, charset)
 
     req = urllib.request.Request(url, headers=HEADERS)
     with urllib.request.urlopen(req, timeout=timeout) as response:
         body = response.read()
-        charset = encoding or response.headers.get_content_charset() or "utf-8"
-        return body.decode(charset, errors="replace")
+        charset = encoding or response.headers.get_content_charset()
+        return decode_response_body(body, charset)
 
 def http_get_json(url, timeout=10):
     if requests is not None:
@@ -60,12 +104,99 @@ def http_get_json(url, timeout=10):
 MAX_IMPACT_NEWS = 5
 MAX_GLOBAL_IMPACT_NEWS_PER_SOURCE = 2
 MAX_NEWS_PER_CATEGORY = 3
+MAX_VCAC_NEWS_PER_SOURCE = 8
 SUMMARY_LINE_COUNT = 3
 SUMMARY_MAX_CHARS = 145
+TREND_LOOKBACK_DAYS = 7
+TREND_TITLES_PER_CATEGORY = 12
+TREND_KEYWORDS_PER_CATEGORY = 7
+TREND_REFRESH_WEEKDAY = 1  # Tuesday, because Monday's news starts the weekly cycle.
+GEMINI_KEYWORD_MODEL = "gemini-2.5-flash"
 
 GLOBAL_IMPACT_FEEDS = [
     ("Powerstack", "https://powerstack.sightlineclimate.com/feed/"),
     ("ImpactAlpha", "https://impactalpha.com/feed/")
+]
+
+IMPACTON_ALLOWED_SECTIONS = {"산업", "정책", "투자·평가", "투자.평가"}
+
+VCAC_SOURCE_PRIORITY = ("유니콘팩토리", "스타트업레시피", "플래텀", "벤처스퀘어")
+
+VCAC_BRANDING = {
+    "유니콘팩토리": ("unicorn", "https://menu.mt.co.kr/ucfactory/images/meta_unicornfactory.png"),
+    "스타트업레시피": ("recipe", "https://startuprecipe.co.kr/wp-content/uploads/2025/05/StartupRecipe_logo-removebg-preview.png"),
+    "플래텀": ("platum", "https://cdn.platum.kr/wp-content/uploads/2024/11/Platum-logo.svg"),
+    "벤처스퀘어": ("venturesquare", "https://www.venturesquare.net/wp-content/uploads/2026/04/cropped-vs-symbol-color-192x192.png"),
+}
+
+VCAC_RSS_SOURCE_CONFIGS = [
+    {
+        "source": "스타트업레시피",
+        "feeds": [
+            "https://startuprecipe.co.kr/archives/invest-newsletter/feed",
+            "https://startuprecipe.co.kr/archives/category/news/feed",
+        ],
+        "context": "스타트업레시피의 뉴스레터와 뉴스레시피 기반 스타트업 생태계 소식입니다.",
+    },
+    {
+        "source": "벤처스퀘어",
+        "feeds": [
+            "https://www.venturesquare.net/category/guide/startups/feed/",
+            "https://www.venturesquare.net/category/news-contents/news-trends/trend/feed/",
+        ],
+        "context": "벤처스퀘어의 스타트업 가이드와 스타트업 트렌드 기사입니다.",
+    },
+]
+
+VCAC_LISTING_SOURCE_CONFIGS = [
+    {
+        "source": "유니콘팩토리",
+        "pages": ["https://www.unicornfactory.co.kr/money/investment"],
+        "link_pattern": r"/article/\d+",
+        "context": "유니콘팩토리 투자·회수 섹션의 스타트업 투자 및 회수 소식입니다.",
+    },
+    {
+        "source": "플래텀",
+        "pages": ["https://platum.kr/news"],
+        "link_pattern": r"/archives/\d+",
+        "context": "플래텀 뉴스 섹션의 스타트업 생태계 소식입니다.",
+    },
+]
+
+VCAC_TREND_CATEGORIES = [
+    {
+        "name": "스타트업 투자/VC/AC",
+        "query": "(스타트업 투자유치 OR 벤처캐피탈 OR 액셀러레이터 OR 모태펀드 OR 시리즈A OR 시리즈B OR 프리IPO OR 스타트업 IPO OR 스타트업 M&A)",
+        "trend_anchor": "(스타트업 투자유치 OR 벤처캐피탈 OR 액셀러레이터 OR 모태펀드 OR 스타트업 IPO OR 스타트업 M&A)",
+        "context": "스타트업 투자, 회수, VC/AC 생태계 흐름입니다.",
+    }
+]
+
+IMPACT_TREND_CATEGORIES = [
+    {
+        "name": "ESG/지속가능경영",
+        "query": "(ESG OR 지속가능경영 OR 기후공시 OR 공급망 실사 OR RE100 OR 탄소중립)",
+        "context": "ESG와 지속가능경영 흐름입니다.",
+        "trend_anchor": "(ESG OR 지속가능경영 OR 기후공시 OR 공급망 실사)",
+    },
+    {
+        "name": "임팩트투자/소셜벤처",
+        "query": "(임팩트투자 OR 소셜벤처 OR 사회적기업 OR 사회혁신 OR 로컬임팩트)",
+        "context": "임팩트투자와 소셜벤처 생태계 흐름입니다.",
+        "trend_anchor": "(임팩트투자 OR 소셜벤처 OR 사회적기업)",
+    },
+    {
+        "name": "기후/에너지 전환",
+        "query": "(기후테크 OR 에너지 전환 OR 재생에너지 OR 배터리 재활용 OR 탄소감축)",
+        "context": "기후와 에너지 전환 관련 흐름입니다.",
+        "trend_anchor": "(기후테크 OR 에너지 전환 OR 탄소감축)",
+    },
+    {
+        "name": "글로벌 임팩트",
+        "query": "(impact investing OR climate tech OR sustainability disclosure OR blended finance OR social impact)",
+        "context": "글로벌 임팩트와 지속가능성 흐름입니다.",
+        "trend_anchor": "(impact investing OR climate tech OR sustainability)",
+    },
 ]
 
 SUMMARY_SKIP_KEYWORDS = (
@@ -76,6 +207,7 @@ SUMMARY_SKIP_KEYWORDS = (
     "기자에게 문의", "카카오톡", "페이스북", "url공유", "이메일에 공유",
     "가장작게", "가장크게", "기사 듣기", "북마크", "추천기사", "에디터 픽",
     "ai기능", "핵심요약", "추천질문", "관련종목", "ai해설",
+    "연설하고 있다", "기념촬영", "사진 제공",
 )
 BLOCKED_SOURCE_DOMAINS = ("blog.naver.com", "tistory.com", "youtube.com")
 GOOGLE_NEWS_DECODE_CACHE = {}
@@ -126,19 +258,6 @@ SEARCH_SECTIONS = [
                     {"name": "AI 인프라/비용", "query": "(AI 데이터센터 OR GPU OR 엔비디아 OR HBM OR AI 반도체 OR 전력 인프라)", "context": "AI 하드웨어 동향입니다."},
                     {"name": "AI 융합 산업", "query": "(AI 헬스케어 OR AI 의료 OR 자율주행 AI OR AI 로봇 OR 온디바이스 AI OR AI 핀테크)", "context": "AI 산업 결합 기사입니다."},
                     {"name": "규제 이슈", "query": "(AI 규제 OR AI 가이드라인 OR AI 저작권 OR AI 윤리 OR EU AI법)", "context": "AI 규제 동향입니다."},
-                ],
-            },
-        ],
-    },
-    {
-        "id": "vcac", "label": "VC/AC",
-        "groups": [
-            {
-                "title": "VC/AC",
-                "categories": [
-                    {"name": "빅딜/메가라운드", "query": "(스타트업 (시리즈C OR 시리즈D OR 메가라운드 OR 대규모 투자 유치) OR 벤처투자 대형딜)", "context": "대규모 투자 유치 소식입니다."},
-                    {"name": "신규 펀드 결성", "query": "(벤처펀드 결성 OR 벤처캐피탈 출자 OR 모태펀드 선정 OR VC 블라인드 펀드)", "context": "신규 펀드 결성 소식입니다."},
-                    {"name": "M&A 및 IPO", "query": "(스타트업 (인수합병 OR M&A OR 상장 OR IPO OR 예비심사 청구))", "context": "스타트업 회수 이벤트입니다."},
                 ],
             },
         ],
@@ -417,19 +536,24 @@ def fetch_strong_theme():
                     rss_text = fetch_text(f"https://news.google.com/rss/search?q={query}&hl=ko&gl=KR")
                     for item in ElementTree.fromstring(rss_text).findall(".//item")[:3]:
                         title, source_name = parse_google_news_item(item)
-                        link = item.findtext("link", "")
+                        source_name = normalize_source_name(source_name)
+                        google_link = item.findtext("link", "")
+                        article_link = resolve_google_news_url(google_link)
+                        link = article_link or google_link
                         try:
                             pub_date = parsedate_to_datetime(item.findtext("pubDate", "")).astimezone(KST).strftime("%Y.%m.%d")
                         except:
                             pub_date = datetime.now(KST).strftime("%Y.%m.%d")
                         
-                        desc_text = item.findtext("description", "")
+                        desc_text = strip_tags(item.findtext("description", ""))
+                        article_body = fetch_article_body_text(article_link)
+                        summary_source = article_body if len(article_body) >= 180 else desc_text
                         news_list.append({
                             "title": title,
                             "link": link,
                             "source": source_name,
                             "date": pub_date,
-                            "summary": make_three_line_summary(title, strip_tags(desc_text), source_name, f"{theme_name} theme coverage.")
+                            "summary": make_three_line_summary(title, summary_source, source_name, f"{theme_name} 관련 강세 테마 뉴스입니다.")
                         })
                 except Exception as ne:
                     print(f"Theme News Error for {theme_name}: {ne}")
@@ -448,6 +572,9 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--date", help="뉴스 수집 및 달력 표시 날짜 (YYYY-MM-DD). 기본값은 KST 기준 어제입니다.")
     parser.add_argument("--news-date", help="--date와 동일한 별칭입니다. 둘 다 있으면 --news-date가 우선합니다.")
+    parser.add_argument("--refresh-keywords", action="store_true", help="주간 트렌드 키워드를 강제로 다시 생성합니다.")
+    parser.add_argument("--skip-keyword-refresh", action="store_true", help="화요일이어도 주간 트렌드 키워드 갱신을 건너뜁니다.")
+    parser.add_argument("--refresh-keywords-only", action="store_true", help="주간 트렌드 키워드만 생성하고 브리핑 HTML은 만들지 않습니다.")
     return parser.parse_args()
 
 def parse_date_arg(date_arg):
@@ -459,6 +586,19 @@ def get_target_date(date_arg=None):
 
 def get_news_date(args):
     return get_target_date(args.news_date or args.date)
+
+def load_env():
+    env = {}
+    env_path = BASE_DIR / ".env"
+    if not env_path.exists():
+        return env
+    for raw_line in env_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        env[key.strip()] = value.strip().strip('"').strip("'")
+    return env
 
 def normalize_space(text): return re.sub(r"\s+", " ", text or "").strip()
 
@@ -524,7 +664,310 @@ def is_domestic_news(title, summary, source):
 
 def fetch_text(url, timeout=15):
     with urllib.request.urlopen(urllib.request.Request(url, headers=HEADERS), timeout=timeout) as response:
-        return response.read().decode(response.headers.get_content_charset() or "utf-8", errors="replace")
+        body = response.read()
+        return decode_response_body(body, response.headers.get_content_charset())
+
+def week_start_for(date_obj):
+    return date_obj - timedelta(days=date_obj.weekday())
+
+def trend_category_key(section_id, group_title, category_name):
+    return f"{section_id}::{group_title or section_id}::{category_name}"
+
+def iter_trend_categories():
+    for category in IMPACT_TREND_CATEGORIES:
+        yield {
+            "key": trend_category_key("impact", "임팩트", category["name"]),
+            "section_id": "impact",
+            "section_label": "임팩트",
+            "group": "임팩트",
+            "category": category["name"],
+            "query": category.get("trend_query", category["query"]),
+            "trend_anchor": category.get("trend_anchor", category["query"]),
+            "context": category["context"],
+        }
+    for category in VCAC_TREND_CATEGORIES:
+        yield {
+            "key": trend_category_key("vcac", "VC/AC", category["name"]),
+            "section_id": "vcac",
+            "section_label": "VC/AC",
+            "group": "VC/AC",
+            "category": category["name"],
+            "query": category.get("trend_query", category["query"]),
+            "trend_anchor": category.get("trend_anchor", category["query"]),
+            "context": category["context"],
+        }
+    for section in SEARCH_SECTIONS:
+        for group in section["groups"]:
+            for category in group["categories"]:
+                yield {
+                    "key": trend_category_key(section["id"], group["title"], category["name"]),
+                    "section_id": section["id"],
+                    "section_label": section["label"],
+                    "group": group["title"],
+                    "category": category["name"],
+                    "query": category.get("trend_query", category["query"]),
+                    "trend_anchor": category.get("trend_anchor", f'{section["label"]} {group["title"]} {category["name"]}'),
+                    "context": category["context"],
+                }
+
+def load_trend_keywords():
+    if not TREND_KEYWORDS_FILE.exists():
+        return {}
+    try:
+        return json.loads(TREND_KEYWORDS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+def save_trend_keywords(payload):
+    TREND_KEYWORDS_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+def normalize_keyword_list(keywords):
+    normalized = []
+    seen = set()
+    for keyword in keywords or []:
+        keyword = normalize_space(str(keyword)).strip(" ,.;:|/\\\"'")
+        if not keyword or len(keyword) < 2 or len(keyword) > 32:
+            continue
+        lowered = keyword.casefold()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        normalized.append(keyword)
+        if len(normalized) >= TREND_KEYWORDS_PER_CATEGORY:
+            break
+    return normalized
+
+def format_google_query_term(keyword):
+    keyword = normalize_space(keyword).replace('"', "")
+    if not keyword:
+        return ""
+    return f'"{keyword}"' if " " in keyword else keyword
+
+def keyword_clause(keywords):
+    terms = [format_google_query_term(keyword) for keyword in keywords]
+    terms = [term for term in terms if term]
+    return " OR ".join(terms)
+
+def get_trend_entry(trend_keywords, section_id, group_title, category_name):
+    key = trend_category_key(section_id, group_title, category_name)
+    return (trend_keywords or {}).get("categories", {}).get(key, {})
+
+def get_trend_keywords_for_category(trend_keywords, section_id, group_title, category_name):
+    entry = get_trend_entry(trend_keywords, section_id, group_title, category_name)
+    return normalize_keyword_list(entry.get("keywords", []))
+
+def enhance_query_with_trends(base_query, trend_anchor, keywords):
+    keywords = normalize_keyword_list(keywords)
+    if not keywords:
+        return base_query
+    clause = keyword_clause(keywords)
+    if not clause:
+        return base_query
+    return f"({base_query}) OR ({trend_anchor} ({clause}))"
+
+def fetch_trend_titles_for_query(query, reference_date):
+    start_date = (reference_date - timedelta(days=TREND_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
+    end_date = (reference_date + timedelta(days=1)).strftime("%Y-%m-%d")
+    encoded_query = urllib.parse.quote(f"({query}) after:{start_date} before:{end_date} -블로그 -카페 -blog -cafe")
+    titles = []
+    try:
+        rss_text = fetch_text(f"https://news.google.com/rss/search?q={encoded_query}&hl=ko&gl=KR", timeout=12)
+        for item in ElementTree.fromstring(rss_text).findall(".//item"):
+            title, source_name = parse_google_news_item(item)
+            title = normalize_space(title)
+            source_name = normalize_source_name(source_name)
+            if title and not any(is_similar_title(title, existing, threshold=0.28) for existing in titles):
+                titles.append(f"{title} ({source_name})")
+            if len(titles) >= TREND_TITLES_PER_CATEGORY:
+                break
+    except Exception as e:
+        print(f"  - trend title fetch failed: {e}")
+    return titles
+
+def collect_trend_signals(reference_date):
+    signals = []
+    for category in iter_trend_categories():
+        titles = fetch_trend_titles_for_query(category["query"], reference_date)
+        signals.append({**category, "recent_titles": titles})
+    return signals
+
+def extract_json_payload(text):
+    text = normalize_space(text)
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?", "", text, flags=re.IGNORECASE).strip()
+        text = re.sub(r"```$", "", text).strip()
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+    match = re.search(r"\{.*\}", text, flags=re.DOTALL)
+    if not match:
+        return {}
+    try:
+        return json.loads(match.group(0))
+    except Exception:
+        return {}
+
+def generate_trend_keywords_with_gemini(env, signals, reference_date):
+    api_key = env.get("GEMINI_API_KEY", "")
+    if not api_key:
+        return None
+    primary_model = env.get("GEMINI_MODEL", GEMINI_KEYWORD_MODEL)
+    model_candidates = list(dict.fromkeys([primary_model, "gemini-2.5-flash-lite"]))
+    merged_categories = {}
+
+    def call_model(signal_chunk, model):
+        prompt_payload = [
+            {
+                "key": signal["key"],
+                "section": signal["section_label"],
+                "group": signal["group"],
+                "category": signal["category"],
+                "base_query": signal["query"],
+                "recent_titles": signal["recent_titles"],
+            }
+            for signal in signal_chunk
+        ]
+        prompt = (
+            "You are improving a Korean morning market/news briefing search system. "
+            "For each category, infer this week's concrete search keywords from the recent Google News titles. "
+            "Return only valid JSON. For each category key, provide 4-7 keywords. "
+            "Prefer specific entities, countries, companies, technologies, policies, tickers, conflicts, laws, and event names. "
+            "Avoid generic category words such as 뉴스, 이슈, 전망, 시장, 투자, 경제, AI, ESG unless attached to a specific phrase. "
+            "Include Korean keywords, and include English proper nouns when they are common search terms.\n\n"
+            f"Reference news date: {reference_date.strftime('%Y-%m-%d')}\n"
+            "JSON schema: {\"categories\":{\"<key>\":{\"keywords\":[\"...\"],\"rationale\":\"short Korean reason\"}}}\n"
+            f"Categories and recent titles:\n{json.dumps(prompt_payload, ensure_ascii=False)}"
+        )
+        body = {
+            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": 0.2, "responseMimeType": "application/json"},
+        }
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{urllib.parse.quote(model)}:generateContent?key={urllib.parse.quote(api_key)}"
+        request = urllib.request.Request(
+            url,
+            data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
+            headers={**HEADERS, "Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=45) as response:
+            data = json.loads(response.read().decode("utf-8", errors="replace"))
+        text = " ".join(
+            part.get("text", "")
+            for candidate in data.get("candidates", [])
+            for part in candidate.get("content", {}).get("parts", [])
+        )
+        parsed = extract_json_payload(text)
+        return parsed.get("categories", {}) if isinstance(parsed, dict) else {}
+
+    for i in range(0, len(signals), 5):
+        chunk = signals[i:i + 5]
+        chunk_categories = {}
+        last_error = None
+        for model in model_candidates:
+            for attempt in range(3):
+                try:
+                    chunk_categories = call_model(chunk, model)
+                    if chunk_categories:
+                        break
+                except Exception as e:
+                    last_error = e
+                    time.sleep(1.5 * (attempt + 1))
+            if chunk_categories:
+                break
+        if chunk_categories:
+            merged_categories.update(chunk_categories)
+        else:
+            print(f"  - Gemini keyword chunk failed: {last_error}")
+    return {"categories": merged_categories} if merged_categories else None
+
+TREND_TOKEN_STOPWORDS = STORY_TOKEN_STOPWORDS.union({
+    "경제", "시장", "관련", "브리핑", "전망", "투자", "기업", "산업", "글로벌", "국내",
+    "미국", "한국", "중국", "유럽", "주요", "이번주", "지난주", "상승", "하락",
+    "머니투데이", "경향신문", "연합뉴스", "조선비즈", "한국경제", "매일경제", "파이낸셜뉴스",
+    "news", "google", "ai", "esg", "vc", "ipo", "m&a", "or",
+})
+
+def fallback_keywords_from_texts(texts):
+    counter = Counter()
+    for title in texts:
+        title = re.sub(r"\([^)]{1,40}\)\s*$", "", title)
+        for token in extract_story_tokens(title):
+            token = token.strip()
+            if token.casefold() in TREND_TOKEN_STOPWORDS:
+                continue
+            if token.isdigit() or len(token) < 2:
+                continue
+            counter[token] += 1
+    return [token for token, _ in counter.most_common(TREND_KEYWORDS_PER_CATEGORY)]
+
+def fallback_keywords_from_titles(titles, base_query=""):
+    keywords = fallback_keywords_from_texts(titles)
+    if len(keywords) >= 4:
+        return keywords
+    query_terms = re.sub(r"\bOR\b|[()\"']", " ", base_query, flags=re.IGNORECASE)
+    for token in fallback_keywords_from_texts([query_terms]):
+        if token not in keywords:
+            keywords.append(token)
+        if len(keywords) >= TREND_KEYWORDS_PER_CATEGORY:
+            break
+    return keywords
+
+def build_trend_keyword_payload(reference_date, signals, model_payload=None):
+    model_categories = (model_payload or {}).get("categories", {}) if isinstance(model_payload, dict) else {}
+    categories = {}
+    for signal in signals:
+        model_entry = model_categories.get(signal["key"], {}) if isinstance(model_categories, dict) else {}
+        keywords = normalize_keyword_list(model_entry.get("keywords", []))
+        source = "gemini" if keywords else "fallback"
+        if not keywords:
+            keywords = fallback_keywords_from_titles(signal["recent_titles"], signal["query"])
+        categories[signal["key"]] = {
+            "section": signal["section_label"],
+            "group": signal["group"],
+            "category": signal["category"],
+            "query": signal["query"],
+            "trend_anchor": signal["trend_anchor"],
+            "keywords": normalize_keyword_list(keywords),
+            "rationale": normalize_space(model_entry.get("rationale", ""))[:160],
+            "source": source,
+            "sample_titles": signal["recent_titles"][:5],
+        }
+    now = datetime.now(KST)
+    return {
+        "generated_at": now.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "reference_date": reference_date.strftime("%Y-%m-%d"),
+        "week_start": week_start_for(reference_date).strftime("%Y-%m-%d"),
+        "lookback_days": TREND_LOOKBACK_DAYS,
+        "model": "gemini" if model_payload else "fallback",
+        "categories": categories,
+    }
+
+def should_refresh_trend_keywords(args, target_date, existing_payload):
+    if args.skip_keyword_refresh:
+        return False
+    if args.refresh_keywords or args.refresh_keywords_only:
+        return True
+    if not existing_payload:
+        return True
+    expected_week = week_start_for(target_date).strftime("%Y-%m-%d")
+    if existing_payload.get("week_start") != expected_week:
+        return True
+    now = datetime.now(KST)
+    return now.weekday() == TREND_REFRESH_WEEKDAY and target_date == now.date() - timedelta(days=1) and existing_payload.get("reference_date") != target_date.strftime("%Y-%m-%d")
+
+def get_or_refresh_trend_keywords(args, target_date, env):
+    existing = load_trend_keywords()
+    if not should_refresh_trend_keywords(args, target_date, existing):
+        return existing
+    print("\n[Trend] 주간 카테고리 키워드 갱신 중...")
+    signals = collect_trend_signals(target_date)
+    model_payload = generate_trend_keywords_with_gemini(env, signals, target_date)
+    payload = build_trend_keyword_payload(target_date, signals, model_payload)
+    save_trend_keywords(payload)
+    keyword_count = sum(len(entry.get("keywords", [])) for entry in payload.get("categories", {}).values())
+    print(f"[Trend] 완료: {len(payload.get('categories', {}))}개 카테고리, {keyword_count}개 키워드")
+    return payload
 
 def resolve_google_news_url(url):
     if "news.google.com" not in (url or ""):
@@ -699,7 +1142,10 @@ def make_three_line_summary(title, raw_text="", source="", context=""):
         sentence = re.sub(r"\bv\.daum\.net\b", "파이낸셜뉴스", sentence, flags=re.IGNORECASE)
         sentence = re.sub(r"^[가-힣]{2,5}\s기자\s+", "", sentence)
         sentence = re.sub(r"^\([^)]{2,30}\)\s*", "", sentence)
+        sentence = re.sub(r"^\[[^\]]{2,40}\]\s*", "", sentence)
+        sentence = re.sub(r"^.{0,90}?\d{4}[-./]\d{1,2}[-./]\d{1,2}\s+[가-힣]{2,5}\s+기자\s+", "", sentence)
         sentence = re.sub(r"^[가-힣A-Za-z·.\s]{2,20}\s기자\s*=\s*", "", sentence)
+        sentence = re.sub(r"^[가-힣A-Za-z·.\s]{2,40}\s제공\s+", "", sentence)
         sentence = re.sub(r"^(송고|입력|수정)\s+\d{4}[-./년\s]\d{1,2}.*", "", sentence)
         if source:
             sentence = normalize_space(re.sub(rf"\s*[-|]?\s*{re.escape(source)}\s*$", "", sentence, flags=re.IGNORECASE))
@@ -761,6 +1207,23 @@ class ArticleLinkParser(HTMLParser):
 def extract_impact_date(article_html):
     dt = extract_html_datetime(article_html)
     return dt.strftime("%Y.%m.%d") if dt else None
+
+def extract_impacton_section(soup):
+    meta = soup.find("meta", attrs={"property": "article:section"})
+    if meta and meta.get("content"):
+        return normalize_space(meta.get("content"))
+    header = soup.select_one(".article-view-header")
+    if not header:
+        return ""
+    for link in header.find_all("a"):
+        text = normalize_space(link.get_text(" ", strip=True))
+        if text and text != "홈":
+            return text
+    return ""
+
+def is_allowed_impacton_section(soup):
+    section = extract_impacton_section(soup)
+    return section in IMPACTON_ALLOWED_SECTIONS
 
 def decode_mime_header(value):
     if not value:
@@ -1008,6 +1471,8 @@ def clean_article_text(text):
         (r"기사 제공처\s*:\s*[^./|]{0,80}", ""),
         (r"등록기자\s*:\s*[^./|]{0,80}", ""),
         (r"\[\s*기자에게 문의하기\s*\]", ""),
+        (r"\[?\s*이\s*기사에\s*나온\s*스타트업에\s*대한\s*보다\s*다양한\s*기업정보는.*?데이터랩.*?볼\s*수\s*있습니다\.?\s*\]?", ""),
+        (r"이메일로\s*만나보는\s*스타트업을\s*위한\s*레시피", ""),
         (r"기자\s+이름을\s+클릭하면\s+더\s+자세한\s+정보를\s+확인할\s+수\s+있어요!?", ""),
         (r"카카오톡\s+페이스북\s+엑스\s+URL공유", ""),
         (r"가장작게\s+작게\s+기본\s+크게\s+가장크게", ""),
@@ -1084,9 +1549,11 @@ def extract_best_article_text(soup):
     structured_text = extract_structured_article_text(soup)
 
     priority_selectors = [
+        "#article",
         "#article-view-content-div",
         "#news_body",
         "[itemprop='articleBody']",
+        ".entry-content",
         ".article_view",
         ".news_view",
         ".news_detail_wrap",
@@ -1220,6 +1687,247 @@ def fetch_sitemap_news_source(source_name, sitemap_url, target_date, seen_links,
         print(f"  - {source_name} sitemap failed: {e}")
     return news_items
 
+def clean_tracking_url(url):
+    if not url:
+        return ""
+    try:
+        parts = urllib.parse.urlsplit(url)
+        query_pairs = urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
+        cleaned_pairs = [
+            (key, value)
+            for key, value in query_pairs
+            if not key.lower().startswith("utm_") and key.lower() not in {"fbclid", "gclid", "yclid"}
+        ]
+        return urllib.parse.urlunsplit((
+            parts.scheme,
+            parts.netloc,
+            parts.path,
+            urllib.parse.urlencode(cleaned_pairs, doseq=True),
+            "",
+        ))
+    except Exception:
+        return url
+
+def clean_source_article_title(title, source_name):
+    title = normalize_space(title)
+    suffixes = [
+        f" - {source_name}",
+        " - 유니콘팩토리",
+        " - 플래텀",
+        " - 뉴스레터로 만나는 스타트업 투자 리포트 ‘스타트업레시피’",
+        " - 뉴스레터로 만나는 스타트업 투자 리포트 '스타트업레시피'",
+    ]
+    for suffix in suffixes:
+        if title.endswith(suffix):
+            title = title[: -len(suffix)]
+    return normalize_space(title)
+
+def xml_local_name(tag):
+    return str(tag).rsplit("}", 1)[-1].lower()
+
+def xml_child_text(node, *names):
+    wanted = {name.lower() for name in names}
+    for child in list(node):
+        if xml_local_name(child.tag) in wanted and child.text:
+            return normalize_space(child.text)
+    return ""
+
+def parse_rss_feed_items(feed_text):
+    items = []
+    try:
+        root = ElementTree.fromstring(feed_text.lstrip("\ufeff"))
+    except Exception:
+        return items
+    for node in root.iter():
+        if xml_local_name(node.tag) not in {"item", "entry"}:
+            continue
+        title = xml_child_text(node, "title")
+        link = ""
+        for child in list(node):
+            if xml_local_name(child.tag) != "link":
+                continue
+            href = child.attrib.get("href", "").strip()
+            link = href or normalize_space(child.text or "")
+            if link:
+                break
+        date_text = xml_child_text(node, "pubdate", "published", "updated", "date")
+        desc_text = xml_child_text(node, "description", "summary", "encoded", "content")
+        categories = [
+            normalize_space(child.text or "")
+            for child in list(node)
+            if xml_local_name(child.tag) == "category" and child.text
+        ]
+        items.append({
+            "title": title,
+            "link": link,
+            "date": parse_datetime_string(date_text),
+            "description": desc_text,
+            "categories": categories,
+        })
+    return items
+
+def collect_listing_article_links(page_url, link_pattern):
+    items = []
+    seen = set()
+    try:
+        page_html = fetch_text(page_url, timeout=20)
+        soup = BeautifulSoup(page_html, "html.parser")
+        for anchor in soup.find_all("a", href=True):
+            href = anchor.get("href", "").strip()
+            if not href or href.startswith(("javascript:", "mailto:", "#")):
+                continue
+            link = clean_tracking_url(urllib.parse.urljoin(page_url, href))
+            if not re.search(link_pattern, urllib.parse.urlparse(link).path):
+                continue
+            if link in seen:
+                continue
+            title = normalize_space(anchor.get_text(" ", strip=True))
+            title = re.sub(r"^기사\s*이미지\s*", "", title)
+            title = re.sub(r"^기사이미지\s*\d*\s*", "", title)
+            title = re.sub(r"^\d+\s*", "", title)
+            if len(title) < 6:
+                continue
+            seen.add(link)
+            items.append({"title": title, "link": link})
+    except Exception as e:
+        print(f"  - VC/AC listing failed ({page_url}): {e}")
+    return items
+
+def build_vcac_news_item(source_name, title, link, target_date, seen_links, seen_titles, context, desc_text="", story_cache=None, require_article_date=True):
+    target_dot = target_date.strftime("%Y.%m.%d")
+    link = clean_tracking_url(link)
+    title = clean_source_article_title(title, source_name)
+    if not title or not link or link in seen_links:
+        return None
+    if any(is_similar_title(title, st) for st in seen_titles):
+        return None
+
+    article_html = ""
+    soup = None
+    article_dt = None
+    try:
+        article_html = fetch_text(link, timeout=20)
+        article_dt = extract_html_datetime(article_html)
+        soup = BeautifulSoup(article_html, "html.parser")
+    except Exception as e:
+        print(f"  - {source_name} article fetch failed: {e}")
+
+    if require_article_date:
+        if not article_dt or article_dt.strftime("%Y.%m.%d") != target_dot:
+            return None
+    elif article_dt and article_dt.strftime("%Y.%m.%d") != target_dot:
+        return None
+
+    body = extract_best_article_text(soup) if soup else ""
+    if soup:
+        title = clean_source_article_title(extract_page_title(soup) or title, source_name)
+    summary_source = body if len(body) >= 180 else desc_text
+    if story_cache is not None and any(
+        is_duplicate_story(title, summary_source, cached["title"], cached["text"])
+        for cached in story_cache
+    ):
+        return None
+
+    seen_links.add(link)
+    seen_titles.append(title)
+    if story_cache is not None:
+        story_cache.append({"title": title, "text": summary_source})
+    return {
+        "title": title,
+        "link": link,
+        "date": target_dot,
+        "source": source_name,
+        "summary": make_three_line_summary(title, summary_source, source_name, context),
+    }
+
+def fetch_vcac_rss_source(config, target_date, seen_links, seen_titles):
+    source_name = config["source"]
+    context = config["context"]
+    target_dot = target_date.strftime("%Y.%m.%d")
+    news_items = []
+    story_cache = []
+    for feed_url in config["feeds"]:
+        if len(news_items) >= MAX_VCAC_NEWS_PER_SOURCE:
+            break
+        try:
+            feed_text = fetch_text(feed_url, timeout=20)
+            for item in parse_rss_feed_items(feed_text):
+                if len(news_items) >= MAX_VCAC_NEWS_PER_SOURCE:
+                    break
+                title = item["title"]
+                link = clean_tracking_url(item["link"])
+                if not title or not link:
+                    continue
+                date_tag = item["date"]
+                if date_tag and date_tag.strftime("%Y.%m.%d") != target_dot:
+                    continue
+                desc_text = strip_tags(item.get("description", ""))
+                news_item = build_vcac_news_item(
+                    source_name,
+                    title,
+                    link,
+                    target_date,
+                    seen_links,
+                    seen_titles,
+                    context,
+                    desc_text=desc_text,
+                    story_cache=story_cache,
+                    require_article_date=not bool(date_tag),
+                )
+                if news_item:
+                    news_items.append(news_item)
+                time.sleep(0.8)
+        except Exception as e:
+            print(f"  - {source_name} RSS failed ({feed_url}): {e}")
+    return dedupe_news_items(news_items)
+
+def fetch_vcac_listing_source(config, target_date, seen_links, seen_titles):
+    source_name = config["source"]
+    context = config["context"]
+    news_items = []
+    story_cache = []
+    for page_url in config["pages"]:
+        if len(news_items) >= MAX_VCAC_NEWS_PER_SOURCE:
+            break
+        for item in collect_listing_article_links(page_url, config["link_pattern"]):
+            if len(news_items) >= MAX_VCAC_NEWS_PER_SOURCE:
+                break
+            news_item = build_vcac_news_item(
+                source_name,
+                item["title"],
+                item["link"],
+                target_date,
+                seen_links,
+                seen_titles,
+                context,
+                story_cache=story_cache,
+                require_article_date=True,
+            )
+            if news_item:
+                news_items.append(news_item)
+            time.sleep(0.8)
+    return dedupe_news_items(news_items)
+
+def fetch_vcac_sources(target_date, seen_links, seen_titles):
+    source_news = {source_name: [] for source_name in VCAC_SOURCE_PRIORITY}
+    for config in VCAC_LISTING_SOURCE_CONFIGS:
+        source_news[config["source"]] = fetch_vcac_listing_source(config, target_date, seen_links, seen_titles)
+    for config in VCAC_RSS_SOURCE_CONFIGS:
+        source_news[config["source"]] = fetch_vcac_rss_source(config, target_date, seen_links, seen_titles)
+    return {
+        "id": "vcac",
+        "label": "VC/AC",
+        "groups": [
+            {
+                "title": "VC/AC",
+                "categories": [
+                    {"name": source_name, "news": source_news.get(source_name, [])}
+                    for source_name in VCAC_SOURCE_PRIORITY
+                ],
+            }
+        ],
+    }
+
 def parse_causeartist_listing_items(html_text, page_url):
     soup = BeautifulSoup(html_text, "html.parser")
     items = []
@@ -1324,59 +2032,83 @@ def fetch_trellis_news(target_date, seen_links, seen_titles):
         print(f"  - Trellis failed: {e}")
     return news_items
 
-def fetch_search_sections(target_date, seen_links, seen_titles):
-    results = []
+def fetch_google_news_for_category(target_date, section_id, group_title, category, trend_keywords, seen_links, seen_titles, limit=MAX_NEWS_PER_CATEGORY, forced_source=None):
+    news_list = []
+    category_story_cache = []
     target_dot = target_date.strftime("%Y.%m.%d")
     start_date = target_date.strftime("%Y-%m-%d")
     end_date = (target_date + timedelta(days=1)).strftime("%Y-%m-%d")
+    dynamic_keywords = get_trend_keywords_for_category(trend_keywords, section_id, group_title, category["name"])
+    trend_anchor = category.get("trend_anchor") or category.get("trend_query") or f"{group_title} {category['name']}"
+    enhanced_query = enhance_query_with_trends(category["query"], trend_anchor, dynamic_keywords)
+    try:
+        query = urllib.parse.quote(
+            f"({enhanced_query}) after:{start_date} before:{end_date} -블로그 -카페 -blog -cafe"
+        )
+        rss_text = fetch_text(f"https://news.google.com/rss/search?q={query}&hl=ko&gl=KR")
+        for item in ElementTree.fromstring(rss_text).findall(".//item"):
+            if len(news_list) >= limit:
+                break
+            title, source_name = parse_google_news_item(item)
+            source_name = normalize_source_name(source_name)
+            google_link = item.findtext("link", "")
+            article_link = resolve_google_news_url(google_link)
+            link = article_link or google_link
+            
+            if section_id == "vcac" and not is_valid_vcac_title(title):
+                continue
+            if should_skip_search_item(section_id, category["name"], source_name):
+                continue
+                
+            try:
+                if parsedate_to_datetime(item.findtext("pubDate", "")).astimezone(KST).strftime("%Y.%m.%d") != target_dot:
+                    continue
+            except:
+                continue
+
+            desc_text = strip_tags(item.findtext("description", ""))
+            if link in seen_links or google_link in seen_links or any(is_similar_title(title, st) for st in seen_titles):
+                continue
+            article_body = fetch_article_body_text(article_link)
+            summary_source = article_body if len(article_body) >= 180 else desc_text
+            if any(
+                is_duplicate_story(title, summary_source, cached["title"], cached["text"])
+                for cached in category_story_cache
+            ):
+                continue
+
+            seen_links.add(link)
+            seen_links.add(google_link)
+            seen_titles.append(title)
+            category_story_cache.append({"title": title, "text": summary_source})
+            news_list.append({
+                "title": title,
+                "link": link,
+                "source": forced_source or source_name,
+                "date": target_dot,
+                "summary": make_three_line_summary(title, summary_source, source_name, category["context"])
+            })
+    except Exception as e:
+        print("수집 오류:", e)
+    return dedupe_news_items(news_list)
+
+def fetch_search_sections(target_date, seen_links, seen_titles, trend_keywords=None):
+    results = [fetch_vcac_sources(target_date, seen_links, seen_titles)]
     for section in SEARCH_SECTIONS:
         section_result = {"id": section["id"], "label": section["label"], "groups": []}
         for group in section["groups"]:
             group_result = {"title": group["title"], "categories": []}
             for category in group["categories"]:
-                news_list = []
-                category_story_cache = []
-                try:
-                    query = urllib.parse.quote(
-                        f"({category['query']}) after:{start_date} before:{end_date} -블로그 -카페 -blog -cafe"
-                    )
-                    rss_text = fetch_text(f"https://news.google.com/rss/search?q={query}&hl=ko&gl=KR")
-                    for item in ElementTree.fromstring(rss_text).findall(".//item"):
-                        if len(news_list) >= MAX_NEWS_PER_CATEGORY: break
-                        title, source_name = parse_google_news_item(item)
-                        source_name = normalize_source_name(source_name)
-                        google_link = item.findtext("link", "")
-                        article_link = resolve_google_news_url(google_link)
-                        link = article_link or google_link
-                        
-                        if section["id"] == "vcac" and not is_valid_vcac_title(title): continue
-                        if should_skip_search_item(section["id"], category["name"], source_name): continue
-                            
-                        try:
-                            if parsedate_to_datetime(item.findtext("pubDate", "")).astimezone(KST).strftime("%Y.%m.%d") != target_dot: continue
-                        except: continue
-
-                        desc_text = strip_tags(item.findtext("description", ""))
-                        if link in seen_links or google_link in seen_links or any(is_similar_title(title, st) for st in seen_titles):
-                            continue
-                        article_body = fetch_article_body_text(article_link)
-                        summary_source = article_body if len(article_body) >= 180 else desc_text
-                        if any(
-                            is_duplicate_story(title, summary_source, cached["title"], cached["text"])
-                            for cached in category_story_cache
-                        ):
-                            continue
-
-                        seen_links.add(link)
-                        seen_links.add(google_link)
-                        seen_titles.append(title)
-                        category_story_cache.append({"title": title, "text": summary_source})
-                        news_list.append({
-                            "title": title, "link": link, "source": source_name, "date": target_dot,
-                            "summary": make_three_line_summary(title, summary_source, source_name, category["context"])
-                        })
-                except Exception as e: print("수집 오류:", e)
-                group_result["categories"].append({"name": category["name"], "news": dedupe_news_items(news_list)})
+                news_list = fetch_google_news_for_category(
+                    target_date,
+                    section["id"],
+                    group["title"],
+                    category,
+                    trend_keywords or {},
+                    seen_links,
+                    seen_titles,
+                )
+                group_result["categories"].append({"name": category["name"], "news": news_list})
             section_result["groups"].append(group_result)
         results.append(section_result)
     return results
@@ -1400,7 +2132,7 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
     esc = html.escape
 
     def source_key(source_name):
-        return re.sub(r"[^a-z0-9]+", "-", normalize_space(source_name).lower()).strip("-") or "impact-source"
+        return re.sub(r"[^0-9a-z가-힣]+", "-", normalize_space(source_name).lower()).strip("-") or "impact-source"
 
     def format_flow_html(flow_text):
         parts = []
@@ -1496,44 +2228,79 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
         impact_groups.setdefault(news["source"], []).append(news)
 
     impact_priority = ["임팩트온", "소셜임팩트뉴스", "이로운넷", "Trellis", "Bloomberg Green", "CTVC"]
-    ordered_sources = [source for source in impact_priority if source in impact_groups]
-    ordered_sources.extend(sorted(source for source in impact_groups if source not in ordered_sources))
     impact_branding = {
-        "임팩트온": ("Impact On", "impacton"),
-        "소셜임팩트뉴스": ("Social Impact", "social"),
-        "이로운넷": ("Eroun", "eroun"),
-        "Trellis": ("Trellis", "trellis"),
-        "Bloomberg Green": ("Bloomberg Green", "bloomberg"),
-        "CTVC": ("CTVC", "ctvc"),
-        "ImpactAlpha": ("ImpactAlpha", "impactalpha"),
-        "Powerstack": ("Powerstack", "powerstack"),
-        "Causeartist": ("Causeartist", "causeartist"),
+        "임팩트온": ("impacton", "https://cdn.impacton.net/image/logo/toplogo_20230907040739.png"),
+        "소셜임팩트뉴스": ("social", "https://cdn.socialimpactnews.net/image/logo/toplogo_20240401103136.png"),
+        "이로운넷": ("eroun", "https://cdn.eroun.net/image/logo/toplogo_20250902112732.png"),
+        "Trellis": ("trellis", "https://trellis.net/wp-content/themes/greenbiz/static/logo-trellis.svg"),
+        "Bloomberg Green": ("bloomberg", "https://www.bloomberg.com/favicon.ico"),
+        "CTVC": ("ctvc", "https://www.ctvc.co/assets/img/logo.svg?v=af7ed10043"),
+        "ImpactAlpha": ("impactalpha", "https://impactalpha.com/wp-content/themes/impactalpha/assets/images/ia-subtitle-logo-color.svg"),
+        "Powerstack": ("powerstack", "https://media.beehiiv.com/cdn-cgi/image/format=auto,onerror=redirect/uploads/asset/file/19ec0b41-333b-4831-92b4-af055d65d058/Full.png"),
+        "Causeartist": ("causeartist", "https://causeartist.com/favicon.png"),
     }
-    default_impact_source = ordered_sources[0] if ordered_sources else ""
 
-    impact_source_cards = []
-    impact_source_panels = []
-    for source_name in ordered_sources:
-        brand_label, brand_class = impact_branding.get(source_name, (source_name, "generic"))
-        key = source_key(source_name)
-        active_class = " active" if source_name == default_impact_source else ""
-        impact_source_cards.append(
-            f'<button class="impact-source-card impact-brand-{esc(brand_class)}{active_class}" data-impact-target="{esc(key)}">'
-            f'<span class="impact-source-eyebrow">{esc(brand_label)}</span>'
-            f'<strong>{esc(source_name)}</strong>'
-            f'<span class="impact-source-count">{len(impact_groups[source_name])}건</span>'
-            f'</button>'
-        )
-        impact_source_panels.append(
-            f'<div class="impact-news-panel{active_class}" data-impact-panel="{esc(key)}">'
-            f'<div class="impact-panel-head"><span>{esc(brand_label)}</span><h3>{esc(source_name)} 뉴스</h3></div>'
-            f'{render_news_list(impact_groups[source_name], "수집된 임팩트 뉴스가 없습니다.")}'
-            f'</div>'
+    def render_source_logo(source_name, branding, panel=False):
+        brand_class, logo_url = branding.get(source_name, ("generic", ""))
+        if not logo_url:
+            return f'<span class="impact-source-logo fallback-logo">{esc(source_name)}</span>'
+        panel_class = " panel-logo" if panel else ""
+        return (
+            f'<span class="impact-source-logo{panel_class}">'
+            f'<img src="{esc(logo_url)}" alt="{esc(source_name)} 로고" loading="lazy">'
+            f'</span>'
         )
 
-    if not impact_source_cards:
-        impact_source_cards.append('<div class="empty-state">수집된 임팩트 소스가 없습니다.</div>')
-        impact_source_panels.append('<div class="impact-news-panel active"><div class="empty-state">수집된 임팩트 뉴스가 없습니다.</div></div>')
+    def render_source_tab_section(section_id, label, kicker, heading, source_groups, source_priority, branding, empty_source_message, empty_news_message, show_empty_sources=False):
+        ordered_sources = [source for source in source_priority if show_empty_sources or source in source_groups]
+        ordered_sources.extend(sorted(source for source in source_groups if source not in ordered_sources))
+        ordered_sources = [source for source in ordered_sources if show_empty_sources or source_groups.get(source)]
+        default_source = ordered_sources[0] if ordered_sources else ""
+        total_count = sum(len(source_groups.get(source, [])) for source in ordered_sources)
+
+        source_cards = []
+        source_panels = []
+        for source_name in ordered_sources:
+            brand_class, _logo_url = branding.get(source_name, ("generic", ""))
+            key = f"{section_id}-{source_key(source_name)}"
+            active_class = " active" if source_name == default_source else ""
+            source_cards.append(
+                f'<button class="impact-source-card impact-brand-{esc(brand_class)}{active_class}" data-source-target="{esc(key)}">'
+                f'{render_source_logo(source_name, branding)}'
+                f'<strong>{esc(source_name)}</strong>'
+                f'<span class="impact-source-count">{len(source_groups.get(source_name, []))}건</span>'
+                f'</button>'
+            )
+            source_panels.append(
+                f'<div class="impact-news-panel{active_class}" data-source-panel="{esc(key)}">'
+                f'<div class="impact-panel-head">{render_source_logo(source_name, branding, panel=True)}<h3>{esc(source_name)}</h3></div>'
+                f'{render_news_list(source_groups.get(source_name, []), empty_news_message)}'
+                f'</div>'
+            )
+
+        if not source_cards:
+            source_cards.append(f'<div class="empty-state">{esc(empty_source_message)}</div>')
+            source_panels.append(f'<div class="impact-news-panel active"><div class="empty-state">{esc(empty_news_message)}</div></div>')
+
+        return f"""
+        <section id="section-{esc(section_id)}" class="content-section source-tab-section">
+            <div class="panel-shell">
+                <div class="panel-header">
+                    <div>
+                        <div class="panel-kicker">{esc(kicker)}</div>
+                        <h2>{esc(heading)}</h2>
+                    </div>
+                    <div class="panel-count">{total_count}건</div>
+                </div>
+                <div class="impact-source-strip">
+                    {"".join(source_cards)}
+                </div>
+                <div class="impact-news-stage">
+                    {"".join(source_panels)}
+                </div>
+            </div>
+        </section>
+        """
 
     indicator_section_html = f"""
         <section id="section-indicators" class="content-section active">
@@ -1555,25 +2322,36 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
         </section>
     """
 
-    impact_section_html = f"""
-        <section id="section-impact" class="content-section">
-            <div class="panel-shell">
-                <div class="panel-header">
-                    <div>
-                        <div class="panel-kicker">Impact Briefing</div>
-                        <h2>임팩트</h2>
-                    </div>
-                    <div class="panel-count">{counts.get("impact", 0)}건</div>
-                </div>
-                <div class="impact-source-strip">
-                    {"".join(impact_source_cards)}
-                </div>
-                <div class="impact-news-stage">
-                    {"".join(impact_source_panels)}
-                </div>
-            </div>
-        </section>
-    """
+    vcac_groups = {}
+    if "vcac" in section_map:
+        for group in section_map["vcac"].get("groups", []):
+            for category in group.get("categories", []):
+                vcac_groups[category["name"]] = category.get("news", [])
+
+    impact_section_html = render_source_tab_section(
+        "impact",
+        "임팩트",
+        "Impact Briefing",
+        "임팩트",
+        impact_groups,
+        impact_priority,
+        impact_branding,
+        "수집된 임팩트 소스가 없습니다.",
+        "수집된 임팩트 뉴스가 없습니다.",
+    )
+
+    vcac_section_html = render_source_tab_section(
+        "vcac",
+        "VC/AC",
+        "Startup & Capital",
+        "VC/AC",
+        vcac_groups,
+        VCAC_SOURCE_PRIORITY,
+        VCAC_BRANDING,
+        "수집된 VC/AC 소스가 없습니다.",
+        "수집된 VC/AC 뉴스가 없습니다.",
+        show_empty_sources=True,
+    )
 
     theme_rate = strong_theme.get("rate", "-")
     theme_rate_class = "up" if "+" in theme_rate else "down" if "-" in theme_rate else "neutral"
@@ -1625,7 +2403,7 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
                         </table>
                     </div>
                 </div>
-                <div class="story-group">
+                <div class="story-group theme-news-group">
                     <div class="story-group-title">테마 관련 최신 뉴스</div>
                     {render_news_list(strong_theme.get("news", []), "관련 뉴스를 찾을 수 없습니다.")}
                 </div>
@@ -1635,7 +2413,7 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
 
     generic_sections_html = "".join(
         render_generic_section(section_map[sid])
-        for sid in ("vcac", "ai", "macro")
+        for sid in ("ai", "macro")
         if sid in section_map
     )
 
@@ -2116,10 +2894,34 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
             box-shadow: 0 16px 24px rgba(68, 92, 112, 0.12);
         }
 
-        .impact-source-eyebrow {
-            font-size: 0.76rem;
-            letter-spacing: 0.14em;
-            text-transform: uppercase;
+        .impact-source-logo {
+            width: 100%;
+            min-height: 34px;
+            display: flex;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .impact-source-logo img {
+            max-width: 148px;
+            max-height: 34px;
+            object-fit: contain;
+            object-position: left center;
+        }
+
+        .impact-source-logo.panel-logo {
+            min-height: 30px;
+            margin-bottom: 0;
+            width: auto;
+        }
+
+        .impact-source-logo.panel-logo img {
+            max-width: 170px;
+            max-height: 34px;
+        }
+
+        .fallback-logo {
+            font-size: 0.86rem;
             color: var(--text-muted);
             font-weight: 800;
         }
@@ -2146,6 +2948,10 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
         .impact-brand-impactalpha { box-shadow: inset 0 4px 0 #ec4899; }
         .impact-brand-powerstack { box-shadow: inset 0 4px 0 #ea580c; }
         .impact-brand-causeartist { box-shadow: inset 0 4px 0 #0f766e; }
+        .impact-brand-unicorn { box-shadow: inset 0 4px 0 #111827; }
+        .impact-brand-recipe { box-shadow: inset 0 4px 0 #f59e0b; }
+        .impact-brand-platum { box-shadow: inset 0 4px 0 #2563eb; }
+        .impact-brand-venturesquare { box-shadow: inset 0 4px 0 #10b981; }
 
         .impact-news-stage {
             background: var(--bg-panel-strong);
@@ -2167,18 +2973,12 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
             margin-bottom: 14px;
             padding-bottom: 14px;
             border-bottom: 1px solid var(--border-soft);
-        }
-
-        .impact-panel-head span {
-            font-size: 0.78rem;
-            text-transform: uppercase;
-            letter-spacing: 0.16em;
-            color: var(--text-muted);
-            font-weight: 800;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
         }
 
         .impact-panel-head h3 {
-            margin-top: 6px;
             font-family: 'Outfit', 'Noto Sans KR', sans-serif;
             font-size: 1.35rem;
             letter-spacing: -0.03em;
@@ -2192,6 +2992,10 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
         .story-group {
             display: grid;
             gap: 14px;
+        }
+
+        .theme-news-group {
+            margin-top: 28px;
         }
 
         .story-group-title {
@@ -2534,6 +3338,7 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
             <main class="main-stage">
                 {indicator_section_html}
                 {impact_section_html}
+                {vcac_section_html}
                 {generic_sections_html}
                 {theme_section_html}
             </main>
@@ -2560,16 +3365,18 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
             tab.addEventListener("click", () => activateSection(tab.dataset.target));
         });
 
-        const impactSourceCards = document.querySelectorAll("[data-impact-target]");
-        const impactPanels = document.querySelectorAll("[data-impact-panel]");
+        document.querySelectorAll(".source-tab-section").forEach((sourceSection) => {
+            const sourceCards = sourceSection.querySelectorAll("[data-source-target]");
+            const sourcePanels = sourceSection.querySelectorAll("[data-source-panel]");
 
-        function activateImpactSource(targetKey) {
-            impactSourceCards.forEach((card) => card.classList.toggle("active", card.dataset.impactTarget === targetKey));
-            impactPanels.forEach((panel) => panel.classList.toggle("active", panel.dataset.impactPanel === targetKey));
-        }
+            function activateSource(targetKey) {
+                sourceCards.forEach((card) => card.classList.toggle("active", card.dataset.sourceTarget === targetKey));
+                sourcePanels.forEach((panel) => panel.classList.toggle("active", panel.dataset.sourcePanel === targetKey));
+            }
 
-        impactSourceCards.forEach((card) => {
-            card.addEventListener("click", () => activateImpactSource(card.dataset.impactTarget));
+            sourceCards.forEach((card) => {
+                card.addEventListener("click", () => activateSource(card.dataset.sourceTarget));
+            });
         });
 
         function archiveHref(dateStr) {
@@ -2750,6 +3557,7 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
         .replace("{sidebar_html}", sidebar_html)
         .replace("{indicator_section_html}", indicator_section_html)
         .replace("{impact_section_html}", impact_section_html)
+        .replace("{vcac_section_html}", vcac_section_html)
         .replace("{generic_sections_html}", generic_sections_html)
         .replace("{theme_section_html}", theme_section_html)
         .replace("{chart_json}", chart_json)
@@ -2763,6 +3571,11 @@ def main():
     target_dot = target_date.strftime("%Y.%m.%d")
     target_dash = target_date.strftime("%Y-%m-%d")
     seen_links, seen_titles = set(), [] 
+    env = load_env()
+    trend_keywords = get_or_refresh_trend_keywords(args, target_date, env)
+    if args.refresh_keywords_only:
+        print(f"[Trend] 키워드 파일만 갱신했습니다: {TREND_KEYWORDS_FILE}")
+        return
     
     # 1. 대시보드 및 강세테마 데이터 수집
     dashboard_data = fetch_dashboard_data()
@@ -2802,16 +3615,6 @@ def main():
         delay_seconds=2.0,
     )
 
-    env = {}
-    env_path = BASE_DIR / ".env"
-    if env_path.exists():
-        for raw_line in env_path.read_text(encoding="utf-8", errors="ignore").splitlines():
-            line = raw_line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            env[key.strip()] = value.strip().strip('"').strip("'")
-
     newsletter_news = []
     gmail_user = env.get("GMAIL_USER", "")
     gmail_password = env.get("GMAIL_APP_PASSWORD", "")
@@ -2832,8 +3635,13 @@ def main():
             try:
                 article_html = fetch_text(link)
                 if extract_impact_date(article_html) == target_dot:
+                    soup = BeautifulSoup(article_html, "html.parser")
+                    if not is_allowed_impacton_section(soup):
+                        continue
+                    body = extract_best_article_text(soup)
+                    summary = make_three_line_summary(title, body, "임팩트온", "국내 ESG 및 임팩트 비즈니스 이슈입니다.")
                     seen_links.add(link); seen_titles.append(title)
-                    impact_news.append({"title": title, "link": link, "date": target_dot, "source": "임팩트온", "summary": ["국내 주요 ESG 및 임팩트 비즈니스 이슈입니다."]})
+                    impact_news.append({"title": title, "link": link, "date": target_dot, "source": "임팩트온", "summary": summary})
             except: continue
     except: pass
 
@@ -2843,7 +3651,7 @@ def main():
         if is_domestic_news(news["title"], news["summary"], news["source"]): domestic_impact.append(news)
         else: global_impact.append(news)
 
-    search_sections = fetch_search_sections(target_date, seen_links, seen_titles)
+    search_sections = fetch_search_sections(target_date, seen_links, seen_titles, trend_keywords)
 
     # 4. 아카이브 및 HTML 생성
     archive_files = list(BASE_DIR.glob("archive_*.html"))
