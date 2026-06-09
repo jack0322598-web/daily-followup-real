@@ -21,6 +21,11 @@ try:
 except ImportError:  # pragma: no cover - fallback for bundled runtime
     requests = None
 
+try:
+    from googlenewsdecoder import gnewsdecoder
+except ImportError:  # pragma: no cover - optional improvement for Google News RSS links
+    gnewsdecoder = None
+
 KST = timezone(timedelta(hours=9))
 BASE_DIR = Path(__file__).resolve().parent
 OUTPUT_FILE = BASE_DIR / "index.html"
@@ -56,15 +61,30 @@ MAX_IMPACT_NEWS = 5
 MAX_GLOBAL_IMPACT_NEWS_PER_SOURCE = 2
 MAX_NEWS_PER_CATEGORY = 3
 SUMMARY_LINE_COUNT = 3
-SUMMARY_MAX_CHARS = 110
+SUMMARY_MAX_CHARS = 145
 
 GLOBAL_IMPACT_FEEDS = [
     ("Powerstack", "https://powerstack.sightlineclimate.com/feed/"),
     ("ImpactAlpha", "https://impactalpha.com/feed/")
 ]
 
-SUMMARY_SKIP_KEYWORDS = ("무단전재", "재배포", "저작권", "copyright", "구독", "광고", "로그인")
+SUMMARY_SKIP_KEYWORDS = (
+    "무단전재", "재배포", "저작권", "copyright", "구독", "광고", "로그인",
+    "이미지 확대", "재판매 및 db 금지", "댓글", "기사 공유", "기사를 공유합니다",
+    "음성재생", "음성으로 듣기", "이동 통신망", "글자 수", "translated by",
+    "관련 키워드", "관련 기사", "ⓒ", "저작권자", "기사 제공처", "등록기자",
+    "기자에게 문의", "카카오톡", "페이스북", "url공유", "이메일에 공유",
+    "가장작게", "가장크게", "기사 듣기", "북마크", "추천기사", "에디터 픽",
+    "ai기능", "핵심요약", "추천질문", "관련종목", "ai해설",
+)
 BLOCKED_SOURCE_DOMAINS = ("blog.naver.com", "tistory.com", "youtube.com")
+GOOGLE_NEWS_DECODE_CACHE = {}
+ARTICLE_BODY_CACHE = {}
+STORY_TOKEN_STOPWORDS = {
+    "기사", "보도", "속보", "단독", "관련", "통해", "대한", "이번", "지난", "이날", "오늘",
+    "기자", "뉴스", "발표", "예상", "전망", "추진", "착수", "확인", "정리", "내용", "소식",
+    "update", "updated", "report", "reports", "reported", "news", "today",
+}
 
 SEARCH_SECTIONS = [
     {
@@ -125,7 +145,14 @@ SEARCH_SECTIONS = [
     },
 ]
 
-NAV_SECTIONS = (("impact", "임팩트"), ("vcac", "VC/AC"), ("ai", "AI"), ("macro", "거시경제"), ("theme", "🔥 강세테마"))
+NAV_SECTIONS = (
+    ("indicators", "주요 지표"),
+    ("impact", "임팩트"),
+    ("vcac", "VC/AC"),
+    ("ai", "AI"),
+    ("macro", "거시경제"),
+    ("theme", "강세 테마"),
+)
 
 # ==========================================
 # 🌟 금융 지표 30일 추이 데이터 수집 (Yahoo Finance API 활용)
@@ -419,12 +446,19 @@ def fetch_strong_theme():
 # ==========================================
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--date", help="수집 기준일 (YYYY-MM-DD)")
+    parser.add_argument("--date", help="뉴스 수집 및 달력 표시 날짜 (YYYY-MM-DD). 기본값은 KST 기준 어제입니다.")
+    parser.add_argument("--news-date", help="--date와 동일한 별칭입니다. 둘 다 있으면 --news-date가 우선합니다.")
     return parser.parse_args()
+
+def parse_date_arg(date_arg):
+    return datetime.strptime(date_arg.strip().replace(".", "-"), "%Y-%m-%d").date()
 
 def get_target_date(date_arg=None):
     if not date_arg: return (datetime.now(KST) - timedelta(days=1)).date()
-    return datetime.strptime(date_arg.strip().replace(".", "-"), "%Y-%m-%d").date()
+    return parse_date_arg(date_arg)
+
+def get_news_date(args):
+    return get_target_date(args.news_date or args.date)
 
 def normalize_space(text): return re.sub(r"\s+", " ", text or "").strip()
 
@@ -458,15 +492,7 @@ def should_skip_search_item(section_id, category_name, source_name):
     return False
 
 def build_shareable_html(html_text):
-    html_text = html_text.replace('<script src="archive_list.js"></script>', "")
-    html_text = re.sub(
-        r'\s*<div class="archive-picker">.*?</div>\s*</div>',
-        '\n    </div>',
-        html_text,
-        count=1,
-        flags=re.DOTALL,
-    )
-    return html_text
+    return html_text.replace('<script src="archive_list.js"></script>', "")
 
 def is_valid_vcac_title(title):
     t = title.replace(" ", "").lower()
@@ -500,8 +526,83 @@ def fetch_text(url, timeout=15):
     with urllib.request.urlopen(urllib.request.Request(url, headers=HEADERS), timeout=timeout) as response:
         return response.read().decode(response.headers.get_content_charset() or "utf-8", errors="replace")
 
+def resolve_google_news_url(url):
+    if "news.google.com" not in (url or ""):
+        return url
+    if url in GOOGLE_NEWS_DECODE_CACHE:
+        return GOOGLE_NEWS_DECODE_CACHE[url]
+    decoded_url = url
+    if gnewsdecoder is not None:
+        try:
+            decoded = gnewsdecoder(url)
+            if decoded.get("status") and decoded.get("decoded_url"):
+                decoded_url = decoded["decoded_url"]
+        except Exception:
+            decoded_url = url
+    GOOGLE_NEWS_DECODE_CACHE[url] = decoded_url
+    return decoded_url
+
 def strip_tags(raw_html):
     return normalize_space(html.unescape(re.sub(r"<[^>]+>", " ", re.sub(r"<(script|style)\b[^>]*>.*?</\1>", " ", raw_html, flags=re.IGNORECASE | re.DOTALL))))
+
+def compact_text(text):
+    return "".join(ch for ch in normalize_space(text).lower() if ch.isalnum())
+
+def normalize_story_text(text):
+    normalized = strip_tags(text).lower()
+    replacements = {
+        "美 ": "미국 ",
+        " 美": " 미국",
+        "中 ": "중국 ",
+        " 中": " 중국",
+        "韓 ": "한국 ",
+        " 韓": " 한국",
+        "日 ": "일본 ",
+        " 日": " 일본",
+        "u.s.": "미국",
+        "u.s": "미국",
+        "us ": "미국 ",
+        "eu ": "유럽 ",
+    }
+    for old, new in replacements.items():
+        normalized = normalized.replace(old, new)
+    return normalize_space(normalized)
+
+def extract_story_tokens(*parts):
+    text = normalize_story_text(" ".join(part for part in parts if part))
+    tokens = []
+    for token in re.findall(r"[a-z]{2,}|\d+(?:[.,]\d+)?|[가-힣]{2,}", text):
+        if token in STORY_TOKEN_STOPWORDS:
+            continue
+        tokens.append(token)
+    return tokens
+
+def is_duplicate_story(title_a, text_a, title_b, text_b):
+    title_similar = is_similar_title(title_a, title_b, threshold=0.28)
+    tokens_a = set(extract_story_tokens(title_a, text_a))
+    tokens_b = set(extract_story_tokens(title_b, text_b))
+    if not tokens_a or not tokens_b:
+        return title_similar
+    shared = tokens_a.intersection(tokens_b)
+    overlap = len(shared) / max(1, min(len(tokens_a), len(tokens_b)))
+    if overlap >= 0.72:
+        return True
+    if title_similar and (overlap >= 0.45 or len(shared) >= 4):
+        return True
+    return False
+
+def dedupe_news_items(news_items):
+    deduped = []
+    for item in news_items:
+        item_text = " ".join(item.get("summary", []))
+        if any(
+            is_similar_title(item.get("title", ""), existing.get("title", ""), threshold=0.20)
+            or is_duplicate_story(item.get("title", ""), item_text, existing.get("title", ""), " ".join(existing.get("summary", [])))
+            for existing in deduped
+        ):
+            continue
+        deduped.append(item)
+    return deduped
 
 def truncate_text(text, limit=90):
     text = normalize_space(text)
@@ -586,22 +687,58 @@ def extract_html_datetime(text):
 def make_three_line_summary(title, raw_text="", source="", context=""):
     title = normalize_space(title)
     lines, seen = [], set()
-    text = strip_tags(raw_text)
+    text = clean_article_text(raw_text)
     text = re.sub(r"\bv\.daum\.net\b", "파이낸셜뉴스", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s*[|/]\s*", ". ", text)
+    text = re.sub(r"…", ". ", text)
     text = re.sub(r"([.!?])\s+", r"\1|", text)
+    text = re.sub(r"([.!?])(?=[가-힣\"'‘“])", r"\1|", text)
+    title_key = compact_text(title)
+    source_key = compact_text(source)
     for sentence in [normalize_space(p) for p in text.split("|") if normalize_space(p)]:
         sentence = re.sub(r"\bv\.daum\.net\b", "파이낸셜뉴스", sentence, flags=re.IGNORECASE)
-        if len(sentence) < 15 or any(k in sentence.lower() for k in SUMMARY_SKIP_KEYWORDS) or sentence in title: continue
+        sentence = re.sub(r"^[가-힣]{2,5}\s기자\s+", "", sentence)
+        sentence = re.sub(r"^\([^)]{2,30}\)\s*", "", sentence)
+        sentence = re.sub(r"^[가-힣A-Za-z·.\s]{2,20}\s기자\s*=\s*", "", sentence)
+        sentence = re.sub(r"^(송고|입력|수정)\s+\d{4}[-./년\s]\d{1,2}.*", "", sentence)
+        if source:
+            sentence = normalize_space(re.sub(rf"\s*[-|]?\s*{re.escape(source)}\s*$", "", sentence, flags=re.IGNORECASE))
+        sentence_key = compact_text(sentence)
+        sentence_lower = sentence.lower()
+        if len(sentence) < 15 or any(k.lower() in sentence_lower for k in SUMMARY_SKIP_KEYWORDS):
+            continue
+        if (
+            sentence_key in {title_key, source_key}
+            or sentence in title
+            or (title_key and title_key in sentence_key)
+            or (title_key and sentence_key and sentence_key in title_key and len(sentence_key) >= 8)
+        ):
+            continue
         key = sentence.casefold()
         if key not in seen:
             lines.append(sentence[:SUMMARY_MAX_CHARS - 1] + "…" if len(sentence) > SUMMARY_MAX_CHARS else sentence)
             seen.add(key)
-        if len(lines) >= SUMMARY_LINE_COUNT: break
-    
-    fallbacks = [f"핵심: {title}", f"맥락: {context or '주요 이슈입니다.'}", f"출처: {source or '원문'}에서 확인 가능합니다."]
+        if len(lines) >= SUMMARY_LINE_COUNT:
+            break
+
+    if lines:
+        fallbacks = [
+            truncate_text(context or "관련 흐름을 함께 볼 수 있는 기사입니다.", SUMMARY_MAX_CHARS),
+            truncate_text(f"{source or '원문'} 보도를 바탕으로 정리했습니다.", SUMMARY_MAX_CHARS),
+            truncate_text(title, SUMMARY_MAX_CHARS),
+        ]
+    else:
+        fallbacks = [
+            truncate_text(title, SUMMARY_MAX_CHARS),
+            truncate_text(context or "관련 흐름을 함께 볼 수 있는 기사입니다.", SUMMARY_MAX_CHARS),
+            truncate_text(f"{source or '원문'} 보도를 바탕으로 정리했습니다.", SUMMARY_MAX_CHARS),
+        ]
     for fb in fallbacks:
-        if len(lines) >= SUMMARY_LINE_COUNT: break
-        if fb.casefold() not in seen: lines.append(fb); seen.add(fb.casefold())
+        if len(lines) >= SUMMARY_LINE_COUNT:
+            break
+        if fb.casefold() not in seen:
+            lines.append(fb)
+            seen.add(fb.casefold())
     return lines[:SUMMARY_LINE_COUNT]
 
 class ArticleLinkParser(HTMLParser):
@@ -863,24 +1000,168 @@ def should_skip_news_url(url):
         return True
     return False
 
-def extract_best_article_text(soup):
+def clean_article_text(text):
+    text = normalize_space(html.unescape(strip_tags(text or "")))
+    replacements = [
+        (r"\b사진\s*확대\b", ""),
+        (r"\bAI\s*기사요약\b", ""),
+        (r"기사 제공처\s*:\s*[^./|]{0,80}", ""),
+        (r"등록기자\s*:\s*[^./|]{0,80}", ""),
+        (r"\[\s*기자에게 문의하기\s*\]", ""),
+        (r"기자\s+이름을\s+클릭하면\s+더\s+자세한\s+정보를\s+확인할\s+수\s+있어요!?", ""),
+        (r"카카오톡\s+페이스북\s+엑스\s+URL공유", ""),
+        (r"가장작게\s+작게\s+기본\s+크게\s+가장크게", ""),
+    ]
+    for pattern, repl in replacements:
+        text = re.sub(pattern, repl, text, flags=re.IGNORECASE)
+    return normalize_space(text)
+
+def iter_json_objects(data):
+    if isinstance(data, dict):
+        yield data
+        for value in data.values():
+            yield from iter_json_objects(value)
+    elif isinstance(data, list):
+        for item in data:
+            yield from iter_json_objects(item)
+
+def parse_json_script(script):
+    text = script.string or script.get_text()
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except Exception:
+        return None
+
+def normalize_schema_type(value):
+    if isinstance(value, list):
+        return " ".join(str(item).lower() for item in value)
+    return str(value or "").lower()
+
+def extract_structured_article_text(soup):
     candidates = []
-    selectors = [
+    for script in soup.find_all("script"):
+        script_type = (script.get("type") or "").lower()
+        script_id = (script.get("id") or "").lower()
+        if "json" not in script_type and script_id != "__next_data__":
+            continue
+        data = parse_json_script(script)
+        if data is None:
+            continue
+        for obj in iter_json_objects(data):
+            content_arrange = obj.get("contentArrange")
+            if isinstance(content_arrange, list):
+                parts = [
+                    entry.get("content", "")
+                    for entry in content_arrange
+                    if isinstance(entry, dict) and entry.get("type") == "text" and entry.get("content")
+                ]
+                if parts:
+                    candidates.append(" ".join(parts))
+
+            schema_type = normalize_schema_type(obj.get("@type"))
+            is_article = "article" in schema_type
+            for key in ("articleBody", "bodyText", "contentText", "text"):
+                value = obj.get(key)
+                if isinstance(value, str) and len(value) >= 160:
+                    candidates.append(value)
+            description = obj.get("description")
+            if is_article and isinstance(description, str) and len(description) >= 160:
+                candidates.append(description)
+
+    cleaned = [clean_article_text(candidate) for candidate in candidates]
+    cleaned = [candidate for candidate in cleaned if len(candidate) >= 160]
+    return max(cleaned, key=len) if cleaned else ""
+
+def find_amp_url(soup, base_url):
+    amp_link = soup.find("link", rel=lambda value: value and "amphtml" in value)
+    if amp_link and amp_link.get("href"):
+        return urllib.parse.urljoin(base_url, amp_link.get("href"))
+    return ""
+
+def extract_best_article_text(soup):
+    structured_text = extract_structured_article_text(soup)
+
+    priority_selectors = [
         "#article-view-content-div",
+        "#news_body",
+        "[itemprop='articleBody']",
+        ".article_view",
+        ".news_view",
+        ".news_detail_wrap",
+        ".news_cnt_detail_wrap",
+        ".article_view_content",
+        "#articleWrap",
+        ".story-news",
+        "#dic_area",
+        "#articeBody",
+        "#articleBody",
+        ".article_body",
+        ".article-content",
+    ]
+    generic_selectors = [
         "article",
         "main",
         "[class*='prose']",
         "[class*='content']",
         "[class*='article']",
     ]
-    for selector in selectors:
+
+    def node_text(node):
+        for tag in node.find_all(["script", "style", "noscript", "svg", "iframe", "button"]):
+            tag.decompose()
+        for tag in node.select(".news_detail_wrap > span:first-child"):
+            tag.decompose()
+        for tag in node.select(".mid_title, .thumb_area, figure, figcaption, .caption, .related, .relation, .recommend"):
+            tag.decompose()
+        return clean_article_text(node.get_text(" ", strip=True))
+
+    for selector in priority_selectors:
+        candidates = soup.select(selector)
+        if not candidates:
+            continue
+        best = max(candidates, key=lambda node: len(normalize_space(node.get_text(" ", strip=True))))
+        text = node_text(best)
+        if len(text) >= 180:
+            if len(structured_text) >= len(text):
+                return structured_text
+            return text
+
+    if len(structured_text) >= 180:
+        return structured_text
+
+    candidates = []
+    for selector in generic_selectors:
         candidates.extend(soup.select(selector))
     if not candidates:
         candidates = [soup.body or soup]
     best = max(candidates, key=lambda node: len(normalize_space(node.get_text(" ", strip=True))))
-    for tag in best.find_all(["script", "style", "noscript", "svg", "iframe", "button"]):
-        tag.decompose()
-    return normalize_space(best.get_text(" ", strip=True)) or normalize_space(soup.get_text(" ", strip=True))
+    return node_text(best) or clean_article_text(soup.get_text(" ", strip=True))
+
+def fetch_article_body_text(url):
+    if not url or "news.google.com" in url:
+        return ""
+    if url in ARTICLE_BODY_CACHE:
+        return ARTICLE_BODY_CACHE[url]
+    try:
+        article_html = fetch_text(url, timeout=12)
+        soup = BeautifulSoup(article_html, "html.parser")
+        body = extract_best_article_text(soup)
+        amp_url = find_amp_url(soup, url)
+        if amp_url and amp_url != url and len(body) < 450:
+            try:
+                amp_html = fetch_text(amp_url, timeout=12)
+                amp_body = extract_best_article_text(BeautifulSoup(amp_html, "html.parser"))
+                if len(amp_body) > len(body):
+                    body = amp_body
+            except Exception:
+                pass
+        ARTICLE_BODY_CACHE[url] = body
+        return body
+    except Exception:
+        ARTICLE_BODY_CACHE[url] = ""
+        return ""
 
 def extract_page_title(soup):
     meta = soup.find("meta", attrs={"property": "og:title"})
@@ -1046,20 +1327,27 @@ def fetch_trellis_news(target_date, seen_links, seen_titles):
 def fetch_search_sections(target_date, seen_links, seen_titles):
     results = []
     target_dot = target_date.strftime("%Y.%m.%d")
+    start_date = target_date.strftime("%Y-%m-%d")
+    end_date = (target_date + timedelta(days=1)).strftime("%Y-%m-%d")
     for section in SEARCH_SECTIONS:
         section_result = {"id": section["id"], "label": section["label"], "groups": []}
         for group in section["groups"]:
             group_result = {"title": group["title"], "categories": []}
             for category in group["categories"]:
                 news_list = []
+                category_story_cache = []
                 try:
-                    query = urllib.parse.quote(f"({category['query']}) -블로그 -카페 -blog -cafe when:2d")
+                    query = urllib.parse.quote(
+                        f"({category['query']}) after:{start_date} before:{end_date} -블로그 -카페 -blog -cafe"
+                    )
                     rss_text = fetch_text(f"https://news.google.com/rss/search?q={query}&hl=ko&gl=KR")
                     for item in ElementTree.fromstring(rss_text).findall(".//item"):
                         if len(news_list) >= MAX_NEWS_PER_CATEGORY: break
                         title, source_name = parse_google_news_item(item)
                         source_name = normalize_source_name(source_name)
-                        link = item.findtext("link", "")
+                        google_link = item.findtext("link", "")
+                        article_link = resolve_google_news_url(google_link)
+                        link = article_link or google_link
                         
                         if section["id"] == "vcac" and not is_valid_vcac_title(title): continue
                         if should_skip_search_item(section["id"], category["name"], source_name): continue
@@ -1068,15 +1356,27 @@ def fetch_search_sections(target_date, seen_links, seen_titles):
                             if parsedate_to_datetime(item.findtext("pubDate", "")).astimezone(KST).strftime("%Y.%m.%d") != target_dot: continue
                         except: continue
 
-                        if link in seen_links or any(is_similar_title(title, st) for st in seen_titles): continue
-                        
-                        seen_links.add(link); seen_titles.append(title)
+                        desc_text = strip_tags(item.findtext("description", ""))
+                        if link in seen_links or google_link in seen_links or any(is_similar_title(title, st) for st in seen_titles):
+                            continue
+                        article_body = fetch_article_body_text(article_link)
+                        summary_source = article_body if len(article_body) >= 180 else desc_text
+                        if any(
+                            is_duplicate_story(title, summary_source, cached["title"], cached["text"])
+                            for cached in category_story_cache
+                        ):
+                            continue
+
+                        seen_links.add(link)
+                        seen_links.add(google_link)
+                        seen_titles.append(title)
+                        category_story_cache.append({"title": title, "text": summary_source})
                         news_list.append({
                             "title": title, "link": link, "source": source_name, "date": target_dot,
-                            "summary": make_three_line_summary(title, strip_tags(item.findtext("description", "")), source_name, category["context"])
+                            "summary": make_three_line_summary(title, summary_source, source_name, category["context"])
                         })
                 except Exception as e: print("수집 오류:", e)
-                group_result["categories"].append({"name": category["name"], "news": news_list})
+                group_result["categories"].append({"name": category["name"], "news": dedupe_news_items(news_list)})
             section_result["groups"].append(group_result)
         results.append(section_result)
     return results
@@ -1086,13 +1386,21 @@ def fetch_search_sections(target_date, seen_links, seen_titles):
 # ==========================================
 def render_html(target_date, domestic_impact, global_impact, search_sections, target_dash, dashboard, strong_theme, chart_data):
     target_dot = target_date.strftime("%Y.%m.%d")
-    updated_at = datetime.now(KST).strftime("%Y.%m.%d %H:%M")
+    current_kst = datetime.now(KST)
+    updated_at = current_kst.strftime("%Y.%m.%d %H:%M")
+    updated_dot = current_kst.strftime("%Y.%m.%d")
+    section_map = {section["id"]: section for section in search_sections}
 
     counts = {s["id"]: sum(len(c["news"]) for g in s["groups"] for c in g["categories"]) for s in search_sections}
+    counts["indicators"] = 4
     counts["impact"] = len(domestic_impact) + len(global_impact)
     counts["theme"] = 1 if strong_theme and strong_theme["name"] != "강세테마 대기중" else 0
 
-    chart_json = json.dumps(chart_data)
+    chart_json = json.dumps(chart_data, ensure_ascii=False)
+    esc = html.escape
+
+    def source_key(source_name):
+        return re.sub(r"[^a-z0-9]+", "-", normalize_space(source_name).lower()).strip("-") or "impact-source"
 
     def format_flow_html(flow_text):
         parts = []
@@ -1101,7 +1409,7 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
             if not segment:
                 continue
             if " " not in segment:
-                parts.append(segment)
+                parts.append(esc(segment))
                 continue
             label, value = segment.split(" ", 1)
             css_class = "neutral"
@@ -1109,14 +1417,253 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
                 css_class = "up"
             elif value.startswith("-"):
                 css_class = "down"
-            parts.append(f'{label} <span class="flow-value {css_class}">{value}</span>')
+            parts.append(f'{esc(label)} <span class="flow-value {css_class}">{esc(value)}</span>')
         return " / ".join(parts)
+
+    def render_news_card(news):
+        summary_html = "".join(f"<li>{esc(str(line))}</li>" for line in news.get("summary", []))
+        if not summary_html:
+            summary_html = "<li>요약 정보가 없습니다.</li>"
+        return (
+            f'<article class="news-card">'
+            f'<div class="news-title"><a href="{esc(news.get("link", ""))}" target="_blank" rel="noopener noreferrer">{esc(news.get("title", ""))}</a></div>'
+            f'<div class="news-date">출처: {esc(news.get("source", ""))} | 발행일: {esc(news.get("date", ""))}</div>'
+            f'<ul class="news-summary">{summary_html}</ul>'
+            f'</article>'
+        )
+
+    def render_news_list(news_items, empty_message):
+        if not news_items:
+            return f'<div class="empty-state">{esc(empty_message)}</div>'
+        return "".join(render_news_card(news) for news in news_items)
+
+    def render_chart_panel(chart_id):
+        return (
+            f'<div class="chart-panel">'
+            f'<div class="chart-canvas" id="{esc(chart_id)}"></div>'
+            f'</div>'
+        )
+
+    def render_indicator_card(title, value, detail, chart_id, tone_class):
+        detail_html = f'<div class="metric-detail">{detail}</div>' if detail else ""
+        return (
+            f'<article class="indicator-card {tone_class}">'
+            f'<div class="indicator-summary">'
+            f'<div class="metric-label">{esc(title)}</div>'
+            f'<div class="metric-value">{esc(value)}</div>'
+            f'{detail_html}'
+            f'</div>'
+            f'{render_chart_panel(chart_id)}'
+            f'</article>'
+        )
+
+    def render_generic_section(section):
+        section_blocks = []
+        multi_group = len(section["groups"]) > 1
+        for group in section["groups"]:
+            category_blocks = []
+            for category in group["categories"]:
+                category_blocks.append(
+                    f'<article class="story-card">'
+                    f'<div class="story-label">{esc(category["name"])}</div>'
+                    f'{render_news_list(category["news"], "수집된 뉴스가 없습니다.")}'
+                    f'</article>'
+                )
+            body = "".join(category_blocks) or '<div class="empty-state">수집된 뉴스가 없습니다.</div>'
+            if multi_group:
+                section_blocks.append(
+                    f'<div class="story-group">'
+                    f'<div class="story-group-title">{esc(group["title"])}</div>'
+                    f'{body}'
+                    f'</div>'
+                )
+            else:
+                section_blocks.append(body)
+        return (
+            f'<section id="section-{esc(section["id"])}" class="content-section">'
+            f'<div class="panel-shell">'
+            f'<div class="panel-header">'
+            f'<div><div class="panel-kicker">{esc(section["label"])}</div><h2>{esc(section["label"])} 브리핑</h2></div>'
+            f'<div class="panel-count">{counts.get(section["id"], 0)}건</div>'
+            f'</div>'
+            f'<div class="story-board">{"".join(section_blocks)}</div>'
+            f'</div>'
+            f'</section>'
+        )
 
     impact_groups = {}
     for news in domestic_impact + global_impact:
         impact_groups.setdefault(news["source"], []).append(news)
 
-    html_content = f"""<!DOCTYPE html>
+    impact_priority = ["임팩트온", "소셜임팩트뉴스", "이로운넷", "Trellis", "Bloomberg Green", "CTVC"]
+    ordered_sources = [source for source in impact_priority if source in impact_groups]
+    ordered_sources.extend(sorted(source for source in impact_groups if source not in ordered_sources))
+    impact_branding = {
+        "임팩트온": ("Impact On", "impacton"),
+        "소셜임팩트뉴스": ("Social Impact", "social"),
+        "이로운넷": ("Eroun", "eroun"),
+        "Trellis": ("Trellis", "trellis"),
+        "Bloomberg Green": ("Bloomberg Green", "bloomberg"),
+        "CTVC": ("CTVC", "ctvc"),
+        "ImpactAlpha": ("ImpactAlpha", "impactalpha"),
+        "Powerstack": ("Powerstack", "powerstack"),
+        "Causeartist": ("Causeartist", "causeartist"),
+    }
+    default_impact_source = ordered_sources[0] if ordered_sources else ""
+
+    impact_source_cards = []
+    impact_source_panels = []
+    for source_name in ordered_sources:
+        brand_label, brand_class = impact_branding.get(source_name, (source_name, "generic"))
+        key = source_key(source_name)
+        active_class = " active" if source_name == default_impact_source else ""
+        impact_source_cards.append(
+            f'<button class="impact-source-card impact-brand-{esc(brand_class)}{active_class}" data-impact-target="{esc(key)}">'
+            f'<span class="impact-source-eyebrow">{esc(brand_label)}</span>'
+            f'<strong>{esc(source_name)}</strong>'
+            f'<span class="impact-source-count">{len(impact_groups[source_name])}건</span>'
+            f'</button>'
+        )
+        impact_source_panels.append(
+            f'<div class="impact-news-panel{active_class}" data-impact-panel="{esc(key)}">'
+            f'<div class="impact-panel-head"><span>{esc(brand_label)}</span><h3>{esc(source_name)} 뉴스</h3></div>'
+            f'{render_news_list(impact_groups[source_name], "수집된 임팩트 뉴스가 없습니다.")}'
+            f'</div>'
+        )
+
+    if not impact_source_cards:
+        impact_source_cards.append('<div class="empty-state">수집된 임팩트 소스가 없습니다.</div>')
+        impact_source_panels.append('<div class="impact-news-panel active"><div class="empty-state">수집된 임팩트 뉴스가 없습니다.</div></div>')
+
+    indicator_section_html = f"""
+        <section id="section-indicators" class="content-section active">
+            <div class="panel-shell">
+                <div class="panel-header">
+                    <div>
+                        <div class="panel-kicker">Market Snapshot</div>
+                        <h2>주요 지표</h2>
+                    </div>
+                    <div class="panel-count">{updated_dot} 기준</div>
+                </div>
+                <div class="indicators-board">
+                    {render_indicator_card("미국 10년물 국채 금리", dashboard.get("us_10y", "-"), "", "chart-us-10y", "tone-blue")}
+                    {render_indicator_card("원/달러 환율", dashboard.get("fx_info", "-"), "", "chart-fx", "tone-green")}
+                    {render_indicator_card("코스피 지수", dashboard.get("kospi_info", "-"), format_flow_html(dashboard.get("kospi_flow", "")), "chart-kospi", "tone-amber")}
+                    {render_indicator_card("코스닥 지수", dashboard.get("kosdaq_info", "-"), format_flow_html(dashboard.get("kosdaq_flow", "")), "chart-kosdaq", "tone-slate")}
+                </div>
+            </div>
+        </section>
+    """
+
+    impact_section_html = f"""
+        <section id="section-impact" class="content-section">
+            <div class="panel-shell">
+                <div class="panel-header">
+                    <div>
+                        <div class="panel-kicker">Impact Briefing</div>
+                        <h2>임팩트</h2>
+                    </div>
+                    <div class="panel-count">{counts.get("impact", 0)}건</div>
+                </div>
+                <div class="impact-source-strip">
+                    {"".join(impact_source_cards)}
+                </div>
+                <div class="impact-news-stage">
+                    {"".join(impact_source_panels)}
+                </div>
+            </div>
+        </section>
+    """
+
+    theme_rate = strong_theme.get("rate", "-")
+    theme_rate_class = "up" if "+" in theme_rate else "down" if "-" in theme_rate else "neutral"
+    stock_rows = []
+    for stock in strong_theme.get("stocks", []):
+        rate_class = "up" if "+" in stock.get("rate", "") else "down" if "-" in stock.get("rate", "") else "neutral"
+        stock_rows.append(
+            f'<tr>'
+            f'<td class="stock-name-cell"><a href="https://finance.naver.com/item/main.naver?code={esc(stock.get("code", ""))}" target="_blank" rel="noopener noreferrer">{esc(stock.get("name", ""))}</a></td>'
+            f'<td class="stock-price-cell">{esc(stock.get("price", "-"))}원</td>'
+            f'<td class="stock-rate-cell"><span class="{rate_class}">{esc(stock.get("rate", "-"))}</span></td>'
+            f'<td class="stock-reason-cell">{esc(stock.get("reason", ""))}</td>'
+            f'</tr>'
+        )
+
+    theme_section_html = f"""
+        <section id="section-theme" class="content-section">
+            <div class="panel-shell">
+                <div class="panel-header">
+                    <div>
+                        <div class="panel-kicker">Hot Theme</div>
+                        <h2>강세 테마</h2>
+                    </div>
+                    <div class="panel-count">{esc(theme_rate)}</div>
+                </div>
+                <div class="theme-hero">
+                    <div class="theme-title-wrap">
+                        <span class="theme-badge">HOT THEME</span>
+                        <h3>{esc(strong_theme.get("name", "강세 테마"))}</h3>
+                    </div>
+                    <div class="theme-rate theme-rate-{theme_rate_class}">{esc(theme_rate)}</div>
+                </div>
+                <div class="theme-summary-box">{esc(strong_theme.get("desc", "테마 설명이 없습니다."))}</div>
+                <div class="story-group">
+                    <div class="story-group-title">주요 대장 종목</div>
+                    <div class="stocks-table-wrapper">
+                        <table class="stocks-table">
+                            <thead>
+                                <tr>
+                                    <th style="width: 20%;">종목명</th>
+                                    <th style="width: 16%;">현재가</th>
+                                    <th style="width: 14%;">등락률</th>
+                                    <th>기업 해설</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {"".join(stock_rows) if stock_rows else "<tr><td colspan='4' class='empty-table'>수집된 종목이 없습니다.</td></tr>"}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="story-group">
+                    <div class="story-group-title">테마 관련 최신 뉴스</div>
+                    {render_news_list(strong_theme.get("news", []), "관련 뉴스를 찾을 수 없습니다.")}
+                </div>
+            </div>
+        </section>
+    """
+
+    generic_sections_html = "".join(
+        render_generic_section(section_map[sid])
+        for sid in ("vcac", "ai", "macro")
+        if sid in section_map
+    )
+
+    sidebar_html = "".join(
+        f'<button class="sidebar-tab{" active" if sid == "indicators" else ""}" data-target="section-{esc(sid)}">{esc(label)}</button>'
+        for sid, label in NAV_SECTIONS
+    )
+
+    calendar_sidebar_html = """
+            <section class="sidebar-calendar">
+                <div class="calendar-box">
+                    <div class="calendar-top">
+                        <div class="calendar-month-label" id="calendar-month-label"></div>
+                        <div class="calendar-nav">
+                            <button id="calendar-prev" type="button" aria-label="이전 달">&#9664;</button>
+                            <button id="calendar-next" type="button" aria-label="다음 달">&#9654;</button>
+                        </div>
+                    </div>
+                    <div class="calendar-weekdays">
+                        <span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span>
+                    </div>
+                    <div class="calendar-grid" id="calendar-grid"></div>
+                    <div class="calendar-caption">날짜를 누르면 해당 일자의 브리핑으로 이동합니다.</div>
+                </div>
+            </section>
+    """
+
+    html_template = """<!DOCTYPE html>
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
@@ -1125,854 +1672,1094 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
     <script src="archive_list.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
     <style>
-        :root {{
-            --bg-main: #f8fafc;
-            --bg-card: #ffffff;
-            --text-main: #0f172a;
-            --text-muted: #64748b;
-            --border-color: #e2e8f0;
-            --primary: #8b5cf6;
-            --primary-light: #f5f3ff;
-            --accent-blue: #0ea5e9;
-            --accent-green: #10b981;
-            --accent-orange: #f59e0b;
-            --accent-red: #ef4444;
-        }}
-        
-        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-        body {{
+        :root {
+            --bg-main: #f4f0ea;
+            --bg-panel: rgba(255, 255, 255, 0.88);
+            --bg-panel-strong: #ffffff;
+            --text-main: #13181f;
+            --text-muted: #6f7683;
+            --border-strong: rgba(116, 148, 173, 0.42);
+            --border-soft: rgba(116, 148, 173, 0.22);
+            --shadow-soft: 0 18px 40px rgba(68, 92, 112, 0.09);
+            --shadow-card: 0 12px 26px rgba(68, 92, 112, 0.08);
+            --accent-teal: #0ea5b7;
+            --accent-blue: #2563eb;
+            --accent-green: #15803d;
+            --accent-amber: #b45309;
+            --accent-rose: #be185d;
+            --accent-slate: #334155;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            min-height: 100vh;
             font-family: 'Inter', 'Noto Sans KR', sans-serif;
-            background-color: var(--bg-main);
             color: var(--text-main);
-            max-width: 1220px;
+            background:
+                radial-gradient(circle at top left, rgba(14, 165, 183, 0.08), transparent 28%),
+                radial-gradient(circle at top right, rgba(37, 99, 235, 0.08), transparent 24%),
+                linear-gradient(180deg, #f8f4ee 0%, var(--bg-main) 100%);
+            padding: 28px;
+        }
+
+        button {
+            font: inherit;
+        }
+
+        .page-shell {
+            max-width: 1500px;
             margin: 0 auto;
-            padding: 40px 18px 60px;
-            line-height: 1.5;
-        }}
-        
-        /* Header controls */
-        .header-controls {{
-            display: flex;
-            flex-direction: column;
+        }
+
+        .top-banner {
+            display: grid;
+            grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+            gap: 22px;
             align-items: center;
-            margin-bottom: 35px;
-            text-align: center;
-        }}
-        h1 {{
-            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
-            font-size: 2.3rem;
-            font-weight: 800;
-            color: var(--text-main);
             margin-bottom: 10px;
-            letter-spacing: -0.02em;
-            background: linear-gradient(135deg, #1e293b 0%, #475569 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }}
-        .date-title {{
-            color: var(--text-muted);
-            font-size: 0.95rem;
-            margin-bottom: 15px;
-            font-weight: 500;
-            line-height: 1.4;
-        }}
-        .archive-picker {{
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            background: #ffffff;
-            padding: 6px 16px;
-            border-radius: 9999px;
-            border: 1px solid var(--border-color);
-            box-shadow: 0 2px 10px rgba(0,0,0,0.02);
-        }}
-        .archive-picker label {{
-            font-size: 0.85rem;
-            font-weight: 600;
-            color: var(--text-muted);
-        }}
-        .archive-picker select {{
-            border: none;
-            font-weight: 700;
-            cursor: pointer;
-            color: var(--primary);
-            outline: none;
-            font-size: 0.85rem;
-            background: transparent;
-        }}
-        
-        /* Dashboard cards */
-        .dashboard-container {{
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 18px;
-            margin-bottom: 18px;
-        }}
-        .dash-card {{
-            background-color: var(--bg-card);
-            padding: 18px;
-            border-radius: 16px;
-            border: 1px solid var(--border-color);
-            box-shadow: 0 4px 15px rgba(0,0,0,0.02);
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            position: relative;
-            overflow: hidden;
+        }
+
+        .brand-box {
             display: flex;
             flex-direction: column;
-            justify-content: space-between;
-            min-height: 148px;
-        }}
-        .dash-card:hover {{
-            transform: translateY(-4px);
-            box-shadow: 0 8px 20px rgba(0,0,0,0.05);
-        }}
-        .dash-card::before {{
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 4px;
-        }}
-        .dash-card.blue::before {{ background: var(--accent-blue); }}
-        .dash-card.green::before {{ background: var(--accent-green); }}
-        .dash-card.orange::before {{ background: var(--accent-orange); }}
-        .dash-card.purple::before {{ background: var(--primary); }}
-        
-        .dash-title {{
-            font-size: 0.8rem;
-            font-weight: 700;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            margin-bottom: 6px;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }}
-        .dash-value {{
+            justify-content: center;
+            gap: 0;
+        }
+
+        .brand-logo {
+            display: inline-flex;
+            flex-direction: column;
+            gap: 0;
             font-family: 'Outfit', 'Noto Sans KR', sans-serif;
-            font-size: 1.35rem;
+            font-size: clamp(1.9rem, 3vw, 2.45rem);
             font-weight: 800;
-            color: var(--text-main);
-            line-height: 1.2;
-            margin-bottom: 8px;
-        }}
-        .dash-flow {{
-            font-size: 0.8rem;
-            color: var(--text-muted);
-            line-height: 1.5;
-            margin-top: 2px;
-        }}
-        .market-block + .market-block {{
-            margin-top: 10px;
-        }}
-        .market-label {{
-            font-size: 0.76rem;
-            font-weight: 700;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 0.03em;
-            margin-bottom: 4px;
-        }}
-        .market-index {{
+            line-height: 0.88;
+            letter-spacing: -0.04em;
+        }
+
+        .brand-logo span:last-child {
+            display: inline-flex;
+            align-items: flex-end;
+            gap: 8px;
+        }
+
+        .brand-dot {
+            width: 14px;
+            height: 14px;
+            border-radius: 999px;
+            background: var(--accent-teal);
+            box-shadow: 0 0 0 4px rgba(14, 165, 183, 0.18);
+        }
+
+        .title-box {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: end;
+            gap: 18px;
+        }
+
+        .title-box h1 {
             font-family: 'Outfit', 'Noto Sans KR', sans-serif;
-            font-size: 1rem;
-            font-weight: 800;
-            color: var(--text-main);
-            line-height: 1.25;
-            margin-bottom: 4px;
-        }}
-        .flow-row {{
-            white-space: nowrap;
-        }}
-        .flow-value {{
+            font-size: clamp(1.95rem, 4vw, 3.05rem);
+            line-height: 1.02;
+            letter-spacing: -0.04em;
             font-weight: 700;
-        }}
-        .flow-value.up {{
-            color: var(--accent-red);
-        }}
-        .flow-value.down {{
-            color: var(--accent-blue);
-        }}
-        .flow-value.neutral {{
-            color: var(--text-main);
-        }}
-        .sparkline-container {{
-            width: 100%;
-            height: 35px;
-            margin-top: auto;
-        }}
-        
-        /* Collapsible Charts Section */
-        .market-charts-toggle {{
-            background-color: var(--bg-card);
-            border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 12px 20px;
+        }
+
+        .title-meta {
+            color: var(--text-muted);
             font-size: 0.88rem;
-            font-weight: 700;
-            color: var(--text-main);
+            line-height: 1.5;
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        .calendar-box {
+            padding: 18px 18px 16px;
             display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .sidebar-calendar {
+            background: var(--bg-panel);
+            border: 1px solid var(--border-strong);
+            border-radius: 24px;
+            box-shadow: var(--shadow-soft);
+            backdrop-filter: blur(14px);
+        }
+
+        .calendar-top {
+            display: flex;
+            align-items: center;
             justify-content: space-between;
-            align-items: center;
+            gap: 12px;
+        }
+
+        .calendar-month-label {
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-size: 1.55rem;
+            font-weight: 700;
+            letter-spacing: -0.03em;
+        }
+
+        .calendar-nav {
+            display: flex;
+            gap: 8px;
+        }
+
+        .calendar-nav button {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border: 1px solid var(--border-soft);
+            background: #ffffff;
             cursor: pointer;
-            margin-bottom: 25px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.01);
-            transition: all 0.2s ease;
-            user-select: none;
-        }}
-        .market-charts-toggle:hover {{
-            background-color: #f8fafc;
-            border-color: #cbd5e1;
-        }}
-        .toggle-icon {{
-            font-size: 0.75rem;
+            color: var(--text-main);
+            transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+        }
+
+        .calendar-nav button:hover {
+            transform: translateY(-1px);
+            border-color: var(--border-strong);
+            background: #f8fbfd;
+        }
+
+        .calendar-weekdays,
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, minmax(0, 1fr));
+            gap: 8px;
+        }
+
+        .calendar-weekdays span {
+            text-align: center;
+            font-size: 0.83rem;
+            font-weight: 700;
             color: var(--text-muted);
-            transition: transform 0.3s ease;
-        }}
-        .market-charts-wrapper {{
-            max-height: 0;
-            overflow: hidden;
-            transition: max-height 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-            margin-bottom: 0;
-        }}
-        .market-charts-wrapper.expanded {{
-            max-height: 800px;
-            margin-bottom: 25px;
-        }}
-        .chart-grid {{
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 15px;
-            padding-bottom: 10px;
-        }}
-        .chart-card {{
-            background-color: var(--bg-card);
-            border: 1px solid var(--border-color);
-            border-radius: 16px;
-            padding: 16px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.01);
-        }}
-        .chart-card h3 {{
-            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
-            font-size: 0.95rem;
-            font-weight: 700;
+        }
+
+        .calendar-day {
+            height: 42px;
+            border: 1px solid transparent;
+            border-radius: 50%;
+            background: transparent;
             color: var(--text-main);
-            margin-bottom: 12px;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }}
-        
-        /* Tabs navigation */
-        .top-tabs {{
-            display: grid;
-            grid-template-columns: repeat(5, 1fr);
-            gap: 10px;
-            margin-bottom: 25px;
-            position: sticky;
-            top: 0;
-            background: rgba(248, 250, 252, 0.9);
-            backdrop-filter: blur(10px);
-            padding: 10px 0;
-            z-index: 10;
-        }}
-        .nav-tab {{
-            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
-            font-size: 0.9rem;
-            border: 1px solid var(--border-color);
-            background: var(--bg-card);
-            color: var(--text-main);
-            padding: 12px;
-            font-weight: 700;
-            border-radius: 10px;
-            cursor: pointer;
-            display: flex;
+            display: inline-flex;
             align-items: center;
             justify-content: center;
-            gap: 5px;
+            cursor: pointer;
             transition: all 0.2s ease;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.01);
-        }}
-        .nav-tab:hover {{
-            border-color: #cbd5e1;
-            background-color: #f8fafc;
-        }}
-        .nav-tab.active {{
-            background: var(--text-main);
+        }
+
+        .calendar-day.is-muted {
+            color: #b0b7c3;
+        }
+
+        .calendar-day.is-available:hover {
+            border-color: rgba(14, 165, 183, 0.32);
+            background: rgba(14, 165, 183, 0.08);
+        }
+
+        .calendar-day.is-selected {
+            background: #0f6bd8;
             color: #ffffff;
-            border-color: var(--text-main);
-            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
-        }}
-        .tab-count {{
-            background: rgba(0,0,0,0.06);
-            border-radius: 9999px;
-            padding: 1px 6px;
-            font-size: 0.7rem;
-            font-weight: 700;
+            box-shadow: 0 12px 18px rgba(15, 107, 216, 0.22);
+        }
+
+        .calendar-day:disabled {
+            cursor: default;
+        }
+
+        .calendar-caption {
+            font-size: 0.82rem;
             color: var(--text-muted);
-        }}
-        .nav-tab.active .tab-count {{
-            background: rgba(255,255,255,0.2);
-            color: #ffffff;
-        }}
-        
-        /* Sections layout */
-        .content-section {{ display: none; animation: fadeIn 0.4s ease; }}
-        .content-section.active {{ display: block; }}
-        @keyframes fadeIn {{
-            from {{ opacity: 0; transform: translateY(8px); }}
-            to {{ opacity: 1; transform: translateY(0); }}
-        }}
-        
-        .section-title {{
-            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
-            font-size: 1.5rem;
-            color: var(--text-main);
-            border-left: 5px solid var(--primary);
-            padding-left: 12px;
-            margin: 25px 0 15px;
-            font-weight: 800;
-        }}
-        #section-macro .section-title {{ border-left-color: var(--accent-blue); }}
-        #section-ai .section-title {{ border-left-color: var(--accent-green); }}
-        #section-vcac .section-title {{ border-left-color: var(--accent-orange); }}
-        #section-impact .section-title {{ border-left-color: #ec4899; }}
-        
-        .group-title {{
-            margin: 20px 0 10px;
-            padding: 8px 14px;
-            background: #e2e8f0;
-            border-radius: 6px;
-            font-weight: 700;
-            font-size: 1rem;
-            color: #334155;
-        }}
-        .sub-category {{
-            font-size: 0.95rem;
-            color: var(--text-main);
-            margin: 12px 0 8px;
-            font-weight: 700;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }}
-        
-        /* News Cards */
-        .news-card {{
-            background: var(--bg-card);
-            padding: 16px;
-            margin-bottom: 12px;
-            border-radius: 10px;
-            border: 1px solid var(--border-color);
-            box-shadow: 0 2px 10px rgba(0,0,0,0.01);
-            transition: all 0.2s ease;
-        }}
-        .news-card:hover {{
-            border-color: #cbd5e1;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.03);
-        }}
-        .news-title {{
-            font-size: 1.05rem;
-            font-weight: 700;
-            margin-bottom: 6px;
             line-height: 1.45;
-        }}
-        .news-title a {{
+        }
+
+        .workspace {
+            display: grid;
+            grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+            gap: 22px;
+            align-items: start;
+        }
+
+        .sidebar {
+            position: sticky;
+            top: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .sidebar-tab {
+            border: 1px solid var(--border-strong);
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.78);
+            min-height: 64px;
+            padding: 14px 20px;
+            text-align: center;
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-size: 1.25rem;
+            font-weight: 700;
+            letter-spacing: -0.03em;
+            cursor: pointer;
+            transition: transform 0.22s ease, background 0.22s ease, color 0.22s ease, box-shadow 0.22s ease;
+        }
+
+        .sidebar-tab:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 22px rgba(22, 30, 37, 0.08);
+        }
+
+        .sidebar-tab.active {
+            background: linear-gradient(135deg, #2da9b8 0%, #6e8ef7 100%);
+            color: #ffffff;
+            border-color: transparent;
+            box-shadow: 0 14px 26px rgba(75, 122, 161, 0.22);
+        }
+
+        .main-stage {
+            min-width: 0;
+        }
+
+        .content-section {
+            display: none;
+            animation: fadeIn 0.35s ease;
+        }
+
+        .content-section.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(8px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .panel-shell {
+            background: var(--bg-panel);
+            border: 1px solid var(--border-strong);
+            border-radius: 30px;
+            padding: 24px;
+            box-shadow: var(--shadow-soft);
+            backdrop-filter: blur(14px);
+        }
+
+        .panel-header {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 16px;
+            padding-bottom: 18px;
+            margin-bottom: 18px;
+            border-bottom: 1px solid var(--border-soft);
+        }
+
+        .panel-kicker {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.16em;
+            margin-bottom: 6px;
+        }
+
+        .panel-header h2 {
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-size: clamp(1.8rem, 3vw, 2.55rem);
+            letter-spacing: -0.04em;
+            line-height: 1.04;
+        }
+
+        .panel-count {
+            border: 1px solid var(--border-soft);
+            background: rgba(255, 255, 255, 0.76);
+            border-radius: 999px;
+            padding: 8px 14px;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .indicators-board {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 18px;
+        }
+
+        .indicator-card {
+            background: var(--bg-panel-strong);
+            border: 1px solid var(--border-soft);
+            border-radius: 24px;
+            padding: 20px;
+            min-height: 360px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            box-shadow: var(--shadow-card);
+        }
+
+        .indicator-summary {
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            align-items: flex-start;
+            gap: 6px;
+        }
+
+        .indicator-card.tone-blue {
+            box-shadow: inset 4px 0 0 var(--accent-blue), var(--shadow-card);
+        }
+
+        .indicator-card.tone-green {
+            box-shadow: inset 4px 0 0 var(--accent-green), var(--shadow-card);
+        }
+
+        .indicator-card.tone-amber {
+            box-shadow: inset 4px 0 0 #d97706, var(--shadow-card);
+        }
+
+        .indicator-card.tone-slate {
+            box-shadow: inset 4px 0 0 var(--accent-slate), var(--shadow-card);
+        }
+
+        .metric-label {
+            font-size: 0.98rem;
+            color: var(--text-muted);
+            font-weight: 700;
+        }
+
+        .metric-value {
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-size: clamp(1.1rem, 1.7vw, 1.45rem);
+            font-weight: 700;
+            letter-spacing: -0.04em;
+        }
+
+        .metric-detail {
+            font-size: 0.82rem;
+            color: #425264;
+            line-height: 1.55;
+        }
+
+        .flow-value {
+            font-weight: 800;
+        }
+
+        .flow-value.up {
+            color: #d84c34;
+        }
+
+        .flow-value.down {
+            color: #1763d6;
+        }
+
+        .flow-value.neutral {
+            color: var(--text-main);
+        }
+
+        .chart-panel {
+            min-height: 292px;
+            background: transparent;
+            border: none;
+            border-radius: 0;
+            padding: 0;
+            flex: 1;
+        }
+
+        .chart-canvas {
+            min-height: 292px;
+            height: 100%;
+        }
+
+        .impact-source-strip {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 14px;
+            margin-bottom: 18px;
+        }
+
+        .impact-source-card {
+            min-height: 128px;
+            padding: 18px 16px;
+            border-radius: 22px;
+            border: 1px solid var(--border-soft);
+            background: var(--bg-panel-strong);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: flex-start;
+            cursor: pointer;
+            text-align: left;
+            transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
+        }
+
+        .impact-source-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 20px rgba(68, 92, 112, 0.08);
+            border-color: rgba(23, 48, 66, 0.24);
+        }
+
+        .impact-source-card.active {
+            border-color: rgba(45, 169, 184, 0.35);
+            box-shadow: 0 16px 24px rgba(68, 92, 112, 0.12);
+        }
+
+        .impact-source-eyebrow {
+            font-size: 0.76rem;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            font-weight: 800;
+        }
+
+        .impact-source-card strong {
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-size: 1.04rem;
+            line-height: 1.2;
+            letter-spacing: -0.03em;
+        }
+
+        .impact-source-count {
+            font-size: 0.82rem;
+            color: var(--text-muted);
+            font-weight: 700;
+        }
+
+        .impact-brand-impacton { box-shadow: inset 0 4px 0 #111827; }
+        .impact-brand-social { box-shadow: inset 0 4px 0 #2563eb; }
+        .impact-brand-eroun { box-shadow: inset 0 4px 0 #0f766e; }
+        .impact-brand-trellis { box-shadow: inset 0 4px 0 #15803d; }
+        .impact-brand-bloomberg { box-shadow: inset 0 4px 0 #65a30d; }
+        .impact-brand-ctvc { box-shadow: inset 0 4px 0 #7c3aed; }
+        .impact-brand-impactalpha { box-shadow: inset 0 4px 0 #ec4899; }
+        .impact-brand-powerstack { box-shadow: inset 0 4px 0 #ea580c; }
+        .impact-brand-causeartist { box-shadow: inset 0 4px 0 #0f766e; }
+
+        .impact-news-stage {
+            background: var(--bg-panel-strong);
+            border: 1px solid var(--border-soft);
+            border-radius: 26px;
+            padding: 22px;
+            min-height: 560px;
+        }
+
+        .impact-news-panel {
+            display: none;
+        }
+
+        .impact-news-panel.active {
+            display: block;
+        }
+
+        .impact-panel-head {
+            margin-bottom: 14px;
+            padding-bottom: 14px;
+            border-bottom: 1px solid var(--border-soft);
+        }
+
+        .impact-panel-head span {
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.16em;
+            color: var(--text-muted);
+            font-weight: 800;
+        }
+
+        .impact-panel-head h3 {
+            margin-top: 6px;
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-size: 1.35rem;
+            letter-spacing: -0.03em;
+        }
+
+        .story-board {
+            display: grid;
+            gap: 18px;
+        }
+
+        .story-group {
+            display: grid;
+            gap: 14px;
+        }
+
+        .story-group-title {
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-size: 1.08rem;
+            font-weight: 700;
+            letter-spacing: -0.03em;
+            color: var(--text-main);
+        }
+
+        .story-card {
+            background: var(--bg-panel-strong);
+            border: 1px solid var(--border-soft);
+            border-radius: 22px;
+            padding: 20px;
+        }
+
+        .story-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.8rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--text-muted);
+            margin-bottom: 14px;
+        }
+
+        .news-card {
+            background: #ffffff;
+            border: 1px solid rgba(15, 23, 42, 0.08);
+            border-radius: 18px;
+            padding: 18px;
+            box-shadow: 0 10px 16px rgba(68, 92, 112, 0.05);
+        }
+
+        .news-card + .news-card {
+            margin-top: 12px;
+        }
+
+        .news-title {
+            font-size: 1.02rem;
+            line-height: 1.5;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            margin-bottom: 6px;
+        }
+
+        .news-title a {
             color: var(--text-main);
             text-decoration: none;
-            transition: color 0.15s ease;
-        }}
-        .news-title a:hover {{
-            color: var(--primary);
-        }}
-        .news-date {{
-            font-size: 0.78rem;
+        }
+
+        .news-title a:hover {
+            color: var(--accent-teal);
+        }
+
+        .news-date {
+            font-size: 0.8rem;
             color: var(--text-muted);
             margin-bottom: 10px;
-            font-weight: 500;
-        }}
-        .news-summary {{
-            margin: 0;
+        }
+
+        .news-summary {
             padding-left: 18px;
-            color: #334155;
             font-size: 0.9rem;
-            line-height: 1.6;
-        }}
-        .news-summary li {{
-            margin-bottom: 4px;
-        }}
-        .no-news {{
-            color: var(--text-muted);
-            font-style: italic;
-            padding: 12px;
-            background: #f1f5f9;
-            border-radius: 8px;
-            font-size: 0.88rem;
-            border: 1px dashed var(--border-color);
-        }}
-        
-        /* Strong Theme Styling */
-        .theme-container {{
-            background: var(--bg-card);
-            border-radius: 16px;
-            border: 1px solid var(--border-color);
-            padding: 24px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.02);
-            margin-bottom: 25px;
-        }}
-        .theme-header-box {{
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid var(--border-color);
-            padding-bottom: 16px;
-            margin-bottom: 20px;
-        }}
-        .theme-badge-title {{
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }}
-        .theme-icon-badge {{
-            background: var(--primary-light);
-            color: var(--primary);
-            padding: 6px 12px;
-            border-radius: 9999px;
-            font-weight: 800;
-            font-size: 0.8rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }}
-        .theme-title-text {{
-            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
-            font-size: 1.45rem;
-            font-weight: 800;
-            color: var(--text-main);
-        }}
-        .theme-rate-badge {{
-            background: #fee2e2;
-            color: var(--accent-red);
-            font-family: 'Outfit', sans-serif;
-            padding: 6px 14px;
-            border-radius: 9999px;
-            font-weight: 800;
-            font-size: 1.05rem;
-            box-shadow: 0 2px 8px rgba(239, 68, 68, 0.08);
-        }}
-        .theme-desc-box {{
+            color: #3d4a5b;
+            line-height: 1.68;
+        }
+
+        .news-summary li + li {
+            margin-top: 4px;
+        }
+
+        .empty-state {
+            border: 1px dashed rgba(23, 48, 66, 0.22);
+            border-radius: 18px;
+            padding: 18px;
             background: #f8fafc;
-            border-left: 4px solid var(--primary);
-            padding: 14px 18px;
-            border-radius: 0 10px 10px 0;
-            margin-bottom: 24px;
+            color: var(--text-muted);
             font-size: 0.92rem;
-            line-height: 1.6;
-            color: #334155;
-        }}
-        .theme-subtitle {{
-            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
-            font-size: 1.05rem;
-            font-weight: 700;
-            color: var(--text-main);
-            margin-bottom: 12px;
+        }
+
+        .theme-hero {
             display: flex;
             align-items: center;
-            gap: 6px;
-        }}
-        
-        /* Modern Table for stocks */
-        .stocks-table-wrapper {{
+            justify-content: space-between;
+            gap: 18px;
+            background: linear-gradient(135deg, rgba(14, 165, 183, 0.08), rgba(37, 99, 235, 0.07));
+            border: 1px solid rgba(14, 165, 183, 0.18);
+            border-radius: 24px;
+            padding: 22px;
+            margin-bottom: 18px;
+        }
+
+        .theme-title-wrap {
+            display: grid;
+            gap: 10px;
+        }
+
+        .theme-badge {
+            display: inline-flex;
+            width: fit-content;
+            font-size: 0.76rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.16em;
+            color: #0f6b7a;
+            background: rgba(255, 255, 255, 0.78);
+            border: 1px solid rgba(14, 165, 183, 0.22);
+            border-radius: 999px;
+            padding: 6px 10px;
+        }
+
+        .theme-title-wrap h3 {
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-size: clamp(1.45rem, 2.7vw, 2.2rem);
+            letter-spacing: -0.04em;
+            line-height: 1.12;
+        }
+
+        .theme-rate {
+            padding: 10px 16px;
+            border-radius: 999px;
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-size: 1.15rem;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .theme-rate-up {
+            background: #fee2e2;
+            color: #dc2626;
+        }
+
+        .theme-rate-down {
+            background: #dbeafe;
+            color: #2563eb;
+        }
+
+        .theme-rate-neutral {
+            background: #e2e8f0;
+            color: var(--text-main);
+        }
+
+        .theme-summary-box {
+            background: #ffffff;
+            border: 1px solid var(--border-soft);
+            border-left: 4px solid var(--accent-teal);
+            border-radius: 18px;
+            padding: 18px 20px;
+            margin-bottom: 18px;
+            line-height: 1.72;
+            color: #334155;
+        }
+
+        .stocks-table-wrapper {
             overflow-x: auto;
-            border-radius: 10px;
-            border: 1px solid var(--border-color);
-            margin-bottom: 28px;
-        }}
-        .stocks-table {{
+            border: 1px solid var(--border-soft);
+            border-radius: 18px;
+            background: #ffffff;
+        }
+
+        .stocks-table {
             width: 100%;
             border-collapse: collapse;
+            min-width: 620px;
+        }
+
+        .stocks-table th,
+        .stocks-table td {
+            padding: 14px 16px;
             text-align: left;
-            font-size: 0.88rem;
-        }}
-        .stocks-table th {{
-            background-color: #f8fafc;
-            color: var(--text-muted);
-            font-weight: 700;
-            padding: 12px 15px;
-            border-bottom: 1px solid var(--border-color);
+            border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+        }
+
+        .stocks-table th {
+            background: #f8fafc;
             font-size: 0.78rem;
             text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }}
-        .stocks-table td {{
-            padding: 14px 15px;
-            border-bottom: 1px solid var(--border-color);
-            color: #334155;
-            vertical-align: middle;
-        }}
-        .stocks-table tr:last-child td {{
+            letter-spacing: 0.12em;
+            color: var(--text-muted);
+        }
+
+        .stocks-table tr:last-child td {
             border-bottom: none;
-        }}
-        .stocks-table tr:hover td {{
-            background-color: #f8fafc;
-        }}
-        .stock-name-cell a {{
-            font-weight: 700;
+        }
+
+        .stock-name-cell a {
             color: var(--text-main);
             text-decoration: none;
-        }}
-        .stock-name-cell a:hover {{
-            color: var(--primary);
-            text-decoration: underline;
-        }}
-        .stock-price-cell {{
-            font-family: 'Outfit', sans-serif;
-            font-weight: 600;
-        }}
-        .stock-rate-cell span {{
-            font-family: 'Outfit', sans-serif;
             font-weight: 700;
-            padding: 3px 8px;
-            border-radius: 6px;
-            font-size: 0.78rem;
-        }}
-        .stock-rate-cell span.up {{
-            background-color: #fee2e2;
-            color: var(--accent-red);
-        }}
-        .stock-rate-cell span.down {{
-            background-color: #e0f2fe;
-            color: var(--accent-blue);
-        }}
-        .stock-reason-cell {{
+        }
+
+        .stock-name-cell a:hover {
+            color: var(--accent-teal);
+        }
+
+        .stock-price-cell {
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-weight: 700;
+        }
+
+        .stock-rate-cell span {
+            display: inline-flex;
+            border-radius: 999px;
+            padding: 5px 10px;
             font-size: 0.82rem;
-            line-height: 1.5;
+            font-weight: 800;
+        }
+
+        .stock-rate-cell span.up {
+            background: #fee2e2;
+            color: #dc2626;
+        }
+
+        .stock-rate-cell span.down {
+            background: #dbeafe;
+            color: #2563eb;
+        }
+
+        .stock-rate-cell span.neutral {
+            background: #e2e8f0;
+            color: var(--text-main);
+        }
+
+        .stock-reason-cell {
+            color: #475569;
+            line-height: 1.65;
+            font-size: 0.9rem;
+        }
+
+        .empty-table {
+            text-align: center;
             color: var(--text-muted);
-        }}
-        
-        @media (max-width: 992px) {{
-            .dashboard-container {{ grid-template-columns: repeat(2, 1fr); }}
-            .chart-grid {{ grid-template-columns: 1fr; }}
-            .top-tabs {{ grid-template-columns: repeat(3, 1fr); }}
-        }}
-        @media (max-width: 576px) {{
-            .dashboard-container {{ grid-template-columns: 1fr; }}
-            .top-tabs {{ grid-template-columns: repeat(2, 1fr); }}
-            h1 {{ font-size: 1.85rem; }}
-            .theme-header-box {{ flex-direction: column; align-items: flex-start; gap: 10px; }}
-            .theme-rate-badge {{ align-self: flex-start; }}
-        }}
+            padding: 22px;
+        }
+
+        @media (max-width: 1200px) {
+            .workspace {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                position: static;
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+
+            .sidebar-calendar {
+                grid-column: 1 / -1;
+            }
+
+            .top-banner {
+                grid-template-columns: 1fr;
+                gap: 6px;
+            }
+
+            .title-box {
+                grid-template-columns: 1fr;
+                align-items: flex-start;
+                gap: 6px;
+            }
+
+            .title-meta {
+                text-align: left;
+                white-space: normal;
+            }
+
+            .indicators-board {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 780px) {
+            body {
+                padding: 18px;
+            }
+
+            .sidebar {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .impact-source-strip {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .panel-shell,
+            .sidebar-calendar {
+                border-radius: 24px;
+            }
+
+            .indicator-card {
+                min-height: 320px;
+            }
+        }
+
+        @media (max-width: 560px) {
+            .sidebar {
+                grid-template-columns: 1fr;
+            }
+
+            .impact-source-strip {
+                grid-template-columns: 1fr;
+            }
+
+            .theme-hero,
+            .panel-header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .calendar-day {
+                height: 36px;
+            }
+        }
     </style>
 </head>
 <body>
-    <div class="header-controls">
-        <h1>오늘의 마켓 & 뉴스 브리핑</h1>
-        <div class="date-title">수집 기준일: {target_dot} 전일 기사 <br> 최종 갱신: {updated_at} KST</div>
-        <div class="archive-picker">
-            <label for="history-select">🗓️ 과거기사: </label>
-            <select id="history-select"></select>
-        </div>
-    </div>
-
-    <div class="dashboard-container">
-        <div class="dash-card blue" style="cursor: pointer;" onclick="toggleMarketCharts(true)">
-            <div class="dash-title">🇺🇸 미 10년물 금리</div>
-            <div class="dash-value">{dashboard['us_10y']}</div>
-            <div class="sparkline-container" id="sparkline-us-10y"></div>
-        </div>
-        <div class="dash-card green" style="cursor: pointer;" onclick="toggleMarketCharts(true)">
-            <div class="dash-title">💱 원/달러 환율</div>
-            <div class="dash-value">{dashboard['fx_info']}</div>
-            <div class="sparkline-container" id="sparkline-fx"></div>
-        </div>
-        <div class="dash-card orange" style="cursor: pointer;" onclick="toggleMarketCharts(true)">
-            <div class="dash-title">📈 코스피 / 코스닥</div>
-            <div class="dash-flow">
-                <div class="market-block">
-                    <div class="market-label">코스피 지수</div>
-                    <div class="market-index">{dashboard['kospi_info']}</div>
-                    <div class="flow-row">{format_flow_html(dashboard['kospi_flow'])}</div>
+    <div class="page-shell">
+        <header class="top-banner">
+            <section class="brand-box">
+                <div class="brand-logo">
+                    <span>IMPACT</span>
+                    <span>SQUARE<div class="brand-dot"></div></span>
                 </div>
-                <div class="market-block">
-                    <div class="market-label">코스닥 지수</div>
-                    <div class="market-index">{dashboard['kosdaq_info']}</div>
-                    <div class="flow-row">{format_flow_html(dashboard['kosdaq_flow'])}</div>
-                </div>
-            </div>
-            <div class="sparkline-container" id="sparkline-kospi"></div>
-        </div>
-        <div class="dash-card purple" onclick="activateThemeTab()" style="cursor:pointer;">
-            <div class="dash-title">🔥 국내 강세 테마</div>
-            <div class="dash-value" style="font-size:1.1rem; color:var(--primary);">Top 1: {strong_theme['name']}</div>
-            <div class="sparkline-container" id="sparkline-theme" style="display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 700; color: var(--primary);">
-                자세히 보기 &rarr;
-            </div>
-        </div>
-    </div>
+            </section>
+            <section class="title-box">
+                <h1>오늘의 마켓 & 뉴스 브리핑</h1>
+                <div class="title-meta">기사 기준일: {target_dot}<br>최종 갱신: {updated_at} KST</div>
+            </section>
+        </header>
 
-    <!-- Collapsible Market Charts Section -->
-    <div class="market-charts-toggle" onclick="toggleMarketCharts()">
-        <span>📊 실시간 시장 지표 30일 시계열 추이 분석 (클릭하여 열기)</span>
-        <span class="toggle-icon" id="toggle-icon">▼</span>
-    </div>
-    <div class="market-charts-wrapper" id="market-charts-wrapper">
-        <div class="chart-grid">
-            <div class="chart-card">
-                <h3>🇺🇸 미 10년물 국채금리 30일 추이</h3>
-                <div id="chart-us-10y"></div>
-            </div>
-            <div class="chart-card">
-                <h3>💱 원/달러 환율 30일 추이</h3>
-                <div id="chart-fx"></div>
-            </div>
-            <div class="chart-card">
-                <h3>📈 코스피 지수 30일 추이</h3>
-                <div id="chart-kospi"></div>
-            </div>
-            <div class="chart-card">
-                <h3>📉 코스닥 지수 30일 추이</h3>
-                <div id="chart-kosdaq"></div>
-            </div>
+        <div class="workspace">
+            <aside class="sidebar">
+                {calendar_sidebar_html}
+                {sidebar_html}
+            </aside>
+            <main class="main-stage">
+                {indicator_section_html}
+                {impact_section_html}
+                {generic_sections_html}
+                {theme_section_html}
+            </main>
         </div>
     </div>
 
-    <div class="top-tabs" role="tablist">
-"""
-    for idx, (sid, label) in enumerate(NAV_SECTIONS):
-        act = " active" if idx == 0 else ""
-        html_content += f'<button class="nav-tab{act}" data-target="section-{sid}">{label}<span class="tab-count">{counts.get(sid,0)}</span></button>\n'
-    html_content += "</div>\n"
-
-    # 🔥 1. 강세테마 탭 내용
-    html_content += f"""<section id="section-theme" class="content-section">
-        <div class="section-title">국내 강세테마 분석</div>
-        <div class="theme-container">
-            <div class="theme-header-box">
-                <div class="theme-badge-title">
-                    <span class="theme-icon-badge">HOT THEME</span>
-                    <span class="theme-title-text">{strong_theme['name']}</span>
-                </div>
-                <span class="theme-rate-badge">{strong_theme['rate']}</span>
-            </div>
-            
-            <div class="theme-subtitle">💡 테마 개요</div>
-            <div class="theme-desc-box">{strong_theme['desc']}</div>
-            
-            <div class="theme-subtitle">💎 주요 대장 종목 Top 5</div>
-            <div class="stocks-table-wrapper">
-                <table class="stocks-table">
-                    <thead>
-                        <tr>
-                            <th style="width: 20%;">종목명</th>
-                            <th style="width: 15%;">현재가</th>
-                            <th style="width: 15%;">등락률</th>
-                            <th style="width: 50%;">기업 해설</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-    """
-    
-    if not strong_theme['stocks']:
-        html_content += "<tr><td colspan='4' class='no-news' style='text-align:center;'>수집된 테마 대장 종목이 없습니다.</td></tr>"
-    else:
-        for stock in strong_theme['stocks']:
-            rate_class = "up" if "+" in stock["rate"] else "down"
-            html_content += f"""
-                        <tr>
-                            <td class="stock-name-cell"><a href="https://finance.naver.com/item/main.naver?code={stock['code']}" target="_blank">{stock['name']}</a></td>
-                            <td class="stock-price-cell">{stock['price']}원</td>
-                            <td class="stock-rate-cell"><span class="{rate_class}">{stock['rate']}</span></td>
-                            <td class="stock-reason-cell">{stock['reason']}</td>
-                        </tr>
-            """
-            
-    html_content += """
-                    </tbody>
-                </table>
-            </div>
-            
-            <div class="theme-subtitle">📰 테마 관련 주요 최신 뉴스</div>
-    """
-    
-    if not strong_theme['news']:
-        html_content += "<div class='no-news'>관련 뉴스를 찾을 수 없습니다.</div>"
-    else:
-        for news in strong_theme['news']:
-            html_content += f"""
-            <div class="news-card">
-                <div class="news-title"><a href="{news['link']}" target="_blank">{news['title']}</a></div>
-                <div class="news-date">출처: {news['source']} | 발행일: {news['date']}</div>
-                <ul class="news-summary">
-            """
-            for line in news["summary"]:
-                html_content += f"<li>{line}</li>"
-            html_content += "</ul></div>"
-            
-    html_content += """
-        </div>
-    </section>
-    """
-
-    # Other categories sections
-    section_map = {section["id"]: section for section in search_sections}
-    for sid in ("vcac", "ai", "macro"):
-        section = section_map.get(sid)
-        if not section:
-            continue
-        html_content += f'<section id="section-{section["id"]}" class="content-section"><div class="section-title">{section["label"]}</div>\n'
-        for group in section["groups"]:
-            html_content += f'<div class="group-title">{group["title"]}</div>\n'
-            for category in group["categories"]:
-                html_content += f'<div class="sub-category">📌 {category["name"]}</div>\n'
-                if not category["news"]: html_content += "<div class='no-news'>전일 수집된 뉴스가 없습니다.</div>\n"
-                for news in category["news"]:
-                    html_content += f'<div class="news-card"><div class="news-title"><a href="{news["link"]}" target="_blank">{news["title"]}</a></div>'
-                    html_content += f'<div class="news-date">출처: {news["source"]} | 발행일: {news["date"]}</div><ul class="news-summary">'
-                    for line in news["summary"]: html_content += f"<li>{line}</li>"
-                    html_content += "</ul></div>\n"
-        html_content += "</section>\n"
-
-    html_content += '<section id="section-impact" class="content-section active"><div class="section-title">임팩트 브리핑</div>\n'
-    if not impact_groups:
-        html_content += "<div class='no-news'>수집된 기사가 없습니다.</div>\n"
-    for source_name, news_list in impact_groups.items():
-        html_content += f'<div class="sub-category">📌 {source_name}</div>\n'
-        for news in news_list:
-            html_content += f'<div class="news-card"><div class="news-title"><a href="{news["link"]}" target="_blank">{news["title"]}</a></div>'
-            html_content += f'<div class="news-date">출처: {news["source"]} | 발행일: {news["date"]}</div><ul class="news-summary">'
-            for line in news["summary"]: html_content += f"<li>{line}</li>"
-            html_content += "</ul></div>\n"
-    html_content += "</section>\n"
-
-    html_content += f"""
     <script>
         const chartData = {chart_json};
-        
-        // Tabs logic
-        const tabs = document.querySelectorAll(".nav-tab");
+        const selectedDate = "{target_dash}";
+        const hasArchiveManifest = typeof archiveDates !== "undefined" && Array.isArray(archiveDates) && archiveDates.length > 0;
+        const availableDates = hasArchiveManifest
+            ? Array.from(new Set([...archiveDates, selectedDate])).sort()
+            : [selectedDate];
+
+        const sidebarTabs = document.querySelectorAll(".sidebar-tab");
         const sections = document.querySelectorAll(".content-section");
-        tabs.forEach(tab => {{
-            tab.addEventListener("click", () => {{
-                tabs.forEach(t => t.classList.remove("active"));
-                sections.forEach(s => s.classList.remove("active"));
-                tab.classList.add("active");
-                document.getElementById(tab.dataset.target).classList.add("active");
-            }});
-        }});
-        
-        function activateThemeTab() {{
-            const themeTab = document.querySelector('.nav-tab[data-target="section-theme"]');
-            if (themeTab) themeTab.click();
-            document.querySelector(".header-controls").scrollIntoView({{ behavior: 'smooth' }});
-        }}
-        
-        function toggleMarketCharts(forceExpand = false) {{
-            const wrapper = document.getElementById("market-charts-wrapper");
-            const icon = document.getElementById("toggle-icon");
-            if (wrapper.classList.contains("expanded") && !forceExpand) {{
-                wrapper.classList.remove("expanded");
-                icon.textContent = "▼";
-            }} else {{
-                wrapper.classList.add("expanded");
-                icon.textContent = "▲";
-                // Trigger chart resizing for ApexCharts
-                setTimeout(() => {{
-                    window.dispatchEvent(new Event('resize'));
-                }}, 100);
-            }}
-        }}
-        
-        if (typeof archiveDates !== 'undefined') {{
-            const sel = document.getElementById('history-select');
-            archiveDates.forEach(d => {{
-                let opt = document.createElement('option'); opt.value = d; opt.textContent = d;
-                if (d === "{target_dash}") opt.selected = true;
-                sel.appendChild(opt);
-            }});
-            sel.addEventListener('change', e => {{
-                window.location.href = e.target.value === archiveDates[0] ? 'index.html' : 'archive_' + e.target.value + '.html';
-            }});
-        }}
-        
-        // --- APEXCHARTS INITIALIZATION ---
-        document.addEventListener("DOMContentLoaded", () => {{
-            const colors = {{
-                us10y: '#0ea5e9',
-                fx: '#10b981',
-                kospi: '#f59e0b',
-                kosdaq: '#f59e0b'
-            }};
-            
-            // 1. Sparklines Options
-            const getSparklineOpt = (dates, values, color) => ({{
-                series: [{{ name: 'Close', data: values }}],
-                chart: {{ type: 'area', height: 35, sparkline: {{ enabled: true }}, animations: {{ enabled: true }} }},
-                stroke: {{ curve: 'smooth', width: 2 }},
-                fill: {{
-                    type: 'gradient',
-                    gradient: {{ shadeIntensity: 1, opacityFrom: 0.4, opacityTo: 0.02, stops: [0, 100] }}
-                }},
+
+        function activateSection(sectionId) {
+            sidebarTabs.forEach((tab) => tab.classList.toggle("active", tab.dataset.target === sectionId));
+            sections.forEach((section) => section.classList.toggle("active", section.id === sectionId));
+        }
+
+        sidebarTabs.forEach((tab) => {
+            tab.addEventListener("click", () => activateSection(tab.dataset.target));
+        });
+
+        const impactSourceCards = document.querySelectorAll("[data-impact-target]");
+        const impactPanels = document.querySelectorAll("[data-impact-panel]");
+
+        function activateImpactSource(targetKey) {
+            impactSourceCards.forEach((card) => card.classList.toggle("active", card.dataset.impactTarget === targetKey));
+            impactPanels.forEach((panel) => panel.classList.toggle("active", panel.dataset.impactPanel === targetKey));
+        }
+
+        impactSourceCards.forEach((card) => {
+            card.addEventListener("click", () => activateImpactSource(card.dataset.impactTarget));
+        });
+
+        function archiveHref(dateStr) {
+            if (!hasArchiveManifest) {
+                return "#";
+            }
+            return dateStr === archiveDates[0] ? "index.html" : `archive_${dateStr}.html`;
+        }
+
+        const calendarGrid = document.getElementById("calendar-grid");
+        const calendarMonthLabel = document.getElementById("calendar-month-label");
+        const calendarPrev = document.getElementById("calendar-prev");
+        const calendarNext = document.getElementById("calendar-next");
+        let calendarView = new Date(`${selectedDate}T00:00:00`);
+
+        function renderCalendar() {
+            const year = calendarView.getFullYear();
+            const month = calendarView.getMonth();
+            calendarMonthLabel.textContent = `${year}년 ${month + 1}월`;
+            calendarGrid.innerHTML = "";
+
+            const firstDay = new Date(year, month, 1);
+            const firstDate = new Date(firstDay);
+            firstDate.setDate(firstDate.getDate() - firstDay.getDay());
+
+            for (let i = 0; i < 42; i += 1) {
+                const current = new Date(firstDate);
+                current.setDate(firstDate.getDate() + i);
+                const dateStr = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, "0")}-${String(current.getDate()).padStart(2, "0")}`;
+                const isCurrentMonth = current.getMonth() === month;
+                const isSelected = dateStr === selectedDate;
+                const isAvailable = availableDates.includes(dateStr);
+                const button = document.createElement("button");
+                button.type = "button";
+                button.className = "calendar-day";
+                if (!isCurrentMonth) button.classList.add("is-muted");
+                if (isAvailable) button.classList.add("is-available");
+                if (isSelected) button.classList.add("is-selected");
+                button.textContent = String(current.getDate());
+
+                if (!isAvailable) {
+                    button.disabled = true;
+                } else {
+                    button.addEventListener("click", () => {
+                        const href = archiveHref(dateStr);
+                        if (href && href !== "#") {
+                            window.location.href = href;
+                        }
+                    });
+                }
+                calendarGrid.appendChild(button);
+            }
+        }
+
+        calendarPrev.addEventListener("click", () => {
+            calendarView = new Date(calendarView.getFullYear(), calendarView.getMonth() - 1, 1);
+            renderCalendar();
+        });
+
+        calendarNext.addEventListener("click", () => {
+            calendarView = new Date(calendarView.getFullYear(), calendarView.getMonth() + 1, 1);
+            renderCalendar();
+        });
+
+        renderCalendar();
+
+        document.addEventListener("DOMContentLoaded", () => {
+            if (!window.ApexCharts) {
+                return;
+            }
+
+            const colors = {
+                us10y: "#0f6bd8",
+                fx: "#14875e",
+                kospi: "#d97706",
+                kosdaq: "#334155",
+            };
+
+            const formatValue = (value, suffix = "") => {
+                const numericValue = Number(value);
+                if (!Number.isFinite(numericValue)) {
+                    return value;
+                }
+                const maximumFractionDigits = Math.abs(numericValue) >= 100 ? 1 : 3;
+                return numericValue.toLocaleString("ko-KR", { maximumFractionDigits }) + suffix;
+            };
+
+            const chartOptions = (title, dates, values, color, suffix = "") => ({
+                series: [{ name: title, data: values }],
+                chart: {
+                    type: "area",
+                    height: 292,
+                    toolbar: { show: false },
+                    zoom: { enabled: false },
+                    fontFamily: "Inter, Noto Sans KR, sans-serif",
+                },
                 colors: [color],
-                tooltip: {{ fixed: {{ enabled: false }}, x: {{ show: false }}, y: {{ title: {{ formatter: () => '' }} }}, marker: {{ show: false }} }}
-            }});
-            
-            // 2. Full Charts Options
-            const getFullChartOpt = (title, dates, values, color, suffix="") => ({{
-                series: [{{ name: title, data: values }}],
-                chart: {{ type: 'area', height: 220, toolbar: {{ show: false }}, zoom: {{ enabled: false }} }},
-                colors: [color],
-                dataLabels: {{ enabled: false }},
-                stroke: {{ curve: 'smooth', width: 3 }},
-                fill: {{
-                    type: 'gradient',
-                    gradient: {{ shadeIntensity: 1, opacityFrom: 0.45, opacityTo: 0.05, stops: [0, 95, 100] }}
-                }},
-                grid: {{ borderColor: '#f1f5f9', strokeDashArray: 4 }},
-                xaxis: {{
+                dataLabels: { enabled: false },
+                stroke: { curve: "smooth", width: 3 },
+                fill: {
+                    type: "gradient",
+                    gradient: {
+                        shadeIntensity: 1,
+                        opacityFrom: 0.34,
+                        opacityTo: 0.04,
+                        stops: [0, 95, 100],
+                    },
+                },
+                grid: {
+                    borderColor: "rgba(148, 163, 184, 0.22)",
+                    strokeDashArray: 4,
+                },
+                xaxis: {
                     categories: dates,
-                    labels: {{ style: {{ colors: '#94a3b8', fontSize: '10px', fontFamily: 'Inter' }} }},
-                    axisBorder: {{ show: false }},
-                    axisTicks: {{ show: false }}
-                }},
-                yaxis: {{
-                    labels: {{ 
-                        style: {{ colors: '#94a3b8', fontSize: '10px', fontFamily: 'Inter' }},
-                        formatter: (v) => v.toFixed(v > 100 ? 1 : 3) + suffix
-                    }}
-                }},
-                tooltip: {{ x: {{ show: true }}, y: {{ formatter: (v) => v.toLocaleString() + suffix }} }}
-            }});
-            
-            // Render Sparklines
-            if (chartData.us_10y && chartData.us_10y.values.length) {{
-                new ApexCharts(document.querySelector("#sparkline-us-10y"), getSparklineOpt(chartData.us_10y.dates, chartData.us_10y.values, colors.us10y)).render();
-                new ApexCharts(document.querySelector("#chart-us-10y"), getFullChartOpt('금리', chartData.us_10y.dates, chartData.us_10y.values, colors.us10y, '%')).render();
-            }}
-            if (chartData.fx && chartData.fx.values.length) {{
-                new ApexCharts(document.querySelector("#sparkline-fx"), getSparklineOpt(chartData.fx.dates, chartData.fx.values, colors.fx)).render();
-                new ApexCharts(document.querySelector("#chart-fx"), getFullChartOpt('환율', chartData.fx.dates, chartData.fx.values, colors.fx, '원')).render();
-            }}
-            if (chartData.kospi && chartData.kospi.values.length) {{
-                new ApexCharts(document.querySelector("#sparkline-kospi"), getSparklineOpt(chartData.kospi.dates, chartData.kospi.values, colors.kospi)).render();
-                new ApexCharts(document.querySelector("#chart-kospi"), getFullChartOpt('코스피', chartData.kospi.dates, chartData.kospi.values, colors.kospi)).render();
-            }}
-            if (chartData.kosdaq && chartData.kosdaq.values.length) {{
-                new ApexCharts(document.querySelector("#chart-kosdaq"), getFullChartOpt('코스닥', chartData.kosdaq.dates, chartData.kosdaq.values, colors.kosdaq)).render();
-            }}
-        }});
+                    labels: {
+                        style: {
+                            colors: "#94a3b8",
+                            fontSize: "10px",
+                        },
+                    },
+                    axisBorder: { show: false },
+                    axisTicks: { show: false },
+                },
+                yaxis: {
+                    labels: {
+                        style: {
+                            colors: "#94a3b8",
+                            fontSize: "10px",
+                        },
+                        formatter: (value) => formatValue(value, suffix),
+                    },
+                },
+                tooltip: {
+                    x: { show: true },
+                    y: {
+                        formatter: (value) => formatValue(value, suffix),
+                    },
+                },
+            });
+
+            if (chartData.us_10y && chartData.us_10y.values.length) {
+                new ApexCharts(
+                    document.querySelector("#chart-us-10y"),
+                    chartOptions("금리", chartData.us_10y.dates, chartData.us_10y.values, colors.us10y, "%")
+                ).render();
+            }
+
+            if (chartData.fx && chartData.fx.values.length) {
+                new ApexCharts(
+                    document.querySelector("#chart-fx"),
+                    chartOptions("환율", chartData.fx.dates, chartData.fx.values, colors.fx, "원")
+                ).render();
+            }
+
+            if (chartData.kospi && chartData.kospi.values.length) {
+                new ApexCharts(
+                    document.querySelector("#chart-kospi"),
+                    chartOptions("코스피", chartData.kospi.dates, chartData.kospi.values, colors.kospi)
+                ).render();
+            }
+
+            if (chartData.kosdaq && chartData.kosdaq.values.length) {
+                new ApexCharts(
+                    document.querySelector("#chart-kosdaq"),
+                    chartOptions("코스닥", chartData.kosdaq.dates, chartData.kosdaq.values, colors.kosdaq)
+                ).render();
+            }
+        });
     </script>
 </body>
 </html>
 """
+    html_content = (
+        html_template
+        .replace("{target_dot}", target_dot)
+        .replace("{updated_at}", updated_at)
+        .replace("{calendar_sidebar_html}", calendar_sidebar_html)
+        .replace("{sidebar_html}", sidebar_html)
+        .replace("{indicator_section_html}", indicator_section_html)
+        .replace("{impact_section_html}", impact_section_html)
+        .replace("{generic_sections_html}", generic_sections_html)
+        .replace("{theme_section_html}", theme_section_html)
+        .replace("{chart_json}", chart_json)
+        .replace("{target_dash}", target_dash)
+    )
     return html_content
 
 def main():
     args = parse_args()
-    target_date = get_target_date(args.date)
+    target_date = get_news_date(args)
     target_dot = target_date.strftime("%Y.%m.%d")
     target_dash = target_date.strftime("%Y-%m-%d")
     seen_links, seen_titles = set(), [] 
@@ -2074,3 +2861,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+

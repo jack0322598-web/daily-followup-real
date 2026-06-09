@@ -1,0 +1,1173 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>오늘의 마켓 & 뉴스 브리핑</title>
+    <script src="archive_list.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+    <style>
+        :root {
+            --bg-main: #f4f0ea;
+            --bg-panel: rgba(255, 255, 255, 0.88);
+            --bg-panel-strong: #ffffff;
+            --text-main: #13181f;
+            --text-muted: #6f7683;
+            --border-strong: rgba(116, 148, 173, 0.42);
+            --border-soft: rgba(116, 148, 173, 0.22);
+            --shadow-soft: 0 18px 40px rgba(68, 92, 112, 0.09);
+            --shadow-card: 0 12px 26px rgba(68, 92, 112, 0.08);
+            --accent-teal: #0ea5b7;
+            --accent-blue: #2563eb;
+            --accent-green: #15803d;
+            --accent-amber: #b45309;
+            --accent-rose: #be185d;
+            --accent-slate: #334155;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            min-height: 100vh;
+            font-family: 'Inter', 'Noto Sans KR', sans-serif;
+            color: var(--text-main);
+            background:
+                radial-gradient(circle at top left, rgba(14, 165, 183, 0.08), transparent 28%),
+                radial-gradient(circle at top right, rgba(37, 99, 235, 0.08), transparent 24%),
+                linear-gradient(180deg, #f8f4ee 0%, var(--bg-main) 100%);
+            padding: 28px;
+        }
+
+        button {
+            font: inherit;
+        }
+
+        .page-shell {
+            max-width: 1500px;
+            margin: 0 auto;
+        }
+
+        .top-banner {
+            display: grid;
+            grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+            gap: 22px;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .brand-box {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 0;
+        }
+
+        .brand-logo {
+            display: inline-flex;
+            flex-direction: column;
+            gap: 0;
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-size: clamp(1.9rem, 3vw, 2.45rem);
+            font-weight: 800;
+            line-height: 0.88;
+            letter-spacing: -0.04em;
+        }
+
+        .brand-logo span:last-child {
+            display: inline-flex;
+            align-items: flex-end;
+            gap: 8px;
+        }
+
+        .brand-dot {
+            width: 14px;
+            height: 14px;
+            border-radius: 999px;
+            background: var(--accent-teal);
+            box-shadow: 0 0 0 4px rgba(14, 165, 183, 0.18);
+        }
+
+        .title-box {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: end;
+            gap: 18px;
+        }
+
+        .title-box h1 {
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-size: clamp(1.95rem, 4vw, 3.05rem);
+            line-height: 1.02;
+            letter-spacing: -0.04em;
+            font-weight: 700;
+        }
+
+        .title-meta {
+            color: var(--text-muted);
+            font-size: 0.88rem;
+            line-height: 1.5;
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        .calendar-box {
+            padding: 18px 18px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .sidebar-calendar {
+            background: var(--bg-panel);
+            border: 1px solid var(--border-strong);
+            border-radius: 24px;
+            box-shadow: var(--shadow-soft);
+            backdrop-filter: blur(14px);
+        }
+
+        .calendar-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .calendar-month-label {
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-size: 1.55rem;
+            font-weight: 700;
+            letter-spacing: -0.03em;
+        }
+
+        .calendar-nav {
+            display: flex;
+            gap: 8px;
+        }
+
+        .calendar-nav button {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border: 1px solid var(--border-soft);
+            background: #ffffff;
+            cursor: pointer;
+            color: var(--text-main);
+            transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+        }
+
+        .calendar-nav button:hover {
+            transform: translateY(-1px);
+            border-color: var(--border-strong);
+            background: #f8fbfd;
+        }
+
+        .calendar-weekdays,
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, minmax(0, 1fr));
+            gap: 8px;
+        }
+
+        .calendar-weekdays span {
+            text-align: center;
+            font-size: 0.83rem;
+            font-weight: 700;
+            color: var(--text-muted);
+        }
+
+        .calendar-day {
+            height: 42px;
+            border: 1px solid transparent;
+            border-radius: 50%;
+            background: transparent;
+            color: var(--text-main);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .calendar-day.is-muted {
+            color: #b0b7c3;
+        }
+
+        .calendar-day.is-available:hover {
+            border-color: rgba(14, 165, 183, 0.32);
+            background: rgba(14, 165, 183, 0.08);
+        }
+
+        .calendar-day.is-selected {
+            background: #0f6bd8;
+            color: #ffffff;
+            box-shadow: 0 12px 18px rgba(15, 107, 216, 0.22);
+        }
+
+        .calendar-day:disabled {
+            cursor: default;
+        }
+
+        .calendar-caption {
+            font-size: 0.82rem;
+            color: var(--text-muted);
+            line-height: 1.45;
+        }
+
+        .workspace {
+            display: grid;
+            grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+            gap: 22px;
+            align-items: start;
+        }
+
+        .sidebar {
+            position: sticky;
+            top: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .sidebar-tab {
+            border: 1px solid var(--border-strong);
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.78);
+            min-height: 64px;
+            padding: 14px 20px;
+            text-align: center;
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-size: 1.25rem;
+            font-weight: 700;
+            letter-spacing: -0.03em;
+            cursor: pointer;
+            transition: transform 0.22s ease, background 0.22s ease, color 0.22s ease, box-shadow 0.22s ease;
+        }
+
+        .sidebar-tab:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 22px rgba(22, 30, 37, 0.08);
+        }
+
+        .sidebar-tab.active {
+            background: linear-gradient(135deg, #2da9b8 0%, #6e8ef7 100%);
+            color: #ffffff;
+            border-color: transparent;
+            box-shadow: 0 14px 26px rgba(75, 122, 161, 0.22);
+        }
+
+        .main-stage {
+            min-width: 0;
+        }
+
+        .content-section {
+            display: none;
+            animation: fadeIn 0.35s ease;
+        }
+
+        .content-section.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(8px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .panel-shell {
+            background: var(--bg-panel);
+            border: 1px solid var(--border-strong);
+            border-radius: 30px;
+            padding: 24px;
+            box-shadow: var(--shadow-soft);
+            backdrop-filter: blur(14px);
+        }
+
+        .panel-header {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 16px;
+            padding-bottom: 18px;
+            margin-bottom: 18px;
+            border-bottom: 1px solid var(--border-soft);
+        }
+
+        .panel-kicker {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.16em;
+            margin-bottom: 6px;
+        }
+
+        .panel-header h2 {
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-size: clamp(1.8rem, 3vw, 2.55rem);
+            letter-spacing: -0.04em;
+            line-height: 1.04;
+        }
+
+        .panel-count {
+            border: 1px solid var(--border-soft);
+            background: rgba(255, 255, 255, 0.76);
+            border-radius: 999px;
+            padding: 8px 14px;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .indicators-board {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 18px;
+        }
+
+        .indicator-card {
+            background: var(--bg-panel-strong);
+            border: 1px solid var(--border-soft);
+            border-radius: 24px;
+            padding: 20px;
+            min-height: 360px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            box-shadow: var(--shadow-card);
+        }
+
+        .indicator-summary {
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            align-items: flex-start;
+            gap: 6px;
+        }
+
+        .indicator-card.tone-blue {
+            box-shadow: inset 4px 0 0 var(--accent-blue), var(--shadow-card);
+        }
+
+        .indicator-card.tone-green {
+            box-shadow: inset 4px 0 0 var(--accent-green), var(--shadow-card);
+        }
+
+        .indicator-card.tone-amber {
+            box-shadow: inset 4px 0 0 #d97706, var(--shadow-card);
+        }
+
+        .indicator-card.tone-slate {
+            box-shadow: inset 4px 0 0 var(--accent-slate), var(--shadow-card);
+        }
+
+        .metric-label {
+            font-size: 0.98rem;
+            color: var(--text-muted);
+            font-weight: 700;
+        }
+
+        .metric-value {
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-size: clamp(1.1rem, 1.7vw, 1.45rem);
+            font-weight: 700;
+            letter-spacing: -0.04em;
+        }
+
+        .metric-detail {
+            font-size: 0.82rem;
+            color: #425264;
+            line-height: 1.55;
+        }
+
+        .flow-value {
+            font-weight: 800;
+        }
+
+        .flow-value.up {
+            color: #d84c34;
+        }
+
+        .flow-value.down {
+            color: #1763d6;
+        }
+
+        .flow-value.neutral {
+            color: var(--text-main);
+        }
+
+        .chart-panel {
+            min-height: 292px;
+            background: transparent;
+            border: none;
+            border-radius: 0;
+            padding: 0;
+            flex: 1;
+        }
+
+        .chart-canvas {
+            min-height: 292px;
+            height: 100%;
+        }
+
+        .impact-source-strip {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 14px;
+            margin-bottom: 18px;
+        }
+
+        .impact-source-card {
+            min-height: 128px;
+            padding: 18px 16px;
+            border-radius: 22px;
+            border: 1px solid var(--border-soft);
+            background: var(--bg-panel-strong);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: flex-start;
+            cursor: pointer;
+            text-align: left;
+            transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
+        }
+
+        .impact-source-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 20px rgba(68, 92, 112, 0.08);
+            border-color: rgba(23, 48, 66, 0.24);
+        }
+
+        .impact-source-card.active {
+            border-color: rgba(45, 169, 184, 0.35);
+            box-shadow: 0 16px 24px rgba(68, 92, 112, 0.12);
+        }
+
+        .impact-source-eyebrow {
+            font-size: 0.76rem;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            font-weight: 800;
+        }
+
+        .impact-source-card strong {
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-size: 1.04rem;
+            line-height: 1.2;
+            letter-spacing: -0.03em;
+        }
+
+        .impact-source-count {
+            font-size: 0.82rem;
+            color: var(--text-muted);
+            font-weight: 700;
+        }
+
+        .impact-brand-impacton { box-shadow: inset 0 4px 0 #111827; }
+        .impact-brand-social { box-shadow: inset 0 4px 0 #2563eb; }
+        .impact-brand-eroun { box-shadow: inset 0 4px 0 #0f766e; }
+        .impact-brand-trellis { box-shadow: inset 0 4px 0 #15803d; }
+        .impact-brand-bloomberg { box-shadow: inset 0 4px 0 #65a30d; }
+        .impact-brand-ctvc { box-shadow: inset 0 4px 0 #7c3aed; }
+        .impact-brand-impactalpha { box-shadow: inset 0 4px 0 #ec4899; }
+        .impact-brand-powerstack { box-shadow: inset 0 4px 0 #ea580c; }
+        .impact-brand-causeartist { box-shadow: inset 0 4px 0 #0f766e; }
+
+        .impact-news-stage {
+            background: var(--bg-panel-strong);
+            border: 1px solid var(--border-soft);
+            border-radius: 26px;
+            padding: 22px;
+            min-height: 560px;
+        }
+
+        .impact-news-panel {
+            display: none;
+        }
+
+        .impact-news-panel.active {
+            display: block;
+        }
+
+        .impact-panel-head {
+            margin-bottom: 14px;
+            padding-bottom: 14px;
+            border-bottom: 1px solid var(--border-soft);
+        }
+
+        .impact-panel-head span {
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.16em;
+            color: var(--text-muted);
+            font-weight: 800;
+        }
+
+        .impact-panel-head h3 {
+            margin-top: 6px;
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-size: 1.35rem;
+            letter-spacing: -0.03em;
+        }
+
+        .story-board {
+            display: grid;
+            gap: 18px;
+        }
+
+        .story-group {
+            display: grid;
+            gap: 14px;
+        }
+
+        .story-group-title {
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-size: 1.08rem;
+            font-weight: 700;
+            letter-spacing: -0.03em;
+            color: var(--text-main);
+        }
+
+        .story-card {
+            background: var(--bg-panel-strong);
+            border: 1px solid var(--border-soft);
+            border-radius: 22px;
+            padding: 20px;
+        }
+
+        .story-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.8rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--text-muted);
+            margin-bottom: 14px;
+        }
+
+        .news-card {
+            background: #ffffff;
+            border: 1px solid rgba(15, 23, 42, 0.08);
+            border-radius: 18px;
+            padding: 18px;
+            box-shadow: 0 10px 16px rgba(68, 92, 112, 0.05);
+        }
+
+        .news-card + .news-card {
+            margin-top: 12px;
+        }
+
+        .news-title {
+            font-size: 1.02rem;
+            line-height: 1.5;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            margin-bottom: 6px;
+        }
+
+        .news-title a {
+            color: var(--text-main);
+            text-decoration: none;
+        }
+
+        .news-title a:hover {
+            color: var(--accent-teal);
+        }
+
+        .news-date {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-bottom: 10px;
+        }
+
+        .news-summary {
+            padding-left: 18px;
+            font-size: 0.9rem;
+            color: #3d4a5b;
+            line-height: 1.68;
+        }
+
+        .news-summary li + li {
+            margin-top: 4px;
+        }
+
+        .empty-state {
+            border: 1px dashed rgba(23, 48, 66, 0.22);
+            border-radius: 18px;
+            padding: 18px;
+            background: #f8fafc;
+            color: var(--text-muted);
+            font-size: 0.92rem;
+        }
+
+        .theme-hero {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 18px;
+            background: linear-gradient(135deg, rgba(14, 165, 183, 0.08), rgba(37, 99, 235, 0.07));
+            border: 1px solid rgba(14, 165, 183, 0.18);
+            border-radius: 24px;
+            padding: 22px;
+            margin-bottom: 18px;
+        }
+
+        .theme-title-wrap {
+            display: grid;
+            gap: 10px;
+        }
+
+        .theme-badge {
+            display: inline-flex;
+            width: fit-content;
+            font-size: 0.76rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.16em;
+            color: #0f6b7a;
+            background: rgba(255, 255, 255, 0.78);
+            border: 1px solid rgba(14, 165, 183, 0.22);
+            border-radius: 999px;
+            padding: 6px 10px;
+        }
+
+        .theme-title-wrap h3 {
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-size: clamp(1.45rem, 2.7vw, 2.2rem);
+            letter-spacing: -0.04em;
+            line-height: 1.12;
+        }
+
+        .theme-rate {
+            padding: 10px 16px;
+            border-radius: 999px;
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-size: 1.15rem;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .theme-rate-up {
+            background: #fee2e2;
+            color: #dc2626;
+        }
+
+        .theme-rate-down {
+            background: #dbeafe;
+            color: #2563eb;
+        }
+
+        .theme-rate-neutral {
+            background: #e2e8f0;
+            color: var(--text-main);
+        }
+
+        .theme-summary-box {
+            background: #ffffff;
+            border: 1px solid var(--border-soft);
+            border-left: 4px solid var(--accent-teal);
+            border-radius: 18px;
+            padding: 18px 20px;
+            margin-bottom: 18px;
+            line-height: 1.72;
+            color: #334155;
+        }
+
+        .stocks-table-wrapper {
+            overflow-x: auto;
+            border: 1px solid var(--border-soft);
+            border-radius: 18px;
+            background: #ffffff;
+        }
+
+        .stocks-table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 620px;
+        }
+
+        .stocks-table th,
+        .stocks-table td {
+            padding: 14px 16px;
+            text-align: left;
+            border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+        }
+
+        .stocks-table th {
+            background: #f8fafc;
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--text-muted);
+        }
+
+        .stocks-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .stock-name-cell a {
+            color: var(--text-main);
+            text-decoration: none;
+            font-weight: 700;
+        }
+
+        .stock-name-cell a:hover {
+            color: var(--accent-teal);
+        }
+
+        .stock-price-cell {
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-weight: 700;
+        }
+
+        .stock-rate-cell span {
+            display: inline-flex;
+            border-radius: 999px;
+            padding: 5px 10px;
+            font-size: 0.82rem;
+            font-weight: 800;
+        }
+
+        .stock-rate-cell span.up {
+            background: #fee2e2;
+            color: #dc2626;
+        }
+
+        .stock-rate-cell span.down {
+            background: #dbeafe;
+            color: #2563eb;
+        }
+
+        .stock-rate-cell span.neutral {
+            background: #e2e8f0;
+            color: var(--text-main);
+        }
+
+        .stock-reason-cell {
+            color: #475569;
+            line-height: 1.65;
+            font-size: 0.9rem;
+        }
+
+        .empty-table {
+            text-align: center;
+            color: var(--text-muted);
+            padding: 22px;
+        }
+
+        @media (max-width: 1200px) {
+            .workspace {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                position: static;
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+
+            .sidebar-calendar {
+                grid-column: 1 / -1;
+            }
+
+            .top-banner {
+                grid-template-columns: 1fr;
+                gap: 6px;
+            }
+
+            .title-box {
+                grid-template-columns: 1fr;
+                align-items: flex-start;
+                gap: 6px;
+            }
+
+            .title-meta {
+                text-align: left;
+                white-space: normal;
+            }
+
+            .indicators-board {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 780px) {
+            body {
+                padding: 18px;
+            }
+
+            .sidebar {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .impact-source-strip {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .panel-shell,
+            .sidebar-calendar {
+                border-radius: 24px;
+            }
+
+            .indicator-card {
+                min-height: 320px;
+            }
+        }
+
+        @media (max-width: 560px) {
+            .sidebar {
+                grid-template-columns: 1fr;
+            }
+
+            .impact-source-strip {
+                grid-template-columns: 1fr;
+            }
+
+            .theme-hero,
+            .panel-header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .calendar-day {
+                height: 36px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="page-shell">
+        <header class="top-banner">
+            <section class="brand-box">
+                <div class="brand-logo">
+                    <span>IMPACT</span>
+                    <span>SQUARE<div class="brand-dot"></div></span>
+                </div>
+            </section>
+            <section class="title-box">
+                <h1>오늘의 마켓 & 뉴스 브리핑</h1>
+                <div class="title-meta">수집 기준일: 2026.06.05 전일 기사<br>최종 갱신: 2026.06.08 16:30 KST</div>
+            </section>
+        </header>
+
+        <div class="workspace">
+            <aside class="sidebar">
+                
+            <section class="sidebar-calendar">
+                <div class="calendar-box">
+                    <div class="calendar-top">
+                        <div class="calendar-month-label" id="calendar-month-label"></div>
+                        <div class="calendar-nav">
+                            <button id="calendar-prev" type="button" aria-label="이전 달">&#9664;</button>
+                            <button id="calendar-next" type="button" aria-label="다음 달">&#9654;</button>
+                        </div>
+                    </div>
+                    <div class="calendar-weekdays">
+                        <span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span>
+                    </div>
+                    <div class="calendar-grid" id="calendar-grid"></div>
+                    <div class="calendar-caption">날짜를 누르면 해당 일자의 브리핑으로 이동합니다.</div>
+                </div>
+            </section>
+    
+                <button class="sidebar-tab active" data-target="section-indicators">주요 지표</button><button class="sidebar-tab" data-target="section-impact">임팩트</button><button class="sidebar-tab" data-target="section-vcac">VC/AC</button><button class="sidebar-tab" data-target="section-ai">AI</button><button class="sidebar-tab" data-target="section-macro">거시경제</button><button class="sidebar-tab" data-target="section-theme">강세 테마</button>
+            </aside>
+            <main class="main-stage">
+                
+        <section id="section-indicators" class="content-section active">
+            <div class="panel-shell">
+                <div class="panel-header">
+                    <div>
+                        <div class="panel-kicker">Market Snapshot</div>
+                        <h2>주요 지표</h2>
+                    </div>
+                    <div class="panel-count">2026.06.08 기준</div>
+                </div>
+                <div class="indicators-board">
+                    <article class="indicator-card tone-blue"><div class="indicator-summary"><div class="metric-label">미국 10년물 국채 금리</div><div class="metric-value">4.536%</div></div><div class="chart-panel"><div class="chart-canvas" id="chart-us-10y"></div></div></article>
+                    <article class="indicator-card tone-green"><div class="indicator-summary"><div class="metric-label">원/달러 환율</div><div class="metric-value">종가: 1,531.14원</div></div><div class="chart-panel"><div class="chart-canvas" id="chart-fx"></div></div></article>
+                    <article class="indicator-card tone-amber"><div class="indicator-summary"><div class="metric-label">코스피 지수</div><div class="metric-value">7,484.41</div><div class="metric-detail">개인 <span class="flow-value up">+17,632</span> / 외국인 <span class="flow-value down">-3,543</span> / 기관 <span class="flow-value down">-16,268</span></div></div><div class="chart-panel"><div class="chart-canvas" id="chart-kospi"></div></div></article>
+                    <article class="indicator-card tone-slate"><div class="indicator-summary"><div class="metric-label">코스닥 지수</div><div class="metric-value">911.39</div><div class="metric-detail">개인 <span class="flow-value down">-1,246</span> / 외국인 <span class="flow-value up">+2,976</span> / 기관 <span class="flow-value down">-1,465</span></div></div><div class="chart-panel"><div class="chart-canvas" id="chart-kosdaq"></div></div></article>
+                </div>
+            </div>
+        </section>
+    
+                
+        <section id="section-impact" class="content-section">
+            <div class="panel-shell">
+                <div class="panel-header">
+                    <div>
+                        <div class="panel-kicker">Impact Briefing</div>
+                        <h2>임팩트</h2>
+                    </div>
+                    <div class="panel-count">21건</div>
+                </div>
+                <div class="impact-source-strip">
+                    <button class="impact-source-card impact-brand-impacton active" data-impact-target="impact-source"><span class="impact-source-eyebrow">Impact On</span><strong>임팩트온</strong><span class="impact-source-count">5건</span></button><button class="impact-source-card impact-brand-social" data-impact-target="impact-source"><span class="impact-source-eyebrow">Social Impact</span><strong>소셜임팩트뉴스</strong><span class="impact-source-count">5건</span></button><button class="impact-source-card impact-brand-eroun" data-impact-target="impact-source"><span class="impact-source-eyebrow">Eroun</span><strong>이로운넷</strong><span class="impact-source-count">10건</span></button><button class="impact-source-card impact-brand-bloomberg" data-impact-target="bloomberg-green"><span class="impact-source-eyebrow">Bloomberg Green</span><strong>Bloomberg Green</strong><span class="impact-source-count">1건</span></button>
+                </div>
+                <div class="impact-news-stage">
+                    <div class="impact-news-panel active" data-impact-panel="impact-source"><div class="impact-panel-head"><span>Impact On</span><h3>임팩트온 뉴스</h3></div><article class="news-card"><div class="news-title"><a href="https://www.impacton.net/news/articleView.html?idxno=19121" target="_blank" rel="noopener noreferrer">【박란희의 TalkTalk】AI가 ESG팀에 미치는 영향에 관한 아주 개인적 관찰</a></div><div class="news-date">출처: 임팩트온 | 발행일: 2026.06.05</div><ul class="news-summary"><li>국내 주요 ESG 및 임팩트 비즈니스 이슈입니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.impacton.net/news/articleView.html?idxno=19120" target="_blank" rel="noopener noreferrer">&quot;넷제로 선언만으론 부족&quot;…ISO, 금융권 전환계획 국제표준 제정</a></div><div class="news-date">출처: 임팩트온 | 발행일: 2026.06.05</div><ul class="news-summary"><li>국내 주요 ESG 및 임팩트 비즈니스 이슈입니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.impacton.net/news/articleView.html?idxno=19119" target="_blank" rel="noopener noreferrer">해상풍력 막는 백악관 vs 지키려는 주정부…美 에너지 전환 법정 공방</a></div><div class="news-date">출처: 임팩트온 | 발행일: 2026.06.05</div><ul class="news-summary"><li>국내 주요 ESG 및 임팩트 비즈니스 이슈입니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.impacton.net/news/articleView.html?idxno=19118" target="_blank" rel="noopener noreferrer">통일된 &#x27;재사용 마크&#x27; 첫 공개...일회용 포장 줄일 새 표준될까</a></div><div class="news-date">출처: 임팩트온 | 발행일: 2026.06.05</div><ul class="news-summary"><li>국내 주요 ESG 및 임팩트 비즈니스 이슈입니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.impacton.net/news/articleView.html?idxno=19112" target="_blank" rel="noopener noreferrer">영국 반독점당국, 구글에 &#x27;AI 콘텐츠 차단권&#x27; 설치 명령</a></div><div class="news-date">출처: 임팩트온 | 발행일: 2026.06.05</div><ul class="news-summary"><li>국내 주요 ESG 및 임팩트 비즈니스 이슈입니다.</li></ul></article></div><div class="impact-news-panel" data-impact-panel="impact-source"><div class="impact-panel-head"><span>Social Impact</span><h3>소셜임팩트뉴스 뉴스</h3></div><article class="news-card"><div class="news-title"><a href="https://www.socialimpactnews.net/news/articleView.html?idxno=6398" target="_blank" rel="noopener noreferrer">밀알복지재단, 대구 지역 5개 기관과 장애예술인 자립 생태계 구축 위한 업무협약 체결</a></div><div class="news-date">출처: 소셜임팩트뉴스 | 발행일: 2026.06.05</div><ul class="news-summary"><li>금융 글로벌 로컬 오피니언 기사검색 밀알복지재단, 대구 지역 5개 기관과 장애예술인 자립 생태계 구축 위한 업무협약 체결 스크롤 이동 상태바 홈 비영리 재단법인 밀알복지재단, 대구 지역 5개 기관…</li><li>지역 협력체계 구축 기업 ESG와 연계한 지속가능한 자립 지원 모델 확대 밀알복지재단이 2일 대구광역시 중구 대구남산복지재단에서 &#x27;장애예술인 자립 생태계 구축 공동 업무협약&#x27;을 체결했다..</li><li>제공=밀알복지재단 밀알복지재단이 2일 대구광역시 중구 대구남산복지재단에서 대구 지역 5개 기관과 &#x27;장애예술인 자립 생태계 구축 공동 업무협약&#x27;을 맺었다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.socialimpactnews.net/news/articleView.html?idxno=6399" target="_blank" rel="noopener noreferrer">농어촌 관광 플랫폼 바바그라운드, 日 유즈(YUZU)와 협력…글로벌 진출 본격화</a></div><div class="news-date">출처: 소셜임팩트뉴스 | 발행일: 2026.06.05</div><ul class="news-summary"><li>금융 글로벌 로컬 오피니언 기사검색 농어촌 관광 플랫폼 바바그라운드, 日 유즈(YUZU)와 협력.</li><li>글로벌 진출 본격화 스크롤 이동 상태바 홈 비즈니스 소셜벤처 농어촌 관광 플랫폼 바바그라운드, 日 유즈(YUZU)와 협력.</li><li>글로벌 진출 본격화 기자명 소셜임팩트뉴스=최소원 기자 입력 2026.06.05 05:10 댓글 0 이 기사를 공유합니다 일본 오키나와 지역 농어촌 숙박·투어 상품 한국 유통 협약 체결 향후 일본 …</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.socialimpactnews.net/news/articleView.html?idxno=6397" target="_blank" rel="noopener noreferrer">다시입다연구소, 지역 수선 문화 확산 프로젝트 &#x27;수선혁명단&#x27; 전국 5개 팀 선정</a></div><div class="news-date">출처: 소셜임팩트뉴스 | 발행일: 2026.06.05</div><ul class="news-summary"><li>금융 글로벌 로컬 오피니언 기사검색 다시입다연구소, 지역 수선 문화 확산 프로젝트 &#x27;수선혁명단&#x27; 전국 5개 팀 선정 스크롤 이동 상태바 홈 비영리 사단법인 다시입다연구소, 지역 수선 문화 확산 프…</li><li>10월까지 활동 예정 사단법인 다시입다연구소가 운영하는 지역 수선 문화 확산 프로젝트 &#x27;수선혁명단&#x27;이 지난 15일 오리엔테이션과 업무협약식을 열고 본격적인 활동에 나섰다..</li><li>제공=사단법인 다시입다연구소 사단법인 다시입다연구소(대표 정주연)가 지역에서 수선 문화를 확산할 지역거점 &#x27;수선혁명단&#x27;을 조직하고 전국 5개 팀과 협약을 체결했다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.socialimpactnews.net/news/articleView.html?idxno=6401" target="_blank" rel="noopener noreferrer">어쩌면 종이책과 잡지가 가장 진화된 매체 아닐까?</a></div><div class="news-date">출처: 소셜임팩트뉴스 | 발행일: 2026.06.05</div><ul class="news-summary"><li>금융 글로벌 로컬 오피니언 기사검색 어쩌면 종이책과 잡지가 가장 진화된 매체 아닐까?</li><li>스크롤 이동 상태바 홈 정책.</li><li>사회 어쩌면 종이책과 잡지가 가장 진화된 매체 아닐까?</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.socialimpactnews.net/news/articleView.html?idxno=6396" target="_blank" rel="noopener noreferrer">퇴직공무원이 청년 고민에 손편지 답장…온기·공무원연금공단 업무협약 체결</a></div><div class="news-date">출처: 소셜임팩트뉴스 | 발행일: 2026.06.05</div><ul class="news-summary"><li>금융 글로벌 로컬 오피니언 기사검색 퇴직공무원이 청년 고민에 손편지 답장.</li><li>온기·공무원연금공단 업무협약 체결 스크롤 이동 상태바 홈 비영리 사단법인 퇴직공무원이 청년 고민에 손편지 답장.</li><li>온기·공무원연금공단 업무협약 체결 기자명 소셜임팩트뉴스=최소원 기자 입력 2026.06.05 05:00 댓글 0 이 기사를 공유합니다 28일, &#x27;청년 우울감 완화·세대 간 연결 위한 업무협약&#x27; 체…</li></ul></article></div><div class="impact-news-panel" data-impact-panel="impact-source"><div class="impact-panel-head"><span>Eroun</span><h3>이로운넷 뉴스</h3></div><article class="news-card"><div class="news-title"><a href="https://www.eroun.net/news/articleView.html?idxno=82524" target="_blank" rel="noopener noreferrer">전국 9개 지역서 절전 캠페인…소비자공익네트워크, 환경의 날 맞아 시민 참여 확대</a></div><div class="news-date">출처: 이로운넷 | 발행일: 2026.06.05</div><ul class="news-summary"><li>산업 전국 강원 울산 충북세종 호남 대구경북 전북 글로벌 오피니언 인물 인사 동정 기사검색 전국 9개 지역서 절전 캠페인.</li><li>소비자공익네트워크, 환경의 날 맞아 시민 참여 확대 스크롤 이동 상태바 기후.</li><li>평화 전국 9개 지역서 절전 캠페인.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.eroun.net/news/articleView.html?idxno=82523" target="_blank" rel="noopener noreferrer">KB금융, 현충일 맞아 국가유공자·독립유공자 후손 지원 확대</a></div><div class="news-date">출처: 이로운넷 | 발행일: 2026.06.05</div><ul class="news-summary"><li>산업 전국 강원 울산 충북세종 호남 대구경북 전북 글로벌 오피니언 인물 인사 동정 기사검색 KB금융, 현충일 맞아 국가유공자·독립유공자 후손 지원 확대 스크롤 이동 상태바 사회연대경제 KB금융, …</li><li>KB금융그룹은 제71회 현충일을 맞아 국가를 위해 희생하고 헌신한 순국선열과 호국영령을 기리는 다양한 보훈 활동을 전개하고 있다고 5일 밝혔다.</li><li>KB국민은행은 최근 국립서울현충원에서 임직원과 가족이 함께 참여하는 묘역관리 봉사활동을 실시했다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.eroun.net/news/articleView.html?idxno=82522" target="_blank" rel="noopener noreferrer">빙그레, &#x27;프롬뉴트리 효소와 식이섬유 플러스 알파CD&#x27; 출시</a></div><div class="news-date">출처: 이로운넷 | 발행일: 2026.06.05</div><ul class="news-summary"><li>산업 전국 강원 울산 충북세종 호남 대구경북 전북 글로벌 오피니언 인물 인사 동정 기사검색 빙그레, &#x27;프롬뉴트리 효소와 식이섬유 플러스 알파CD&#x27; 출시 스크롤 이동 상태바 경제.</li><li>산업 빙그레, &#x27;프롬뉴트리 효소와 식이섬유 플러스 알파CD&#x27; 출시 알파CD·효소·식이섬유 담은 복합 포뮬러 제품 기자명 이수진 에디터 입력 2026.06.05 22:24 댓글 0 이 기사를 공유합…</li><li>빙그레는 신제품 &#x27;프롬뉴트리 효소와 식이섬유 플러스 알파CD&#x27;를 출시했다고 5일 밝혔다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.eroun.net/news/articleView.html?idxno=82520" target="_blank" rel="noopener noreferrer">[6·3지방선거]기후위기 대변할 정치는 어디에 있나…양당 독식 지방선거가 남긴 질문</a></div><div class="news-date">출처: 이로운넷 | 발행일: 2026.06.05</div><ul class="news-summary"><li>산업 전국 강원 울산 충북세종 호남 대구경북 전북 글로벌 오피니언 인물 인사 동정 기사검색 [6·3지방선거]기후위기 대변할 정치는 어디에 있나.</li><li>양당 독식 지방선거가 남긴 질문 스크롤 이동 상태바 정치.</li><li>사회 [6·3지방선거]기후위기 대변할 정치는 어디에 있나.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.eroun.net/news/articleView.html?idxno=82521" target="_blank" rel="noopener noreferrer">100억개 팔린 불닭...삼양식품, &#x27;페포&#x27; 앞세워 글로벌 IP 확장</a></div><div class="news-date">출처: 이로운넷 | 발행일: 2026.06.05</div><ul class="news-summary"><li>산업 전국 강원 울산 충북세종 호남 대구경북 전북 글로벌 오피니언 인물 인사 동정 기사검색 100억개 팔린 불닭...삼양식품, &#x27;페포&#x27; 앞세워 글로벌 IP 확장 스크롤 이동 상태바 경제.</li><li>산업 100억개 팔린 불닭...삼양식품, &#x27;페포&#x27; 앞세워 글로벌 IP 확장 출시 14년 만에 누적 판매 100억개...전 세계 100여 개국 판매망 구축 차세대 캐릭터 &#x27;페포&#x27; 전면 배치...패키…</li><li>이미지=삼양식품 이로운넷 = 이수진 에디터 삼양식품의 대표 브랜드 &#x27;불닭&#x27;이 누적 판매량 100억개를 넘어섰다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.eroun.net/news/articleView.html?idxno=82519" target="_blank" rel="noopener noreferrer">[이로운체크] 오리온, 70년 용산 시대 마무리...도곡동 신사옥 시대 연다</a></div><div class="news-date">출처: 이로운넷 | 발행일: 2026.06.05</div><ul class="news-summary"><li>산업 전국 강원 울산 충북세종 호남 대구경북 전북 글로벌 오피니언 인물 인사 동정 기사검색 [이로운체크] 오리온, 70년 용산 시대 마무리...도곡동 신사옥 시대 연다 스크롤 이동 상태바 경제.</li><li>산업 [이로운체크] 오리온, 70년 용산 시대 마무리...도곡동 신사옥 시대 연다 창립 이후 첫 본사 이전...6월 8일부터 강남 신사옥 업무 시작 해외 매출 비중 70% 안팎·대기업집단 지정 등…</li><li>사진=오리온 이로운넷 = 이수진 에디터 창립 이후 약 70년간 서울 용산을 지켜온 오리온이 도곡동 신사옥으로 본사를 이전한다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.eroun.net/news/articleView.html?idxno=82516" target="_blank" rel="noopener noreferrer">[이로운전망]국민연금 1800조 시대, &#x27;고갈론&#x27; 넘어 노후안전판의 가능성을 보다</a></div><div class="news-date">출처: 이로운넷 | 발행일: 2026.06.05</div><ul class="news-summary"><li>산업 전국 강원 울산 충북세종 호남 대구경북 전북 글로벌 오피니언 인물 인사 동정 기사검색 [이로운전망]국민연금 1800조 시대, &#x27;고갈론&#x27; 넘어 노후안전판의 가능성을 보다 스크롤 이동 상태바 경…</li><li>산업 [이로운전망]국민연금 1800조 시대, &#x27;고갈론&#x27; 넘어 노후안전판의 가능성을 보다 기금 2년 새 422조 원 증가.</li><li>고갈 시점 최대 24년 지연 전망 이재명 대통령 &quot;주식시장 정상화, 연금개혁의 좋은 수단&quot; 평가이익 넘어 장기 수익 기반 다질 기회로 삼아야 기자명 남기창 책임에디터 입력 2026.06.05 20…</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.eroun.net/news/articleView.html?idxno=82515" target="_blank" rel="noopener noreferrer">&quot;무학여고·휘경여고도 남녀공학으로?&quot;...서울 중·고교 11곳 전환 신청</a></div><div class="news-date">출처: 이로운넷 | 발행일: 2026.06.05</div><ul class="news-summary"><li>산업 전국 강원 울산 충북세종 호남 대구경북 전북 글로벌 오피니언 인물 인사 동정 기사검색 &quot;무학여고·휘경여고도 남녀공학으로?&quot;...서울 중·고교 11곳 전환 신청 스크롤 이동 상태바 문화.</li><li>리뷰 &quot;무학여고·휘경여고도 남녀공학으로?&quot;...서울 중·고교 11곳 전환 신청 학령인구 감소 영향에 여중·여고·남고 변화 바람...2027~2028학년도 전환 추진 서울교육청, 7월 최종 확정..…</li><li>사진=서울시교육청 이로운넷 = 이수진 에디터 서울 지역 단성 중·고교 11곳이 남녀공학 전환을 신청하면서 학령인구 감소에 대응하고 학생들의 교육 선택권을 확대하기 위한 학교 현장의 변화가 본격화되…</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.eroun.net/news/articleView.html?idxno=82514" target="_blank" rel="noopener noreferrer">충남사회경제네트워크, &#x27;충남 2026 사회적기업 창업지원사업&#x27; 웰컴데이 개최로 본격 가동</a></div><div class="news-date">출처: 이로운넷 | 발행일: 2026.06.05</div><ul class="news-summary"><li>산업 전국 강원 울산 충북세종 호남 대구경북 전북 글로벌 오피니언 인물 인사 동정 기사검색 충남사회경제네트워크, &#x27;충남 2026 사회적기업 창업지원사업&#x27; 웰컴데이 개최로 본격 가동 스크롤 이동 상…</li><li>충남사회적경제네트워크 이로운넷 = 이수진 에디터 충남 지역에서 혁신적인 아이디어로 사회 문제를 해결하려는 신규 사회적기업 창업팀들의 공식 첫 출발을 알리는 자리가 마련됐다.</li><li>사단법인 충남사회경제네트워크가 주관하는 &#x27;충남 2026 사회적기업 창업지원사업&#x27;의 창업팀 웰컴데이가 5일 충남 아산에서 개최됐다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.eroun.net/news/articleView.html?idxno=82512" target="_blank" rel="noopener noreferrer">희망브리지, 노원구 취약계층에 세탁 구호 차량 및 위생키트 지원</a></div><div class="news-date">출처: 이로운넷 | 발행일: 2026.06.05</div><ul class="news-summary"><li>산업 전국 강원 울산 충북세종 호남 대구경북 전북 글로벌 오피니언 인물 인사 동정 기사검색 희망브리지, 노원구 취약계층에 세탁 구호 차량 및 위생키트 지원 스크롤 이동 상태바 기후.</li><li>평화 희망브리지, 노원구 취약계층에 세탁 구호 차량 및 위생키트 지원 특수 차량 투입해 취약계층 세탁 지원 위생용품 500세트 동시 전달 기자명 조은결 기자 입력 2026.06.05 18:05 댓…</li><li>희망브리지 제공 이로운넷 = 조은결 기자 희망브리지 전국재해구호협회가 무더위 속에서 위생 관리에 취약한 이웃을 돕기 위해 나섰다.</li></ul></article></div><div class="impact-news-panel" data-impact-panel="bloomberg-green"><div class="impact-panel-head"><span>Bloomberg Green</span><h3>Bloomberg Green 뉴스</h3></div><article class="news-card"><div class="news-title"><a href="https://links.message.bloomberg.com/a/sc/iRQ2_B6sJdhCWBJsFNn7BkdIMNSZPTKaUJYG0eVxx6Rg2y9Q2rSbvUlp9jbCn5qhAxOOC0cj0z755zuAjgU_zDZrXJc4D11WrU8shdF_OqCzTXp3HRcQZxzNoew1yvfwz4PlSYoKlhFeTIJ2mRfFwtWedTwbEa9Nm3HTxNIQtoGn2GC-qMl5cE3-XCqT_lL-aBvZ9sQvv8TYJoFHXxHbZ17AEOCjwqo7EURrMDYIkfcQ4qQiNzgwDEa1KPcOiW7pyKA_Mnxa-eoJVG9fW3NGJLgXM918Bf6egShoXvlC1cOB4MrJyhWudA-VBtZkvYD4F-LsLoKGHeKEy8poj8nJ_kHmi6VuNuHMCueuk6qKuKR3WxDpUCtKSIc2cY10h5stD29D4G2NQAaqMfY-Xkpx8jZ4rxSZyzp0q6_LIo-MCfuUZb8nG4w4IoDZhbshfk_8MxGXMXfNg98_1N4i-KbPkh0NRFDcMb1unAdWLtLwr8UAYPFichZP7DY9mboBvfN-hyiSkYV9_LsL8QfLnpxWHzCBAJ628Ipjx4T8-G_TPbk/r2DwfmqkwbAXS_LlSmI3DzmFoAHTb-i4/21" target="_blank" rel="noopener noreferrer">The toughest World Cup games</a></div><div class="news-date">출처: Bloomberg Green | 발행일: 2026.06.05</div><ul class="news-summary"><li>How Extreme Heat Will Factor Into World Cup Games Some teams will face harsher heat conditions ‌ ‌ ‌ ‌ ‌ ‌ ‌ …</li><li>Today’s newsletter looks at what that means for individual teams and which ones will face harsher conditions …</li><li>Plus, how the Trump administration’s proposal to vet federal grants could hinder scientific research .</li></ul></article></div>
+                </div>
+            </div>
+        </section>
+    
+                <section id="section-vcac" class="content-section"><div class="panel-shell"><div class="panel-header"><div><div class="panel-kicker">VC/AC</div><h2>VC/AC 브리핑</h2></div><div class="panel-count">0건</div></div><div class="story-board"><article class="story-card"><div class="story-label">빅딜/메가라운드</div><div class="empty-state">수집된 뉴스가 없습니다.</div></article><article class="story-card"><div class="story-label">신규 펀드 결성</div><div class="empty-state">수집된 뉴스가 없습니다.</div></article><article class="story-card"><div class="story-label">M&amp;A 및 IPO</div><div class="empty-state">수집된 뉴스가 없습니다.</div></article></div></div></section><section id="section-ai" class="content-section"><div class="panel-shell"><div class="panel-header"><div><div class="panel-kicker">AI</div><h2>AI 브리핑</h2></div><div class="panel-count">6건</div></div><div class="story-board"><article class="story-card"><div class="story-label">글로벌/빅테크</div><div class="empty-state">수집된 뉴스가 없습니다.</div></article><article class="story-card"><div class="story-label">AI 인프라/비용</div><article class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMiW0FVX3lxTE5HT0dER1NfUVIzLVZyZmY3N0J4RndIdjNoU1JiZW4zWGtES1ZkNmdrTmRoNU80eWh6ay12TlJxbnI0aVJHYlFqeTg3R2FJMXc3LWFEX2hPYXhoeVE?oc=5" target="_blank" rel="noopener noreferrer">AI·데이터센터 호황…LS그룹 전력 인프라 ‘영토 확장’</a></div><div class="news-date">출처: 에너지경제신문 | 발행일: 2026.06.05</div><ul class="news-summary"><li>AI·데이터센터 호황…LS그룹 전력 인프라 ‘영토 확장’</li><li>AI 하드웨어 동향입니다.</li><li>에너지경제신문 보도를 바탕으로 정리했습니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMibEFVX3lxTE9TNk5oMG14WTh2SVdGakUySUNneEVQQ1QwLVNXc3JPeFpYN1ZHcGtXOGUwT3RCZ19ndGJ4NzB4a2VxU2F3QVVKbWV5MkdlRVozcklwcWhsbC04cHNPYlRWejZqNF9tZVFjMjZYNA?oc=5" target="_blank" rel="noopener noreferrer">AI 시대, 새로운 패권은 전력...“GPU보다 전기가 귀하다”</a></div><div class="news-date">출처: 재외동포신문 | 발행일: 2026.06.05</div><ul class="news-summary"><li>AI 시대, 새로운 패권은 전력...“GPU보다 전기가 귀하다”</li><li>AI 하드웨어 동향입니다.</li><li>재외동포신문 보도를 바탕으로 정리했습니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMidEFVX3lxTFBMdmlKNEE3MkU5VnFQZlhpc1R2Z0IyQVJFY3l1UWZIX2MtVTZ2SjhLT3U1amZfMjlPenJZU3lYcVhFNktBckljbHozdmZmS2hyOVRHWWo0MTRjQXJoMWloeV93OGxybWEtQ2V2SThlLVlYZThX0gF0QVVfeXFMUEx2aUo0QTcyRTlWcVBmWGlzVHZnQjJBUkVjeXVRZkhfYy1VNnZKOEtPdTVqZl8yOU96cllTeVhxWEU2S0FySWNsejN2ZmZLaHI5VEdZajQxNGNBcmgxaWh5X3c4bHJtYS1DZXZJOGUtWVhlOFc?oc=5" target="_blank" rel="noopener noreferrer">인텔-히타치, 반도체 공장 AI 자동화…TSMC·삼성 추격 고삐</a></div><div class="news-date">출처: IT조선 | 발행일: 2026.06.05</div><ul class="news-summary"><li>인텔-히타치, 반도체 공장 AI 자동화.</li><li>AI 하드웨어 동향입니다.</li><li>IT조선 보도를 바탕으로 정리했습니다.</li></ul></article></article><article class="story-card"><div class="story-label">AI 융합 산업</div><div class="empty-state">수집된 뉴스가 없습니다.</div></article><article class="story-card"><div class="story-label">규제 이슈</div><article class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMib0FVX3lxTE1WTUQ3LW1XWjRNM09GQUZua1FrVm5fczhtZGx0NW9mZGRMOW1vS19fN2l5RFNkb1NwZ1RzY1IzeHBadS1jOW9JOWkyS0pveGFNQkNtdXNQNlhmNkpJS2wyd1dHaDBMRjZXQVNoMlFqUdIBc0FVX3lxTFBkaTkzcVZ4cGwxY2ZnNDJaZ19YeG5Mc1B4RW9ydk9pcnFzYXpqcFBvSzVNRVE1TWRwZFpSMFZsTzdVSEVaWHl4aDRodHlreTA4Q2dFQkltQWFDNTR4bnFNV0xUdDBtOWVkSE9ETF9EeUVSdE0?oc=5" target="_blank" rel="noopener noreferrer">“AI를 규제하는 법이, AI를 잘못 정의했다”</a></div><div class="news-date">출처: 시사저널 | 발행일: 2026.06.05</div><ul class="news-summary"><li>“AI를 규제하는 법이, AI를 잘못 정의했다”</li><li>AI 규제 동향입니다.</li><li>시사저널 보도를 바탕으로 정리했습니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMibkFVX3lxTFBrOHpWNzc4cE5hdjhvcG8zSk5FZU53OFRXTS1jNkdjVmNzMGNIekllZXlGbHV2Qnl1dEk5azBBd2FGWmxJX281dlBjaDB4bkZkLUZGaTNfaUlBa0QwWWsxQWo5WDB2WjBUUFhZeC1n?oc=5" target="_blank" rel="noopener noreferrer">[금융] AI·윤리·ESG로 진화하는 금융권</a></div><div class="news-date">출처: 코리아포스트 한글판 | 발행일: 2026.06.05</div><ul class="news-summary"><li>[금융] AI·윤리·ESG로 진화하는 금융권</li><li>AI 규제 동향입니다.</li><li>코리아포스트 한글판 보도를 바탕으로 정리했습니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMiZ0FVX3lxTE0tWU9YZUdKYWc3QW9fTjFqWjF5OTkwTFNIR2tOOHFtOTdvU2drRzhkQ1FwX1pPQTlmTml2R1F3MDJ3emxpanZtTjk3NE1LS2xBMXJWUmdmeWd6dWk1ZEotYjhCbG1WMVU?oc=5" target="_blank" rel="noopener noreferrer">[도서전 미리보기] 한불 수교 140년…프랑스를 읽고, 먹고, AI로 생각하다</a></div><div class="news-date">출처: k-Artprice | 발행일: 2026.06.05</div><ul class="news-summary"><li>[도서전 미리보기] 한불 수교 140년.</li><li>AI 규제 동향입니다.</li><li>k-Artprice 보도를 바탕으로 정리했습니다.</li></ul></article></article></div></div></section><section id="section-macro" class="content-section"><div class="panel-shell"><div class="panel-header"><div><div class="panel-kicker">거시경제</div><h2>거시경제 브리핑</h2></div><div class="panel-count">15건</div></div><div class="story-board"><div class="story-group"><div class="story-group-title">미국</div><article class="story-card"><div class="story-label">경제지표</div><article class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMieEFVX3lxTE9aWEg5d0d4NklaLTJDTzhIbHlRZVRKSXN3dDI1YllyMWNWbUd2RG9NclVHSlhvN3ZBNURwT2NsVGE0S0p1VkJvUG14VTNYWUJUZVFadFFxM0FDa1d2S0VLbXF5S3RaNGxVQzB1OGZtMkUzWW9FejI3Xw?oc=5" target="_blank" rel="noopener noreferrer">미국 소비자들은 엄청난 재정적 압박에 시달리고 있습니다.</a></div><div class="news-date">출처: Vietnam.vn | 발행일: 2026.06.05</div><ul class="news-summary"><li>미국 소비자들은 엄청난 재정적 압박에 시달리고 있습니다.</li><li>미국 경기 흐름 기사입니다.</li><li>Vietnam.vn 보도를 바탕으로 정리했습니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMiYEFVX3lxTE1KSFkyOVFCZTNEX1BHYko4VDRNSm9kV0hZcVFBWENINWRnU3c0RVV0TXVTZHdUeTJrUEY0NWZvTFVtUk85ZkZ6SkRDZWJTUVdOaENxSFJGWTdfNVZyZFRDWNIBeEFVX3lxTE9odnZLd3Y2YzNYczJ0NHRlUy10Yldtay0wbllJU3QxbEpmS1J5RHcwMnozSGFOMnpUYUJNalItVWpIWDN4V1dOdUVIVXVGWVhHRXlTRmZxSmF6T21WYnUwQVdLZnYzdTVFZzRGTlZDN0N1MTl2OVVMSw?oc=5" target="_blank" rel="noopener noreferrer">미 5월 사업체일자리 17.2만 순증, 3·4월 9.3만개 추가…실업률 4.3% (종합)</a></div><div class="news-date">출처: 뉴시스 | 발행일: 2026.06.05</div><ul class="news-summary"><li>미 5월 사업체일자리 17.2만 순증, 3·4월 9.3만개 추가.</li><li>미국 경기 흐름 기사입니다.</li><li>뉴시스 보도를 바탕으로 정리했습니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMigAFBVV95cUxQaldCVmFRdVZrNlNOT1JLVWdvWERuOWNDRkM0dUpQYy1sdkdRN2o2bjJoQ3lha3NjOGsyVGFyUUpZb0pGV1NIOWMxZkdZMXRvaHVRNmtmZTMzdHBhTzBYV2xCcVplZVNQUUR0RTVWSWp0NVd0U2Jvci15UHMybnpjSA?oc=5" target="_blank" rel="noopener noreferrer">美 깜짝고용에 금리인하 기대 실종…비트코인 6만달러 붕괴 위기</a></div><div class="news-date">출처: 이데일리 | 발행일: 2026.06.05</div><ul class="news-summary"><li>美 깜짝고용에 금리인하 기대 실종.</li><li>미국 경기 흐름 기사입니다.</li><li>이데일리 보도를 바탕으로 정리했습니다.</li></ul></article></article><article class="story-card"><div class="story-label">관세</div><article class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMiYEFVX3lxTE03ZlhiNUc1LXFPYWlOMzVEUjRFRWZ6UldrU1BDY21NNXdYMFNQRjZ2amRMaGlfRTJpOGktalZqSlQ1RmNBV3ZxZ2NiU0N3eWNhenJIX1NaR2Q3ajlQMEJidtIBYEFVX3lxTE03ZlhiNUc1LXFPYWlOMzVEUjRFRWZ6UldrU1BDY21NNXdYMFNQRjZ2amRMaGlfRTJpOGktalZqSlQ1RmNBV3ZxZ2NiU0N3eWNhenJIX1NaR2Q3ajlQMEJidg?oc=5" target="_blank" rel="noopener noreferrer">김정관 &quot;301조 추가 관세 우려에 러트닉이 &#x27;걱정말라&#x27;고 해&quot;</a></div><div class="news-date">출처: 연합뉴스 | 발행일: 2026.06.05</div><ul class="news-summary"><li>김정관 &quot;301조 추가 관세 우려에 러트닉이 &#x27;걱정말라&#x27;고 해&quot;</li><li>미국 무역정책 기사입니다.</li><li>연합뉴스 보도를 바탕으로 정리했습니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMiZkFVX3lxTE5jdk15WXpJRE9jQW9mUkI5MGNHYmRUZl96aDZzWEJHQmptWGsyY1ZMQ3UyZjlPazJkcFppNjZHQWRtNTB5OUxHNGp0MlYzX19QNG84bm1HZ2RWdnlNTEpjVG00SnFPdw?oc=5" target="_blank" rel="noopener noreferrer">미국 관세, 법이 바뀌어도 관세는 멈추지 않는다</a></div><div class="news-date">출처: 코리아비즈니스리뷰 | 발행일: 2026.06.05</div><ul class="news-summary"><li>미국 관세, 법이 바뀌어도 관세는 멈추지 않는다</li><li>미국 무역정책 기사입니다.</li><li>코리아비즈니스리뷰 보도를 바탕으로 정리했습니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMic0FVX3lxTE83MFdNdWNVaGVfZnEtMVBjUUdoQkRDeE5pbGEtU1dUTVIxRTFyWXpUbzBBalB4a0loUW51LURfU1JlVm05NlUwc3pqblJtX3VrYUo2UVMzQVRwMHlwMkJMN0JMSUN0TC15SlIxWXE5aFhiY2M?oc=5" target="_blank" rel="noopener noreferrer">미국 12.5% 관세 부과 방침에 정부 &#x27;15%선 방어&#x27; 총력전, 과잉생산 분야 301조가 남은 변수</a></div><div class="news-date">출처: 비즈니스포스트 | 발행일: 2026.06.05</div><ul class="news-summary"><li>미국 12.5% 관세 부과 방침에 정부 &#x27;15%선 방어&#x27; 총력전, 과잉생산 분야 301조가 남은 변수</li><li>미국 무역정책 기사입니다.</li><li>비즈니스포스트 보도를 바탕으로 정리했습니다.</li></ul></article></article><article class="story-card"><div class="story-label">통화정책</div><article class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMiW0FVX3lxTE91bmRYaUVrdjNzOXVPeVhmLTh3Z3dHX2g3aXFxOFlvMkVIR0hpdF9RTzZTVGpBc0hDX00yMGZMMEpVQkQyVWFXa0VqbUhIVnFrNnAxV3IycnJxMjTSAWBBVV95cUxQTDUwbVV0UlVMRTdDWExBOHJKM0NYcG9rVEVzLWxaem9ydGJhVHJqeWhfd2JwSTJ1dktjbDc5Y0xMRXllQWRENEVqX3VkNG1QYWI4Mi1HRFJDTXFvLU55Z04?oc=5" target="_blank" rel="noopener noreferrer">미 5월 고용 17만2천명 &#x27;깜짝 증가&#x27;…연준 금리인상 예상↑(종합)</a></div><div class="news-date">출처: 연합뉴스 | 발행일: 2026.06.05</div><ul class="news-summary"><li>미 5월 고용 17만2천명 &#x27;깜짝 증가&#x27;.</li><li>연준 금리 경로 기사입니다.</li><li>연합뉴스 보도를 바탕으로 정리했습니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMiWEFVX3lxTE5YaU82YnZXVzR3RHhBN3V0U1FoVzZ6UkgtYWwyN3l3SWxUNFpqOVB1SkVPZktOU3pKNV8wRi12MktsMzlMZFpCaDdlSnhBd0tXS3NWWks4cnY?oc=5" target="_blank" rel="noopener noreferrer">미 고용지표 호조에 금리 급등…뉴욕증시 혼조 출발(종합)</a></div><div class="news-date">출처: 블록미디어 | 발행일: 2026.06.05</div><ul class="news-summary"><li>미 고용지표 호조에 금리 급등.</li><li>연준 금리 경로 기사입니다.</li><li>블록미디어 보도를 바탕으로 정리했습니다.</li></ul></article></article><article class="story-card"><div class="story-label">외교</div><div class="empty-state">수집된 뉴스가 없습니다.</div></article></div><div class="story-group"><div class="story-group-title">한국</div><article class="story-card"><div class="story-label">경제지표</div><article class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMidEFVX3lxTFBDWlZmdk1uM3BYczZjTG9UMjQycmJaVjk1al9RWldpankwbmFmMGRuWHRwdGgyMkd6UzBtSEw5T1JONkk3dDQxWXhzNHBRMnRvQl82RzlQM3NsaEVxb0J5a0p1S1FzcERkaHEyRUctdkRITUVx?oc=5" target="_blank" rel="noopener noreferrer">[한은맨] 이지호 부총재보…&quot;현장 감각 갖춘 조사국 전문가&quot; |</a></div><div class="news-date">출처: 연합인포맥스 | 발행일: 2026.06.05</div><ul class="news-summary"><li>[한은맨] 이지호 부총재보.</li><li>&quot;현장 감각 갖춘 조사국 전문가&quot;.</li><li>한국 실물 경제 기사입니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMickFVX3lxTE9YRW5jNncxOE1sVjE1NTB4RXFvU3JGM3NSeVVveWoxQ1pHejFFOFN2YlhZbDNnd0Z4dWFzdXdGSjlpX2RCa3M4RjdsS3J1bXBLSjdmQl9ROXRKanpDeHRHYUNPb2V1NEhaV0RVck15WmNZUQ?oc=5" target="_blank" rel="noopener noreferrer">[기획-아웃소싱 미래 10년 전망] PART 1. AI·무인화 직격탄...“가장 먼저 흔들리는 직무들”</a></div><div class="news-date">출처: 아웃소싱타임스 | 발행일: 2026.06.05</div><ul class="news-summary"><li>[기획-아웃소싱 미래 10년 전망] PART 1. AI·무인화 직격탄...“가장 먼저 흔들리는 직무들”</li><li>한국 실물 경제 기사입니다.</li><li>아웃소싱타임스 보도를 바탕으로 정리했습니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMiZ0FVX3lxTE53N1J6aFQ5enlPMWJERU80N1JrUDMtN2FPRnRwUG1waTJJQlMxX2Eybi1tQ3VuRnRKMDdiSm9vb2xER045QW8zcU83dWZqR2ZGbm1XRHJxMGp1d00wYXRvYnZLQnRINFU?oc=5" target="_blank" rel="noopener noreferrer">정부 “연간 물가 상승률 2.7% 안팎 예상”…한은 전망과 비슷할 듯</a></div><div class="news-date">출처: 이로운경제TV | 발행일: 2026.06.05</div><ul class="news-summary"><li>정부 “연간 물가 상승률 2.7% 안팎 예상”.</li><li>한국 실물 경제 기사입니다.</li><li>이로운경제TV 보도를 바탕으로 정리했습니다.</li></ul></article></article><article class="story-card"><div class="story-label">통화정책</div><article class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMicEFVX3lxTFBMcTN6bjNZMTdweGZtdURKV1JJczhYUWlKaW1RVjdkc2l1c042RmJjZXRYakRTQ1kwbEpneHdFd1F0WHZraDZteTVSSElzNHZsZ2t0TElxOUEybUFLQlBETjRDSV84czVQZFBraU5OWi3SAXRBVV95cUxQUDI4cUxaT2xvZFEzSF9VMVYxYUJoeXFMcjNxRnJkRDBpZkhHRVAybUxiWGpEVlNzck1pbmVMNGtFWHVneGJBVk81SnNNNm1NRmF5alFyMXBqNWc1VGJBLVhhSGc3RFhUYUJxWmpvbG00MDJLdQ?oc=5" target="_blank" rel="noopener noreferrer">[공동락의 금리산책] 한국은행 &#x27;기준금리&#x27; 인상 초읽기</a></div><div class="news-date">출처: 주간한국 | 발행일: 2026.06.05</div><ul class="news-summary"><li>[공동락의 금리산책] 한국은행 &#x27;기준금리&#x27; 인상 초읽기</li><li>한국은행 기준금리 기사입니다.</li><li>주간한국 보도를 바탕으로 정리했습니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMibkFVX3lxTFBHWTllMWpXOU5taDI2VGtmS3JEMm9Bc0hOUmFUQXJFZFkxWVFILTRIeFczT0dhb2hsVUkyLWZQWjJkcHNZWHlVNU5ZMjA0QWFHa2tqRkNBamJ1TzVIdlZ0SThNQ1JBZG9BdVQ0YkJn0gFuQVVfeXFMUEdZOWUxalc5Tm1oMjZUa2ZLckQyb0FzSE5SYVRBckVkWTFZUUgtNEh4VzNPR2FvaGxVSTItZlBaMmRwc1lYeVU1TlkyMDRBYUdra2pGQ0FqYnVPNUh2VnRJOE1DUkFkb0F1VDRiQmc?oc=5" target="_blank" rel="noopener noreferrer">한은 부총재보에 이지호·김제현…신현송 총재 첫 간부 인사 단행</a></div><div class="news-date">출처: 한국투데이 | 발행일: 2026.06.05</div><ul class="news-summary"><li>한은 부총재보에 이지호·김제현.</li><li>한국은행 기준금리 기사입니다.</li><li>한국투데이 보도를 바탕으로 정리했습니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMigAFBVV95cUxPdEROTV85OGxTbnRfQjlQLVFHLVhOa195R3Z0TGRQN1ROc0R3QmFHdWdnUG15bDN3ZmJyQVNzN2hlWWFmSGtsZEZwRVYyQ3JnbW5NeDY3TWE1YWhrQTFEdVktVHRlQmxmd0ktNnJHNzV6RlI1cTRVLVJVYV80MHpCWQ?oc=5" target="_blank" rel="noopener noreferrer">한국은행, 조사국장에 이동렬·인사경영국장에 임건태</a></div><div class="news-date">출처: 이데일리 | 발행일: 2026.06.05</div><ul class="news-summary"><li>한국은행, 조사국장에 이동렬·인사경영국장에 임건태</li><li>한국은행 기준금리 기사입니다.</li><li>이데일리 보도를 바탕으로 정리했습니다.</li></ul></article></article></div><div class="story-group"><div class="story-group-title">유럽</div><article class="story-card"><div class="story-label">통화정책</div><article class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMiYEFVX3lxTE9yNS02Q1VZMTFEVHpCWmdRcVpxQUhzNVpxM3kxcl9aYktlQmNsRHFuWkhNa3hxb0tsNnMtR1ZLREJBb0hlZEFSTjZORXhRZEFUUnFSaVhQNGhqaTJyZDlpTw?oc=5" target="_blank" rel="noopener noreferrer">한·미·일·유로 &#x27;인플레 균열&#x27;…&#x27;4대 권역&#x27; 긴장감</a></div><div class="news-date">출처: 뉴스토마토 | 발행일: 2026.06.05</div><ul class="news-summary"><li>한·미·일·유로 &#x27;인플레 균열&#x27;.</li><li>ECB 정책 흐름 기사입니다.</li><li>뉴스토마토 보도를 바탕으로 정리했습니다.</li></ul></article></article></div><div class="story-group"><div class="story-group-title">중국</div><article class="story-card"><div class="story-label">통화정책</div><div class="empty-state">수집된 뉴스가 없습니다.</div></article></div></div></div></section>
+                
+        <section id="section-theme" class="content-section">
+            <div class="panel-shell">
+                <div class="panel-header">
+                    <div>
+                        <div class="panel-kicker">Hot Theme</div>
+                        <h2>강세 테마</h2>
+                    </div>
+                    <div class="panel-count">+2.55%</div>
+                </div>
+                <div class="theme-hero">
+                    <div class="theme-title-wrap">
+                        <span class="theme-badge">HOT THEME</span>
+                        <h3>인터넷 대표주</h3>
+                    </div>
+                    <div class="theme-rate theme-rate-up">+2.55%</div>
+                </div>
+                <div class="theme-summary-box">인터넷 대표주 국내 인터넷 서비스 산업을 주도하고 있는 인터넷산업 대표기업군. 이들 소수 업체들이 상위 사업자군을 형성하며, 시장 지배력을 더욱 키워나가고 있는 상황임. 이중 구글에 이어 네이버가 국내 포털 시장 점유율 상위를 차지하고 있으며, 카카오는 국내 모바일 메신저 시장에서 압도적인 점유율을 차지하고 있음. 광고주들의 특성상 많은 트래픽이 모이는 상위 포털 업체에 광고가 집중되는 특성이 있음.</div>
+                <div class="story-group">
+                    <div class="story-group-title">주요 대장 종목</div>
+                    <div class="stocks-table-wrapper">
+                        <table class="stocks-table">
+                            <thead>
+                                <tr>
+                                    <th style="width: 20%;">종목명</th>
+                                    <th style="width: 16%;">현재가</th>
+                                    <th style="width: 14%;">등락률</th>
+                                    <th>기업 해설</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td class="stock-name-cell"><a href="https://finance.naver.com/item/main.naver?code=035420" target="_blank" rel="noopener noreferrer">NAVER</a></td><td class="stock-price-cell">279,000원</td><td class="stock-rate-cell"><span class="up">+9.20%</span></td><td class="stock-reason-cell">테마 편입 사유 NAVER 인터넷 검색포털 사이트 네이버 운영업체. 국내 1위 인터넷 검색 포털 &#x27;네이버(NAVER)&#x27; 서비스를 기반으로 광고, 커머스, 핀테크 사업을 영위. 글로벌 메신저 LINE(라인) 등을 개발.</td></tr><tr><td class="stock-name-cell"><a href="https://finance.naver.com/item/main.naver?code=035720" target="_blank" rel="noopener noreferrer">카카오</a></td><td class="stock-price-cell">38,600원</td><td class="stock-rate-cell"><span class="down">-4.10%</span></td><td class="stock-reason-cell">테마 편입 사유 카카오 인터넷 포털 서비스 제공업체. 국내 대표 메신저 카카오톡과 인터넷 포털 사이트 다음(Daum)를 비롯해 모바일 ·인터넷 기반의 커머스, 모빌리티, 금융, 게임, 음악, 스토리IP를 주축으로 사업을 전개.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="story-group">
+                    <div class="story-group-title">테마 관련 최신 뉴스</div>
+                    <article class="news-card"><div class="news-title"><a href="https://news.google.com/rss/articles/CBMifEFVX3lxTE4ya2hnamhuYnZMZHk1V1RHazdaNFVoQUxsWEhBRWE2UG9EQ0VOdlFNVThaRGp6WHpxWmxBa1F1bERfS0JleTZjdXd0dG1PcU9uMnhXMDA3eWcwUzdBYVp2NXh2cGozVDFpZ1NudjNPeXEyZThMNEludTB1VU8?oc=5" target="_blank" rel="noopener noreferrer">✅[미리보는 주간 증시일정] 6월2주차 이슈＆관련주 알아보자!</a></div><div class="news-date">출처: 네이버 프리미엄콘텐츠 | 발행일: 2026.06.07</div><ul class="news-summary"><li>✅[미리보는 주간 증시일정] 6월2주차 이슈＆관련주 알아보자!</li><li>인터넷 대표주 theme coverage.</li><li>네이버 프리미엄콘텐츠 보도를 바탕으로 정리했습니다.</li></ul></article>
+                </div>
+            </div>
+        </section>
+    
+            </main>
+        </div>
+    </div>
+
+    <script>
+        const chartData = {"us_10y": {"dates": ["04/27", "04/28", "04/29", "04/30", "05/01", "05/04", "05/05", "05/06", "05/07", "05/08", "05/11", "05/12", "05/13", "05/14", "05/15", "05/18", "05/19", "05/20", "05/21", "05/22", "05/25", "05/26", "05/27", "05/28", "05/29", "06/01", "06/02", "06/03", "06/04", "06/05"], "values": [4.336, 4.354, 4.418, 4.39, 4.378, 4.446, 4.416, 4.356, 4.392, 4.364, 4.41, 4.463, 4.481, 4.461, 4.595, 4.623, 4.667, 4.572, 4.586, 4.558, 4.558, 4.493, 4.481, 4.455, 4.453, 4.475, 4.455, 4.491, 4.477, 4.536]}, "fx": {"dates": ["04/28", "04/29", "04/30", "05/01", "05/04", "05/05", "05/06", "05/07", "05/08", "05/11", "05/12", "05/13", "05/14", "05/15", "05/18", "05/19", "05/20", "05/21", "05/22", "05/25", "05/26", "05/27", "05/28", "05/29", "06/01", "06/02", "06/03", "06/04", "06/05", "06/08"], "values": [1473.0, 1471.99, 1487.38, 1474.01, 1471.73, 1476.05, 1473.96, 1444.45, 1454.79, 1460.55, 1474.45, 1492.99, 1489.84, 1493.34, 1497.15, 1492.32, 1507.85, 1499.77, 1504.4, 1512.83, 1514.79, 1505.44, 1503.11, 1495.29, 1506.84, 1511.27, 1516.6, 1530.11, 1533.07, 1531.62]}, "kospi": {"dates": ["04/22", "04/23", "04/24", "04/27", "04/28", "04/29", "04/30", "05/04", "05/06", "05/07", "05/08", "05/11", "05/12", "05/13", "05/14", "05/15", "05/18", "05/19", "05/20", "05/21", "05/22", "05/26", "05/27", "05/28", "05/29", "06/01", "06/02", "06/04", "06/05", "06/08"], "values": [6417.93, 6475.81, 6475.63, 6615.03, 6641.02, 6690.9, 6598.87, 6936.99, 7384.56, 7490.05, 7498.0, 7822.24, 7643.15, 7844.01, 7981.41, 7493.18, 7516.04, 7271.66, 7208.95, 7815.59, 7847.71, 8047.51, 8228.7, 8185.29, 8476.15, 8788.38, 8801.49, 8639.41, 8160.59, 7484.41]}, "kosdaq": {"dates": ["04/22", "04/23", "04/24", "04/27", "04/28", "04/29", "04/30", "05/04", "05/06", "05/07", "05/08", "05/11", "05/12", "05/13", "05/14", "05/15", "05/18", "05/19", "05/20", "05/21", "05/22", "05/26", "05/27", "05/28", "05/29", "06/01", "06/02", "06/04", "06/05", "06/08"], "values": [1181.12, 1174.31, 1203.84, 1226.18, 1215.58, 1220.26, 1192.35, 1213.74, 1210.17, 1199.18, 1207.72, 1207.34, 1179.29, 1176.93, 1191.09, 1129.82, 1111.09, 1084.36, 1056.07, 1105.97, 1161.13, 1172.52, 1133.13, 1104.36, 1074.8, 1050.03, 1026.03, 1049.73, 1002.44, 911.39]}};
+        const selectedDate = "2026-06-05";
+        const hasArchiveManifest = typeof archiveDates !== "undefined" && Array.isArray(archiveDates) && archiveDates.length > 0;
+        const availableDates = hasArchiveManifest
+            ? Array.from(new Set([...archiveDates, selectedDate])).sort()
+            : [selectedDate];
+
+        const sidebarTabs = document.querySelectorAll(".sidebar-tab");
+        const sections = document.querySelectorAll(".content-section");
+
+        function activateSection(sectionId) {
+            sidebarTabs.forEach((tab) => tab.classList.toggle("active", tab.dataset.target === sectionId));
+            sections.forEach((section) => section.classList.toggle("active", section.id === sectionId));
+        }
+
+        sidebarTabs.forEach((tab) => {
+            tab.addEventListener("click", () => activateSection(tab.dataset.target));
+        });
+
+        const impactSourceCards = document.querySelectorAll("[data-impact-target]");
+        const impactPanels = document.querySelectorAll("[data-impact-panel]");
+
+        function activateImpactSource(targetKey) {
+            impactSourceCards.forEach((card) => card.classList.toggle("active", card.dataset.impactTarget === targetKey));
+            impactPanels.forEach((panel) => panel.classList.toggle("active", panel.dataset.impactPanel === targetKey));
+        }
+
+        impactSourceCards.forEach((card) => {
+            card.addEventListener("click", () => activateImpactSource(card.dataset.impactTarget));
+        });
+
+        function archiveHref(dateStr) {
+            if (!hasArchiveManifest) {
+                return "#";
+            }
+            return dateStr === archiveDates[0] ? "index.html" : `archive_${dateStr}.html`;
+        }
+
+        const calendarGrid = document.getElementById("calendar-grid");
+        const calendarMonthLabel = document.getElementById("calendar-month-label");
+        const calendarPrev = document.getElementById("calendar-prev");
+        const calendarNext = document.getElementById("calendar-next");
+        let calendarView = new Date(`${selectedDate}T00:00:00`);
+
+        function renderCalendar() {
+            const year = calendarView.getFullYear();
+            const month = calendarView.getMonth();
+            calendarMonthLabel.textContent = `${year}년 ${month + 1}월`;
+            calendarGrid.innerHTML = "";
+
+            const firstDay = new Date(year, month, 1);
+            const firstDate = new Date(firstDay);
+            firstDate.setDate(firstDate.getDate() - firstDay.getDay());
+
+            for (let i = 0; i < 42; i += 1) {
+                const current = new Date(firstDate);
+                current.setDate(firstDate.getDate() + i);
+                const dateStr = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, "0")}-${String(current.getDate()).padStart(2, "0")}`;
+                const isCurrentMonth = current.getMonth() === month;
+                const isSelected = dateStr === selectedDate;
+                const isAvailable = availableDates.includes(dateStr);
+                const button = document.createElement("button");
+                button.type = "button";
+                button.className = "calendar-day";
+                if (!isCurrentMonth) button.classList.add("is-muted");
+                if (isAvailable) button.classList.add("is-available");
+                if (isSelected) button.classList.add("is-selected");
+                button.textContent = String(current.getDate());
+
+                if (!isAvailable) {
+                    button.disabled = true;
+                } else {
+                    button.addEventListener("click", () => {
+                        const href = archiveHref(dateStr);
+                        if (href && href !== "#") {
+                            window.location.href = href;
+                        }
+                    });
+                }
+                calendarGrid.appendChild(button);
+            }
+        }
+
+        calendarPrev.addEventListener("click", () => {
+            calendarView = new Date(calendarView.getFullYear(), calendarView.getMonth() - 1, 1);
+            renderCalendar();
+        });
+
+        calendarNext.addEventListener("click", () => {
+            calendarView = new Date(calendarView.getFullYear(), calendarView.getMonth() + 1, 1);
+            renderCalendar();
+        });
+
+        renderCalendar();
+
+        document.addEventListener("DOMContentLoaded", () => {
+            if (!window.ApexCharts) {
+                return;
+            }
+
+            const colors = {
+                us10y: "#0f6bd8",
+                fx: "#14875e",
+                kospi: "#d97706",
+                kosdaq: "#334155",
+            };
+
+            const formatValue = (value, suffix = "") => {
+                const numericValue = Number(value);
+                if (!Number.isFinite(numericValue)) {
+                    return value;
+                }
+                const maximumFractionDigits = Math.abs(numericValue) >= 100 ? 1 : 3;
+                return numericValue.toLocaleString("ko-KR", { maximumFractionDigits }) + suffix;
+            };
+
+            const chartOptions = (title, dates, values, color, suffix = "") => ({
+                series: [{ name: title, data: values }],
+                chart: {
+                    type: "area",
+                    height: 292,
+                    toolbar: { show: false },
+                    zoom: { enabled: false },
+                    fontFamily: "Inter, Noto Sans KR, sans-serif",
+                },
+                colors: [color],
+                dataLabels: { enabled: false },
+                stroke: { curve: "smooth", width: 3 },
+                fill: {
+                    type: "gradient",
+                    gradient: {
+                        shadeIntensity: 1,
+                        opacityFrom: 0.34,
+                        opacityTo: 0.04,
+                        stops: [0, 95, 100],
+                    },
+                },
+                grid: {
+                    borderColor: "rgba(148, 163, 184, 0.22)",
+                    strokeDashArray: 4,
+                },
+                xaxis: {
+                    categories: dates,
+                    labels: {
+                        style: {
+                            colors: "#94a3b8",
+                            fontSize: "10px",
+                        },
+                    },
+                    axisBorder: { show: false },
+                    axisTicks: { show: false },
+                },
+                yaxis: {
+                    labels: {
+                        style: {
+                            colors: "#94a3b8",
+                            fontSize: "10px",
+                        },
+                        formatter: (value) => formatValue(value, suffix),
+                    },
+                },
+                tooltip: {
+                    x: { show: true },
+                    y: {
+                        formatter: (value) => formatValue(value, suffix),
+                    },
+                },
+            });
+
+            if (chartData.us_10y && chartData.us_10y.values.length) {
+                new ApexCharts(
+                    document.querySelector("#chart-us-10y"),
+                    chartOptions("금리", chartData.us_10y.dates, chartData.us_10y.values, colors.us10y, "%")
+                ).render();
+            }
+
+            if (chartData.fx && chartData.fx.values.length) {
+                new ApexCharts(
+                    document.querySelector("#chart-fx"),
+                    chartOptions("환율", chartData.fx.dates, chartData.fx.values, colors.fx, "원")
+                ).render();
+            }
+
+            if (chartData.kospi && chartData.kospi.values.length) {
+                new ApexCharts(
+                    document.querySelector("#chart-kospi"),
+                    chartOptions("코스피", chartData.kospi.dates, chartData.kospi.values, colors.kospi)
+                ).render();
+            }
+
+            if (chartData.kosdaq && chartData.kosdaq.values.length) {
+                new ApexCharts(
+                    document.querySelector("#chart-kosdaq"),
+                    chartOptions("코스닥", chartData.kosdaq.dates, chartData.kosdaq.values, colors.kosdaq)
+                ).render();
+            }
+        });
+    </script>
+</body>
+</html>
