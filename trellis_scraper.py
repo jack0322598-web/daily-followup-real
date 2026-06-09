@@ -1,6 +1,7 @@
 import argparse
 import json
 import re
+import sys
 import time
 import urllib.parse
 import urllib.request
@@ -33,6 +34,11 @@ HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
 }
+
+
+def console_safe(text) -> str:
+    encoding = sys.stdout.encoding or "utf-8"
+    return str(text).encode(encoding, errors="replace").decode(encoding, errors="replace")
 
 
 @dataclass
@@ -363,11 +369,11 @@ def collect_yesterday_articles(
                 published = article_date(article)
                 if published and published.date() == target_date:
                     results.append(article)
-                    print(f"[match] {published.date()} | {article.title or url}")
+                    print(console_safe(f"[match] {published.date()} | {article.title or url}"))
                     if limit is not None and len(results) >= limit:
                         return results
             except Exception as exc:  # pragma: no cover - network failure path
-                print(f"[warn] failed to fetch {url}: {exc}")
+                print(console_safe(f"[warn] failed to fetch {url}: {exc}"))
 
             time.sleep(delay_seconds)
 
