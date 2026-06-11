@@ -1,9 +1,11 @@
 import argparse
+import hashlib
 import html
 import imaplib
 import json
 import re
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from collections import Counter
@@ -105,13 +107,24 @@ MAX_IMPACT_NEWS = 5
 MAX_GLOBAL_IMPACT_NEWS_PER_SOURCE = 2
 MAX_NEWS_PER_CATEGORY = 3
 MAX_VCAC_NEWS_PER_SOURCE = 8
+MAX_AI_NEWS_PER_SOURCE = 8
 SUMMARY_LINE_COUNT = 3
 SUMMARY_MAX_CHARS = 145
+SUMMARY_INPUT_MAX_CHARS = 20000
+SUMMARY_BATCH_ITEM_MAX_CHARS = 6500
+SUMMARY_BATCH_SIZE = 5
+GEMINI_SUMMARY_MODEL = "gemini-2.5-flash"
+SUMMARY_CACHE_FILE = BASE_DIR / "summary_cache.json"
+INDUSTRY_TREND_CACHE_FILE = BASE_DIR / "industry_trend_cache.json"
+MCKINSEY_WEEK_IN_CHARTS_URL = "https://www.mckinsey.com/featured-insights/week-in-charts"
+AI_SUMMARY_PROMPT_VERSION = "editor-v1"
+AI_SUMMARY_MIN_INTERVAL_SECONDS = 4.0
 TREND_LOOKBACK_DAYS = 7
 TREND_TITLES_PER_CATEGORY = 12
 TREND_KEYWORDS_PER_CATEGORY = 7
 TREND_REFRESH_WEEKDAY = 1  # Tuesday, because Monday's news starts the weekly cycle.
 GEMINI_KEYWORD_MODEL = "gemini-2.5-flash"
+SINGLE_ITEM_NEWSLETTER_SOURCES = {"Bloomberg Green", "CTVC"}
 
 GLOBAL_IMPACT_FEEDS = [
     ("Powerstack", "https://powerstack.sightlineclimate.com/feed/"),
@@ -128,6 +141,24 @@ VCAC_BRANDING = {
     "플래텀": ("platum", "https://cdn.platum.kr/wp-content/uploads/2024/11/Platum-logo.svg"),
     "벤처스퀘어": ("venturesquare", "https://www.venturesquare.net/wp-content/uploads/2026/04/cropped-vs-symbol-color-192x192.png"),
 }
+
+AI_SOURCE_PRIORITY = ("AI News", "AI TIMES", "MarketingTech", "The Batch Data Points", "The Batch Weekly Issues")
+
+AI_BRANDING = {
+    "AI News": ("ai-news", "https://www.artificialintelligence-news.com/wp-content/uploads/2024/02/AINews-logo-300x75.png"),
+    "AI TIMES": ("aitimes", "https://cdn.aitimes.com/image/logo/translogo_20250624031234.png"),
+    "MarketingTech": ("marketingtech", "https://www.marketingtechnews.net/wp-content/uploads/2020/09/marketing-icon.png"),
+    "The Batch Data Points": ("batch", "https://www.deeplearning.ai/_next/image?url=%2F_next%2Fstatic%2Fmedia%2Fthe-batch-logo.0b7c10a2.png&w=1080&q=75"),
+    "The Batch Weekly Issues": ("batch-weekly", "https://www.deeplearning.ai/_next/image?url=%2F_next%2Fstatic%2Fmedia%2Fthe-batch-logo.0b7c10a2.png&w=1080&q=75"),
+}
+
+AI_RSS_SOURCE_CONFIGS = [
+    {
+        "source": "MarketingTech",
+        "feeds": ["https://www.marketingtechnews.net/categories/ai-intelligent-marketing/feed/"],
+        "context": "MarketingTech의 AI 및 지능형 마케팅 섹션 기사입니다.",
+    },
+]
 
 VCAC_RSS_SOURCE_CONFIGS = [
     {
@@ -209,9 +240,18 @@ SUMMARY_SKIP_KEYWORDS = (
     "ai기능", "핵심요약", "추천질문", "관련종목", "ai해설",
     "연설하고 있다", "기념촬영", "사진 제공",
 )
-BLOCKED_SOURCE_DOMAINS = ("blog.naver.com", "tistory.com", "youtube.com")
+BLOCKED_SOURCE_DOMAINS = ("blog.naver.com", "tistory.com", "youtube.com", "netballnz.co.nz")
+SPAM_NEWS_KEYWORDS = (
+    "카지노", "먹튀", "토토", "바카라", "슬롯", "도박", "스포츠토토", "온라인카지노",
+    "casino", "gambling", "betting", "sportsbook", "blackjack", "roulette",
+)
 GOOGLE_NEWS_DECODE_CACHE = {}
 ARTICLE_BODY_CACHE = {}
+SUMMARY_ENV = {}
+SUMMARY_CACHE = {}
+SUMMARY_CACHE_DIRTY = False
+SUMMARY_AI_DISABLED_REASON = ""
+SUMMARY_LAST_CALL_TS = 0.0
 STORY_TOKEN_STOPWORDS = {
     "기사", "보도", "속보", "단독", "관련", "통해", "대한", "이번", "지난", "이날", "오늘",
     "기자", "뉴스", "발표", "예상", "전망", "추진", "착수", "확인", "정리", "내용", "소식",
@@ -248,20 +288,6 @@ SEARCH_SECTIONS = [
             },
         ],
     },
-    {
-        "id": "ai", "label": "AI",
-        "groups": [
-            {
-                "title": "AI",
-                "categories": [
-                    {"name": "글로벌/빅테크", "query": "(오픈AI OR OpenAI OR 구글 Gemini OR 메타 Llama OR MS 코파일럿 OR 빅테크 AI)", "context": "글로벌 빅테크 AI 동향입니다."},
-                    {"name": "AI 인프라/비용", "query": "(AI 데이터센터 OR GPU OR 엔비디아 OR HBM OR AI 반도체 OR 전력 인프라)", "context": "AI 하드웨어 동향입니다."},
-                    {"name": "AI 융합 산업", "query": "(AI 헬스케어 OR AI 의료 OR 자율주행 AI OR AI 로봇 OR 온디바이스 AI OR AI 핀테크)", "context": "AI 산업 결합 기사입니다."},
-                    {"name": "규제 이슈", "query": "(AI 규제 OR AI 가이드라인 OR AI 저작권 OR AI 윤리 OR EU AI법)", "context": "AI 규제 동향입니다."},
-                ],
-            },
-        ],
-    },
 ]
 
 NAV_SECTIONS = (
@@ -270,6 +296,7 @@ NAV_SECTIONS = (
     ("vcac", "VC/AC"),
     ("ai", "AI"),
     ("macro", "거시경제"),
+    ("industry", "산업 트랜드"),
     ("theme", "강세 테마"),
 )
 
@@ -553,7 +580,9 @@ def fetch_strong_theme():
                             "link": link,
                             "source": source_name,
                             "date": pub_date,
-                            "summary": make_three_line_summary(title, summary_source, source_name, f"{theme_name} 관련 강세 테마 뉴스입니다.")
+                            "summary": make_three_line_summary(title, summary_source, source_name, f"{theme_name} 관련 강세 테마 뉴스입니다."),
+                            "_summary_source": summary_source,
+                            "_summary_context": f"{theme_name} 관련 강세 테마 뉴스입니다.",
                         })
                 except Exception as ne:
                     print(f"Theme News Error for {theme_name}: {ne}")
@@ -564,6 +593,174 @@ def fetch_strong_theme():
         print("Theme Crawl Error:", e)
         
     return theme
+
+def load_industry_trend_cache():
+    if not INDUSTRY_TREND_CACHE_FILE.exists():
+        return {}
+    try:
+        payload = json.loads(INDUSTRY_TREND_CACHE_FILE.read_text(encoding="utf-8"))
+        return payload if isinstance(payload, dict) else {}
+    except Exception:
+        return {}
+
+def save_industry_trend_cache(payload):
+    if payload:
+        INDUSTRY_TREND_CACHE_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+def normalize_mckinsey_url(url):
+    if not url:
+        return ""
+    url = urllib.parse.urljoin("https://www.mckinsey.com", url)
+    parts = urllib.parse.urlsplit(url)
+    return urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
+
+def parse_mckinsey_date(text):
+    text = normalize_space(text)
+    for pattern in (r"([A-Z][a-z]+ \d{1,2}, \d{4})", r"(\d{4}-\d{2}-\d{2})"):
+        match = re.search(pattern, text)
+        if not match:
+            continue
+        candidate = match.group(1)
+        for fmt in ("%B %d, %Y", "%Y-%m-%d"):
+            try:
+                return datetime.strptime(candidate, fmt).date()
+            except Exception:
+                pass
+    return None
+
+def format_dot_date(date_obj):
+    return date_obj.strftime("%Y.%m.%d") if date_obj else ""
+
+def extract_latest_mckinsey_week_url():
+    query = urllib.parse.quote('site:mckinsey.com/featured-insights/week-in-charts "The Week in Charts"')
+    rss_url = f"https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
+    rss_text = fetch_text(rss_url, timeout=20)
+    root = ElementTree.fromstring(rss_text)
+    best = None
+    for item in root.findall(".//item"):
+        title = normalize_space(item.findtext("title", ""))
+        google_link = normalize_space(item.findtext("link", ""))
+        if not title or " - McKinsey" not in title:
+            continue
+        if title.lower().startswith("the week in charts"):
+            continue
+        pub_dt = parse_datetime_string(item.findtext("pubDate", ""))
+        link = normalize_mckinsey_url(resolve_google_news_url(google_link))
+        if "/featured-insights/week-in-charts/" not in link:
+            continue
+        candidate = {
+            "title": title.rsplit(" - ", 1)[0],
+            "source_url": link,
+            "published_date": format_dot_date(pub_dt.date()) if pub_dt else "",
+            "published_iso": pub_dt.date().isoformat() if pub_dt else "",
+        }
+        if not best or candidate["published_iso"] > best.get("published_iso", ""):
+            best = candidate
+    return best or {}
+
+def translate_known_mckinsey_description(title, description):
+    title_key = normalize_space(title).casefold()
+    if "the quantum leap for communication" in title_key:
+        return (
+            "퀀텀 시장은 투자자 관심, 주요 수직 산업의 성장, 기술 혁신, 상업 고객 확대 등 여러 흐름에 힘입어 빠르게 성장하고 있습니다. "
+            "현재 양자 통신 시장은 정부 수요가 중심이지만, 앞으로는 통신과 금융 서비스 같은 상업 플레이어가 성장을 이끌 가능성이 큽니다. "
+            "McKinsey 연구에 따르면 전체 양자 통신 시장은 2035년까지 110억~150억 달러 규모에 이를 것으로 전망됩니다."
+        )
+    return description
+
+def parse_mckinsey_chart_rows(image_description):
+    text = normalize_space(image_description)
+    rows = []
+    if "$11.0 billion" in text or "$15.0 billion" in text:
+        rows.append(["전체 시장 규모", "$0.9B-$1.0B", "$1.3B-$1.6B", "$3.5B-$4.6B", "$11.0B-$15.0B"])
+    if "Government customers" in text:
+        rows.extend([
+            ["정부·국방 고객", "약 64%", "-", "-", "27-31%"],
+            ["학계", "약 28%", "-", "-", "16-20%"],
+            ["통신·클라우드·사이버보안", "약 2-6%", "-", "-", "16-26%"],
+            ["금융 서비스", "약 1-5%", "-", "-", "14-24%"],
+            ["헬스케어", "-", "-", "-", "6-10%"],
+            ["기타 산업", "-", "-", "-", "3-7%"],
+        ])
+    return rows
+
+def parse_mckinsey_week_article(article_html, source_url, fallback_meta=None):
+    soup = BeautifulSoup(article_html, "html.parser")
+    title = extract_page_title(soup) or (fallback_meta or {}).get("title", "")
+    title = re.sub(r"\s*\|\s*McKinsey.*$", "", title).strip()
+    page_text = normalize_space(soup.get_text(" ", strip=True))
+
+    meta_desc = soup.find("meta", attrs={"name": "description"})
+    description = normalize_space(meta_desc.get("content", "")) if meta_desc and meta_desc.get("content") else ""
+    if not description and title and title in page_text:
+        after_title = page_text.split(title, 1)[-1]
+        match = re.search(r"([A-Z][a-z]+ \d{1,2}, \d{4})(.*?)(Image description:|To read the article|$)", after_title)
+        if match:
+            description = normalize_space(match.group(2))
+
+    item_date = ""
+    meta_date = soup.find("meta", attrs={"name": "itemdate"})
+    if meta_date and meta_date.get("content"):
+        dt = parse_datetime_string(meta_date.get("content"))
+        item_date = format_dot_date(dt.date()) if dt else ""
+    if not item_date:
+        item_date = format_dot_date(parse_mckinsey_date(page_text))
+
+    image_url = ""
+    image_alt = ""
+    img = soup.find("img", alt=True)
+    if img:
+        image_alt = normalize_space(img.get("alt", ""))
+        image_url = urllib.parse.urljoin("https://www.mckinsey.com", img.get("src") or img.get("data-src") or "")
+
+    image_description = ""
+    desc_match = re.search(r"Image description:\s*(.*?)\s*(?:Note:|Source:|End of image description\.)", page_text, flags=re.IGNORECASE)
+    if desc_match:
+        image_description = normalize_space(desc_match.group(1))
+
+    report_link = ""
+    report_title = ""
+    for anchor in soup.find_all("a", href=True):
+        href = normalize_mckinsey_url(anchor.get("href", ""))
+        text = normalize_space(anchor.get_text(" ", strip=True))
+        if "/our-insights/" in href and "/week-in-charts/" not in href:
+            report_link = href
+            report_title = text
+            break
+
+    return {
+        "source": "McKinsey",
+        "title": title,
+        "date": item_date or (fallback_meta or {}).get("published_date", ""),
+        "source_url": normalize_mckinsey_url(source_url),
+        "description_en": description,
+        "description_ko": translate_known_mckinsey_description(title, description),
+        "chart_image_url": image_url,
+        "chart_image_alt": image_alt,
+        "image_description": image_description,
+        "chart_headers": ["구분", "2023", "2025", "2030", "2035"],
+        "chart_rows": parse_mckinsey_chart_rows(image_description),
+        "report_title": report_title,
+        "report_url": report_link,
+        "updated_at": datetime.now(KST).strftime("%Y-%m-%dT%H:%M:%S%z"),
+    }
+
+def fetch_industry_trend(target_date):
+    cache = load_industry_trend_cache()
+    try:
+        latest = extract_latest_mckinsey_week_url()
+        if not latest:
+            return cache
+        if cache.get("source_url") == latest.get("source_url"):
+            return cache
+        article_html = fetch_text(latest["source_url"], timeout=35)
+        item = parse_mckinsey_week_article(article_html, latest["source_url"], latest)
+        if item.get("title") and (item.get("chart_image_url") or item.get("chart_rows")):
+            save_industry_trend_cache(item)
+            return item
+    except Exception as e:
+        print(f"  - McKinsey industry trend fetch failed, using cache: {e}")
+    return cache
 
 # ==========================================
 # 기본 함수들 (필터링 및 텍스트 정리)
@@ -625,8 +822,22 @@ def normalize_source_name(source_name):
     }
     return source_map.get(source_name, source_name)
 
-def should_skip_search_item(section_id, category_name, source_name):
+def is_blocked_domain(url):
+    netloc = urllib.parse.urlparse(url or "").netloc.lower()
+    if netloc.startswith("www."):
+        netloc = netloc[4:]
+    return any(netloc == domain or netloc.endswith("." + domain) for domain in BLOCKED_SOURCE_DOMAINS)
+
+def has_spam_news_signal(*parts):
+    text = normalize_space(" ".join(str(part or "") for part in parts)).lower()
+    return any(keyword.lower() in text for keyword in SPAM_NEWS_KEYWORDS)
+
+def should_skip_search_item(section_id, category_name, source_name, title="", link=""):
     normalized = normalize_source_name(source_name)
+    if is_blocked_domain(link):
+        return True
+    if has_spam_news_signal(title, source_name, link):
+        return True
     if section_id == "macro" and category_name == "외교" and normalized == "브런치":
         return True
     return False
@@ -664,6 +875,16 @@ def is_domestic_news(title, summary, source):
 
 def fetch_text(url, timeout=15):
     with urllib.request.urlopen(urllib.request.Request(url, headers=HEADERS), timeout=timeout) as response:
+        body = response.read()
+        return decode_response_body(body, response.headers.get_content_charset())
+
+SOURCE_FETCH_HEADERS = {
+    "User-Agent": "Mozilla/5.0",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+}
+
+def fetch_source_text(url, timeout=20):
+    with urllib.request.urlopen(urllib.request.Request(url, headers=SOURCE_FETCH_HEADERS), timeout=timeout) as response:
         body = response.read()
         return decode_response_body(body, response.headers.get_content_charset())
 
@@ -807,6 +1028,421 @@ def extract_json_payload(text):
         return json.loads(match.group(0))
     except Exception:
         return {}
+
+def env_flag(env, key, default=True):
+    value = str((env or {}).get(key, "")).strip().lower()
+    if not value:
+        return default
+    return value not in {"0", "false", "no", "off", "disable", "disabled"}
+
+def load_summary_cache():
+    if not SUMMARY_CACHE_FILE.exists():
+        return {}
+    try:
+        payload = json.loads(SUMMARY_CACHE_FILE.read_text(encoding="utf-8"))
+        return payload if isinstance(payload, dict) else {}
+    except Exception:
+        return {}
+
+def save_summary_cache():
+    global SUMMARY_CACHE_DIRTY
+    if not SUMMARY_CACHE_DIRTY:
+        return
+    SUMMARY_CACHE_FILE.write_text(json.dumps(SUMMARY_CACHE, ensure_ascii=False, indent=2), encoding="utf-8")
+    SUMMARY_CACHE_DIRTY = False
+
+def configure_summary_generator(env):
+    global SUMMARY_ENV, SUMMARY_CACHE, SUMMARY_CACHE_DIRTY, SUMMARY_AI_DISABLED_REASON, SUMMARY_LAST_CALL_TS
+    SUMMARY_ENV = env or {}
+    SUMMARY_CACHE = load_summary_cache() if env_flag(SUMMARY_ENV, "AI_SUMMARY_ENABLED", True) else {}
+    SUMMARY_CACHE_DIRTY = False
+    SUMMARY_AI_DISABLED_REASON = ""
+    SUMMARY_LAST_CALL_TS = 0.0
+
+def fit_summary_input(text, limit=SUMMARY_INPUT_MAX_CHARS):
+    text = clean_article_text(text)
+    if len(text) <= limit:
+        return text
+    head_len = int(limit * 0.72)
+    tail_len = max(0, limit - head_len - 40)
+    return normalize_space(f"{text[:head_len]} [...본문 일부 생략...] {text[-tail_len:]}")
+
+def summary_cache_key(model, title, source, text):
+    payload = json.dumps(
+        {
+            "version": AI_SUMMARY_PROMPT_VERSION,
+            "model": model,
+            "title": normalize_space(title),
+            "source": normalize_space(source),
+            "text": text,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+def normalize_summary_lines(value):
+    if isinstance(value, dict):
+        value = value.get("summary")
+    if not isinstance(value, list):
+        return []
+    lines = []
+    seen = set()
+    for item in value:
+        line = normalize_space(str(item))
+        line = re.sub(r"^\s*[-*•]?\s*\d*[.)]?\s*", "", line).strip()
+        if not line or len(line) < 12:
+            continue
+        if line.casefold() in seen:
+            continue
+        seen.add(line.casefold())
+        lines.append(truncate_text(line, SUMMARY_MAX_CHARS))
+        if len(lines) >= SUMMARY_LINE_COUNT:
+            break
+    return lines if len(lines) == SUMMARY_LINE_COUNT else []
+
+def build_editor_summary_prompt(title, article_text, source="", context=""):
+    return f"""
+[System Prompt]
+너는 지금부터 뉴스 기사의 핵심을 완벽하게 파악하는 20년차 수석 에디터야.
+주어지는 기사 제목과 본문을 읽고, 다음 규칙을 엄격하게 지켜서 정확히 3줄로 요약해 줘.
+
+[규칙]
+반드시 JSON 형식으로만 출력할 것. 다른 설명, 마크다운, 코드블록은 금지.
+JSON schema: {{"summary": ["1줄", "2줄", "3줄"]}}
+기사에 없는 내용은 절대 유추하거나 추가하지 말 것. 객관적 사실만 반영할 것.
+각 줄은 '입니다/습니다' 체로 명확하고 간결하게 끝낼 것.
+문맥상 가장 중요한 결론이나 원인을 반드시 포함할 것.
+기사에서 육하원칙(누가, 언제, 어디서, 무엇을, 어떻게, 왜)을 먼저 분석한 뒤 가장 중요한 핵심만 추릴 것.
+세 줄은 서로 다른 정보를 담아야 하며, 제목을 그대로 반복하지 말 것.
+본문이 부족하거나 일부만 제공된 경우에도 제공된 정보 안에서만 요약할 것.
+
+[좋은 요약 예시 1]
+기사 제목: 스튜어드십 코드 10년 만에 개편…기관투자자 ESG 책임 확대
+{{"summary": ["도입 10년 만에 개정된 한국 스튜어드십 코드에 따라 기관투자자의 수탁자 책임 범위가 상장주식에서 채권, 부동산, 해외자산 등 전 자산군으로 확대됩니다.", "수탁자 책임 활동 시 고려해야 할 요소를 기존 지배구조(G)를 넘어 환경 및 사회(E·S) 문제까지 넓혀 ESG 책임을 강화했습니다.", "복수 기관의 공동관여 원칙과 위탁기관 관리 의무, 체계적인 이행점검 제도를 신설해 스튜어드십 코드의 실효성을 높일 예정입니다."]}}
+
+[좋은 요약 예시 2]
+기사 제목: "복잡해서 안 본다"…영국 FCA, 투자상품 기후공시 손질
+{{"summary": ["영국 금융감독청(FCA)은 투자자들이 이해하기 어렵고 활용도가 낮다는 평가를 받은 TCFD 기반 상품 단위 기후공시 의무를 폐지하기로 했습니다.", "개인투자자에게는 상품 안내 자료로 기후 리스크를 쉽게 설명하고, 기관투자자에게는 주요 배출량 데이터를 요청 시 제공하는 맞춤형 체계로 전환됩니다.", "자산운용사 차원의 기업 단위 기후 리스크 공시는 유지되며, FCA는 이번 개편으로 업계 비용 부담을 줄이고 정보의 실용성을 높일 계획입니다."]}}
+
+[기사 정보]
+출처: {source or "알 수 없음"}
+카테고리 맥락: {context or "뉴스 기사"}
+기사 제목: {title}
+기사 본문:
+\"\"\"{article_text}\"\"\"
+""".strip()
+
+def throttle_summary_call():
+    global SUMMARY_LAST_CALL_TS
+    try:
+        min_interval = float(SUMMARY_ENV.get("AI_SUMMARY_MIN_INTERVAL_SECONDS", AI_SUMMARY_MIN_INTERVAL_SECONDS))
+    except Exception:
+        min_interval = AI_SUMMARY_MIN_INTERVAL_SECONDS
+    if min_interval <= 0:
+        return
+    now = time.monotonic()
+    elapsed = now - SUMMARY_LAST_CALL_TS
+    if SUMMARY_LAST_CALL_TS and elapsed < min_interval:
+        time.sleep(min_interval - elapsed)
+    SUMMARY_LAST_CALL_TS = time.monotonic()
+
+def call_gemini_json(api_key, model, prompt, timeout=55):
+    body = {
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0.15,
+            "responseMimeType": "application/json",
+        },
+    }
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{urllib.parse.quote(model)}:generateContent?key={urllib.parse.quote(api_key)}"
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
+        headers={**HEADERS, "Content-Type": "application/json"},
+        method="POST",
+    )
+    throttle_summary_call()
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        data = json.loads(response.read().decode("utf-8", errors="replace"))
+    text = " ".join(
+        part.get("text", "")
+        for candidate in data.get("candidates", [])
+        for part in candidate.get("content", {}).get("parts", [])
+    )
+    return extract_json_payload(text)
+
+def generate_editor_summary_with_gemini(title, raw_text="", source="", context=""):
+    global SUMMARY_CACHE_DIRTY, SUMMARY_AI_DISABLED_REASON
+    if SUMMARY_AI_DISABLED_REASON:
+        return []
+    if not env_flag(SUMMARY_ENV, "AI_SUMMARY_ENABLED", True):
+        return []
+    api_key = SUMMARY_ENV.get("GEMINI_API_KEY", "")
+    if not api_key:
+        return []
+
+    article_text = fit_summary_input(raw_text)
+    if len(article_text) < 80:
+        return []
+
+    primary_model = SUMMARY_ENV.get("GEMINI_SUMMARY_MODEL") or SUMMARY_ENV.get("GEMINI_MODEL") or GEMINI_SUMMARY_MODEL
+    model_candidates = list(dict.fromkeys([primary_model, "gemini-2.5-flash-lite"]))
+    last_error = None
+
+    rate_limited_models = []
+    for model in model_candidates:
+        cache_key = summary_cache_key(model, title, source, article_text)
+        cached = normalize_summary_lines(SUMMARY_CACHE.get(cache_key))
+        if cached:
+            return cached
+
+        prompt = build_editor_summary_prompt(title, article_text, source, context)
+        for attempt in range(2):
+            try:
+                parsed = call_gemini_json(api_key, model, prompt)
+                lines = normalize_summary_lines(parsed)
+                if lines:
+                    SUMMARY_CACHE[cache_key] = {
+                        "title": normalize_space(title),
+                        "source": normalize_space(source),
+                        "summary": lines,
+                    }
+                    SUMMARY_CACHE_DIRTY = True
+                    return lines
+                last_error = "invalid JSON summary shape"
+            except urllib.error.HTTPError as e:
+                last_error = f"HTTP {e.code}"
+                if e.code == 429:
+                    rate_limited_models.append(model)
+                    time.sleep(4.0 * (attempt + 1))
+                    break
+                if e.code in {400, 401, 403}:
+                    SUMMARY_AI_DISABLED_REASON = last_error
+                    print(f"  - AI summary disabled: {last_error}")
+                    return []
+            except Exception as e:
+                last_error = e
+            time.sleep(1.2 * (attempt + 1))
+
+    if len(rate_limited_models) == len(model_candidates):
+        SUMMARY_AI_DISABLED_REASON = "HTTP 429"
+        print("  - AI summary disabled: HTTP 429")
+        return []
+
+    if env_flag(SUMMARY_ENV, "AI_SUMMARY_DEBUG", False):
+        print(f"  - AI summary failed ({source}): {last_error}")
+    return []
+
+def env_int(env, key, default):
+    try:
+        return max(1, int(str((env or {}).get(key, default)).strip()))
+    except Exception:
+        return default
+
+def build_batch_editor_summary_prompt(items):
+    payload = [
+        {
+            "id": item["id"],
+            "source": item["source"],
+            "context": item["context"],
+            "title": item["title"],
+            "body": item["text"],
+        }
+        for item in items
+    ]
+    return f"""
+[System Prompt]
+너는 지금부터 뉴스 기사의 핵심을 완벽하게 파악하는 20년차 수석 에디터야.
+아래 여러 개의 기사 제목과 본문을 각각 읽고, 각 기사마다 정확히 3줄로 요약해 줘.
+
+[규칙]
+반드시 JSON 형식으로만 출력할 것. 다른 설명, 마크다운, 코드블록은 금지.
+JSON schema: {{"items": [{{"id": "기사 id", "summary": ["1줄", "2줄", "3줄"]}}]}}
+입력으로 받은 모든 id에 대해 결과를 반환할 것.
+기사에 없는 내용은 절대 유추하거나 추가하지 말 것. 객관적 사실만 반영할 것.
+각 줄은 '입니다/습니다' 체로 명확하고 간결하게 끝낼 것.
+문맥상 가장 중요한 결론이나 원인을 반드시 포함할 것.
+기사별로 육하원칙(누가, 언제, 어디서, 무엇을, 어떻게, 왜)을 먼저 분석한 뒤 가장 중요한 핵심만 추릴 것.
+세 줄은 서로 다른 정보를 담아야 하며, 제목을 그대로 반복하지 말 것.
+본문이 부족하거나 일부만 제공된 경우에도 제공된 정보 안에서만 요약할 것.
+
+[좋은 요약 예시]
+{{"items": [{{"id": "sample-1", "summary": ["영국 금융감독청(FCA)은 투자자들이 이해하기 어렵고 활용도가 낮다는 평가를 받은 TCFD 기반 투자상품 단위 기후공시 의무를 폐지합니다.", "개인투자자에게는 상품 안내 자료로 기후 리스크를 설명하고, 기관투자자에게는 요청 시 주요 배출량 데이터를 제공하는 맞춤형 체계로 전환됩니다.", "자산운용사 차원의 기업 단위 기후 리스크 공시는 유지되며, FCA는 이번 개편으로 업계 비용 부담을 줄이고 정보의 실용성을 높일 계획입니다."]}}]}}
+
+[기사 목록]
+{json.dumps(payload, ensure_ascii=False)}
+""".strip()
+
+def normalize_batch_summary_payload(parsed):
+    if not isinstance(parsed, dict):
+        return {}
+    entries = parsed.get("items") or parsed.get("summaries") or parsed.get("results") or []
+    if isinstance(entries, dict):
+        entries = [
+            {"id": key, "summary": value}
+            for key, value in entries.items()
+        ]
+    if not isinstance(entries, list):
+        return {}
+    normalized = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        item_id = normalize_space(str(entry.get("id", "")))
+        lines = normalize_summary_lines(entry)
+        if item_id and lines:
+            normalized[item_id] = lines
+    return normalized
+
+def iter_news_items_for_summary(strong_theme, domestic_impact, global_impact, search_sections):
+    seen_object_ids = set()
+
+    def yield_once(news_item):
+        if not isinstance(news_item, dict):
+            return
+        object_id = id(news_item)
+        if object_id in seen_object_ids:
+            return
+        seen_object_ids.add(object_id)
+        yield news_item
+
+    for news in (strong_theme or {}).get("news", []):
+        yield from yield_once(news)
+    for news in domestic_impact or []:
+        yield from yield_once(news)
+    for news in global_impact or []:
+        yield from yield_once(news)
+    for section in search_sections or []:
+        for group in section.get("groups", []):
+            for category in group.get("categories", []):
+                for news in category.get("news", []):
+                    yield from yield_once(news)
+
+def get_news_summary_text(news):
+    return news.get("_summary_source") or " ".join(str(line) for line in news.get("summary", []))
+
+def get_news_summary_context(news):
+    return news.get("_summary_context") or f"{news.get('source', '원문')} 보도입니다."
+
+def apply_ai_summary_batch(batch, model, api_key):
+    prompt = build_batch_editor_summary_prompt(batch)
+    parsed = call_gemini_json(api_key, model, prompt, timeout=90)
+    return normalize_batch_summary_payload(parsed)
+
+def apply_ai_summaries_to_news(strong_theme, domestic_impact, global_impact, search_sections):
+    global SUMMARY_CACHE_DIRTY
+    if not env_flag(SUMMARY_ENV, "AI_SUMMARY_ENABLED", True):
+        return
+    api_key = SUMMARY_ENV.get("GEMINI_API_KEY", "")
+    if not api_key:
+        return
+
+    primary_model = SUMMARY_ENV.get("GEMINI_SUMMARY_MODEL") or SUMMARY_ENV.get("GEMINI_MODEL") or GEMINI_SUMMARY_MODEL
+    model_candidates = list(dict.fromkeys([primary_model, "gemini-2.5-flash-lite"]))
+    batch_size = env_int(SUMMARY_ENV, "AI_SUMMARY_BATCH_SIZE", SUMMARY_BATCH_SIZE)
+    item_limit = env_int(SUMMARY_ENV, "AI_SUMMARY_BATCH_ITEM_MAX_CHARS", SUMMARY_BATCH_ITEM_MAX_CHARS)
+    max_429_batches = env_int(SUMMARY_ENV, "AI_SUMMARY_MAX_429_BATCHES", 2)
+
+    candidates = []
+    cached_count = 0
+    skipped_count = 0
+    for index, news in enumerate(iter_news_items_for_summary(strong_theme, domestic_impact, global_impact, search_sections), 1):
+        raw_text = fit_summary_input(get_news_summary_text(news), item_limit)
+        if len(raw_text) < 80:
+            skipped_count += 1
+            continue
+
+        cached = []
+        for model in model_candidates:
+            cached = normalize_summary_lines(SUMMARY_CACHE.get(summary_cache_key(model, news.get("title", ""), news.get("source", ""), raw_text)))
+            if cached:
+                break
+        if cached:
+            news["summary"] = cached
+            news["_summary_mode"] = "ai-cache"
+            cached_count += 1
+            continue
+
+        candidates.append({
+            "id": f"n{len(candidates) + 1}",
+            "news": news,
+            "title": normalize_space(news.get("title", "")),
+            "source": normalize_space(news.get("source", "")),
+            "context": normalize_space(get_news_summary_context(news)),
+            "text": raw_text,
+        })
+
+    if not candidates:
+        if cached_count:
+            print(f"  - AI summary cache applied: {cached_count}건")
+        return
+
+    print(f"\n[Summary] AI 배치 요약 중... 대상 {len(candidates)}건, 캐시 {cached_count}건, 제외 {skipped_count}건")
+    success_count = 0
+    fallback_count = 0
+    rate_limited_chunks = 0
+
+    for start in range(0, len(candidates), batch_size):
+        chunk = candidates[start:start + batch_size]
+        chunk_done = False
+        chunk_rate_limited = False
+        last_error = None
+        for model in model_candidates:
+            try:
+                result_map = apply_ai_summary_batch(chunk, model, api_key)
+                if not result_map:
+                    last_error = "empty or invalid JSON"
+                    continue
+                for item in chunk:
+                    lines = result_map.get(item["id"])
+                    if not lines:
+                        continue
+                    news = item["news"]
+                    news["summary"] = lines
+                    news["_summary_mode"] = f"ai-batch:{model}"
+                    SUMMARY_CACHE[summary_cache_key(model, item["title"], item["source"], item["text"])] = {
+                        "title": item["title"],
+                        "source": item["source"],
+                        "summary": lines,
+                    }
+                    success_count += 1
+                chunk_done = True
+                break
+            except urllib.error.HTTPError as e:
+                last_error = f"HTTP {e.code}"
+                if e.code == 429:
+                    chunk_rate_limited = True
+                    print(f"  - AI summary batch rate-limited ({model}, {start + 1}-{start + len(chunk)}): HTTP 429")
+                    time.sleep(10 + 5 * (rate_limited_chunks + 1))
+                    continue
+                if e.code in {400, 401, 403}:
+                    print(f"  - AI summary batch stopped ({model}): HTTP {e.code}")
+                    fallback_count += len(chunk)
+                    chunk_done = True
+                    break
+            except Exception as e:
+                last_error = e
+                continue
+
+        if not chunk_done:
+            fallback_count += len(chunk)
+            print(f"  - AI summary batch fallback ({start + 1}-{start + len(chunk)}): {last_error}")
+            if chunk_rate_limited:
+                rate_limited_chunks += 1
+        else:
+            rate_limited_chunks = 0
+
+        if rate_limited_chunks >= max_429_batches:
+            remaining = len(candidates) - (start + len(chunk))
+            if remaining > 0:
+                fallback_count += remaining
+                print(f"  - AI summary paused after {rate_limited_chunks} rate-limited batches; remaining {remaining}건은 기존 요약 유지")
+            break
+
+    if success_count:
+        SUMMARY_CACHE_DIRTY = True
+    print(f"[Summary] 완료: AI {success_count}건, 캐시 {cached_count}건, fallback {fallback_count}건")
 
 def generate_trend_keywords_with_gemini(env, signals, reference_date):
     api_key = env.get("GEMINI_API_KEY", "")
@@ -1084,6 +1720,39 @@ def parse_datetime_string(text):
             pass
     return None
 
+def parse_display_date(text):
+    text = normalize_space(text)
+    if not text:
+        return None
+    for pattern in [
+        r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},\s+\d{4}\b",
+        r"\b\d{4}[./-]\d{1,2}[./-]\d{1,2}\b",
+    ]:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if not match:
+            continue
+        candidate = match.group(0).replace("Sept", "Sep")
+        parsed = parse_datetime_string(candidate)
+        if parsed:
+            return parsed
+        for fmt in ("%b %d, %Y", "%B %d, %Y", "%Y.%m.%d", "%Y-%m-%d", "%Y/%m/%d"):
+            try:
+                return datetime.strptime(candidate, fmt).replace(tzinfo=KST)
+            except Exception:
+                pass
+    return None
+
+def parse_aitimes_listing_date(text, reference_date):
+    text = normalize_space(text)
+    match = re.search(r"\b(\d{2})-(\d{2})\s+(\d{2}):(\d{2})\b", text)
+    if not match:
+        return None
+    month, day, hour, minute = (int(match.group(i)) for i in range(1, 5))
+    try:
+        return datetime(reference_date.year, month, day, hour, minute, tzinfo=KST)
+    except ValueError:
+        return None
+
 def extract_feed_item_date(item):
     for tag_name in ("pubdate", "published", "updated", "date", "dc:date"):
         tag = item.find(tag_name)
@@ -1127,7 +1796,7 @@ def extract_html_datetime(text):
                 return dt
     return None
 
-def make_three_line_summary(title, raw_text="", source="", context=""):
+def make_extractive_three_line_summary(title, raw_text="", source="", context=""):
     title = normalize_space(title)
     lines, seen = [], set()
     text = clean_article_text(raw_text)
@@ -1186,6 +1855,9 @@ def make_three_line_summary(title, raw_text="", source="", context=""):
             lines.append(fb)
             seen.add(fb.casefold())
     return lines[:SUMMARY_LINE_COUNT]
+
+def make_three_line_summary(title, raw_text="", source="", context=""):
+    return make_extractive_three_line_summary(title, raw_text, source, context)
 
 class ArticleLinkParser(HTMLParser):
     def __init__(self):
@@ -1254,6 +1926,11 @@ def extract_newsletter_items_from_html(html_text, source_name, target_dot):
         "youtube.com",
         "mailto:",
     )
+    blocked_titles = {
+        "view in browser",
+        "ctvc by sightline climate",
+        "sightline climate",
+    }
     for anchor in soup.find_all("a", href=True):
         link = anchor.get("href", "").strip()
         if not link.startswith("http"):
@@ -1262,6 +1939,8 @@ def extract_newsletter_items_from_html(html_text, source_name, target_dot):
         if any(token in low for token in blocked):
             continue
         title = normalize_space(anchor.get_text(" ", strip=True))
+        if title.casefold() in blocked_titles:
+            continue
         if len(title) < 12:
             continue
         if link in seen_links:
@@ -1275,6 +1954,8 @@ def extract_newsletter_items_from_html(html_text, source_name, target_dot):
             "date": target_dot,
             "source": source_name,
             "summary": summary,
+            "_summary_source": parent_text,
+            "_summary_context": f"{source_name} newsletter article.",
         })
         if len(items) >= 6:
             break
@@ -1373,9 +2054,11 @@ def fetch_newsletter_emails(gmail_user, gmail_password, target_date, seen_links,
                     "link": primary_link,
                     "date": target_dot,
                     "source": source_name,
-                    "summary": make_three_line_summary(subject_title, body_text, source_name, f"{source_name} newsletter lead story.")
+                    "summary": make_three_line_summary(subject_title, body_text, source_name, f"{source_name} newsletter lead story."),
+                    "_summary_source": body_text,
+                    "_summary_context": f"{source_name} newsletter lead story.",
                 }
-                if source_name == "Bloomberg Green":
+                if source_name in SINGLE_ITEM_NEWSLETTER_SOURCES:
                     items = [subject_item]
                 else:
                     items = [subject_item] + [item for item in items if item["title"] != subject_title]
@@ -1420,10 +2103,21 @@ def fetch_global_impact(target_date, seen_links, seen_titles):
                 if any(is_similar_title(title, st) for st in seen_titles) or link in seen_links: continue
                 
                 desc_tag = item.find("description") or item.find("summary") or item.find("content")
-                summary = make_three_line_summary(title, strip_tags(desc_tag.text if desc_tag else ""), source_name, "글로벌 기후/임팩트 최신 동향입니다.")
+                desc_text = strip_tags(desc_tag.text if desc_tag else "")
+                article_body = fetch_article_body_text(link)
+                summary_source = article_body if len(article_body) >= 180 else desc_text
+                summary = make_three_line_summary(title, summary_source, source_name, "글로벌 기후/임팩트 최신 동향입니다.")
                 
                 seen_links.add(link); seen_titles.append(title)
-                global_news.append({"title": title, "link": link, "date": target_dot, "source": source_name, "summary": summary})
+                global_news.append({
+                    "title": title,
+                    "link": link,
+                    "date": target_dot,
+                    "source": source_name,
+                    "summary": summary,
+                    "_summary_source": summary_source,
+                    "_summary_context": "글로벌 기후/임팩트 최신 동향입니다.",
+                })
                 count += 1
         except Exception as e: print(f"  - {source_name} 수집 실패: {e}")
     return global_news
@@ -1451,6 +2145,10 @@ def should_skip_news_url(url):
     parsed = urlparse(url)
     path = parsed.path.lower()
     query = parsed.query.lower()
+    if is_blocked_domain(url):
+        return True
+    if has_spam_news_signal(url):
+        return True
     if "/admin/" in path:
         return True
     if "/search/" in path:
@@ -1554,6 +2252,7 @@ def extract_best_article_text(soup):
         "#news_body",
         "[itemprop='articleBody']",
         ".entry-content",
+        ".elementor-widget-theme-post-content",
         ".article_view",
         ".news_view",
         ".news_detail_wrap",
@@ -1677,6 +2376,8 @@ def fetch_sitemap_news_source(source_name, sitemap_url, target_date, seen_links,
                     "date": target_date.strftime("%Y.%m.%d"),
                     "source": source_name,
                     "summary": summary,
+                    "_summary_source": body,
+                    "_summary_context": context,
                 })
                 seen_links.add(link)
                 seen_titles.append(title)
@@ -1714,6 +2415,8 @@ def clean_source_article_title(title, source_name):
         f" - {source_name}",
         " - 유니콘팩토리",
         " - 플래텀",
+        " - AI타임스",
+        " < 기사본문 - AI타임스",
         " - 뉴스레터로 만나는 스타트업 투자 리포트 ‘스타트업레시피’",
         " - 뉴스레터로 만나는 스타트업 투자 리포트 '스타트업레시피'",
     ]
@@ -1721,6 +2424,81 @@ def clean_source_article_title(title, source_name):
         if title.endswith(suffix):
             title = title[: -len(suffix)]
     return normalize_space(title)
+
+def build_source_news_item(
+    source_name,
+    title,
+    link,
+    target_date,
+    seen_links,
+    seen_titles,
+    context,
+    desc_text="",
+    story_cache=None,
+    date_tag=None,
+    require_article_date=True,
+    cta_label="",
+    strict_story_dedupe=True,
+    seen_title_threshold=0.40,
+    cache_title_threshold=0.20,
+):
+    target_dot = target_date.strftime("%Y.%m.%d")
+    link = clean_tracking_url(link)
+    title = clean_source_article_title(title, source_name)
+    if not title or not link or link in seen_links:
+        return None
+    if any(is_similar_title(title, st, threshold=seen_title_threshold) for st in seen_titles):
+        return None
+
+    if date_tag and date_tag.strftime("%Y.%m.%d") != target_dot:
+        return None
+
+    article_html = ""
+    soup = None
+    article_dt = date_tag
+    try:
+        article_fetcher = fetch_source_text if source_name in {"AI News", "AI TIMES", "MarketingTech"} else fetch_text
+        article_html = article_fetcher(link, timeout=20)
+        if not article_dt:
+            article_dt = extract_html_datetime(article_html)
+        soup = BeautifulSoup(article_html, "html.parser")
+    except Exception as e:
+        print(f"  - {source_name} article fetch failed: {e}")
+
+    if require_article_date:
+        if not article_dt or article_dt.strftime("%Y.%m.%d") != target_dot:
+            return None
+    elif article_dt and article_dt.strftime("%Y.%m.%d") != target_dot:
+        return None
+
+    body = extract_best_article_text(soup) if soup else ""
+    if soup:
+        title = clean_source_article_title(extract_page_title(soup) or title, source_name)
+    summary_source = body if len(body) >= 180 else desc_text
+    if story_cache is not None:
+        for cached in story_cache:
+            if is_similar_title(title, cached["title"], threshold=cache_title_threshold):
+                return None
+            if strict_story_dedupe and is_duplicate_story(title, summary_source, cached["title"], cached["text"]):
+                return None
+
+    seen_links.add(link)
+    seen_titles.append(title)
+    if story_cache is not None:
+        story_cache.append({"title": title, "text": summary_source})
+
+    item = {
+        "title": title,
+        "link": link,
+        "date": (article_dt or target_date).strftime("%Y.%m.%d"),
+        "source": source_name,
+        "summary": make_three_line_summary(title, summary_source, source_name, context),
+        "_summary_source": summary_source,
+        "_summary_context": context,
+    }
+    if cta_label:
+        item["_cta_label"] = cta_label
+    return item
 
 def xml_local_name(tag):
     return str(tag).rsplit("}", 1)[-1].lower()
@@ -1770,7 +2548,7 @@ def collect_listing_article_links(page_url, link_pattern):
     items = []
     seen = set()
     try:
-        page_html = fetch_text(page_url, timeout=20)
+        page_html = fetch_source_text(page_url, timeout=20)
         soup = BeautifulSoup(page_html, "html.parser")
         for anchor in soup.find_all("a", href=True):
             href = anchor.get("href", "").strip()
@@ -1838,6 +2616,8 @@ def build_vcac_news_item(source_name, title, link, target_date, seen_links, seen
         "date": target_dot,
         "source": source_name,
         "summary": make_three_line_summary(title, summary_source, source_name, context),
+        "_summary_source": summary_source,
+        "_summary_context": context,
     }
 
 def fetch_vcac_rss_source(config, target_date, seen_links, seen_titles):
@@ -1850,7 +2630,7 @@ def fetch_vcac_rss_source(config, target_date, seen_links, seen_titles):
         if len(news_items) >= MAX_VCAC_NEWS_PER_SOURCE:
             break
         try:
-            feed_text = fetch_text(feed_url, timeout=20)
+            feed_text = fetch_source_text(feed_url, timeout=20)
             for item in parse_rss_feed_items(feed_text):
                 if len(news_items) >= MAX_VCAC_NEWS_PER_SOURCE:
                     break
@@ -1928,6 +2708,238 @@ def fetch_vcac_sources(target_date, seen_links, seen_titles):
         ],
     }
 
+def collect_ai_news_listing_items(page_url):
+    items = []
+    seen = set()
+    try:
+        page_html = fetch_source_text(page_url, timeout=20)
+        soup = BeautifulSoup(page_html, "html.parser")
+        for node in soup.select(".type-post"):
+            text = normalize_space(node.get_text(" ", strip=True))
+            date_tag = parse_display_date(text)
+            article_links = []
+            for anchor in node.find_all("a", href=True):
+                href = anchor.get("href", "").strip()
+                link = clean_tracking_url(urllib.parse.urljoin(page_url, href))
+                parsed = urllib.parse.urlparse(link)
+                if parsed.netloc != "www.artificialintelligence-news.com" or "/news/" not in parsed.path:
+                    continue
+                title = normalize_space(anchor.get_text(" ", strip=True))
+                if title:
+                    article_links.append((title, link))
+            if not article_links:
+                continue
+            title, link = max(article_links, key=lambda item: len(item[0]))
+            if link in seen or len(title) < 6:
+                continue
+            seen.add(link)
+            items.append({"title": title, "link": link, "date": date_tag, "description": text})
+    except Exception as e:
+        print(f"  - AI News listing failed ({page_url}): {e}")
+    return items
+
+def collect_aitimes_listing_items(target_date, max_pages=3):
+    items = []
+    seen = set()
+    base_url = "https://www.aitimes.com/news/articleList.html"
+    target_day = target_date.date() if hasattr(target_date, "date") else target_date
+    for page in range(1, max_pages + 1):
+        page_url = f"{base_url}?page={page}&view_type=sm"
+        try:
+            page_html = fetch_source_text(page_url, timeout=20)
+            soup = BeautifulSoup(page_html, "html.parser")
+            page_items = []
+            for node in soup.select("li.altlist-text-item, li.altlist-webzine-item"):
+                text = normalize_space(node.get_text(" ", strip=True))
+                date_tag = parse_aitimes_listing_date(text, target_date)
+                title_anchor = None
+                for anchor in node.find_all("a", href=True):
+                    href = anchor.get("href", "").strip()
+                    title = normalize_space(anchor.get_text(" ", strip=True))
+                    if "articleView.html" in href and len(title) >= 6:
+                        title_anchor = anchor
+                        break
+                if not title_anchor:
+                    continue
+                link = clean_tracking_url(urllib.parse.urljoin(page_url, title_anchor.get("href", "")))
+                title = normalize_space(title_anchor.get_text(" ", strip=True))
+                if not link or link in seen:
+                    continue
+                seen.add(link)
+                item = {"title": title, "link": link, "date": date_tag, "description": text}
+                items.append(item)
+                page_items.append(item)
+            if page_items and all(item.get("date") and item["date"].date() < target_day for item in page_items):
+                break
+        except Exception as e:
+            print(f"  - AI TIMES listing failed ({page_url}): {e}")
+            break
+    return items
+
+def collect_the_batch_listing_items(page_url, required_path_prefix="", exclude_issue_links=False):
+    items = []
+    seen = set()
+    try:
+        page_html = fetch_text(page_url, timeout=20)
+        soup = BeautifulSoup(page_html, "html.parser")
+        for article in soup.select("main article"):
+            text = normalize_space(article.get_text(" ", strip=True))
+            date_tag = parse_display_date(text)
+            link = ""
+            for anchor in article.find_all("a", href=True):
+                href = anchor.get("href", "").strip()
+                absolute = clean_tracking_url(urllib.parse.urljoin(page_url, href))
+                path = urllib.parse.urlparse(absolute).path.rstrip("/")
+                if not path.startswith("/the-batch/") or "/tag/" in path or path == "/the-batch":
+                    continue
+                if required_path_prefix and not path.startswith(required_path_prefix):
+                    continue
+                if exclude_issue_links and path.startswith("/the-batch/issue-"):
+                    continue
+                link = absolute
+                break
+            if not link or link in seen:
+                continue
+            title_node = article.find(["h1", "h2", "h3"])
+            title = normalize_space(title_node.get_text(" ", strip=True)) if title_node else ""
+            if not title:
+                for anchor in article.find_all("a", href=True):
+                    candidate = normalize_space(anchor.get_text(" ", strip=True))
+                    if len(candidate) > len(title):
+                        title = candidate
+            if len(title) < 6:
+                continue
+            seen.add(link)
+            items.append({"title": title, "link": link, "date": date_tag, "description": text})
+    except Exception as e:
+        print(f"  - The Batch listing failed ({page_url}): {e}")
+    return items
+
+def fetch_ai_rss_source(config, target_date, seen_links, seen_titles):
+    source_name = config["source"]
+    context = config["context"]
+    target_dot = target_date.strftime("%Y.%m.%d")
+    news_items = []
+    story_cache = []
+    for feed_url in config["feeds"]:
+        if len(news_items) >= MAX_AI_NEWS_PER_SOURCE:
+            break
+        try:
+            feed_text = fetch_source_text(feed_url, timeout=20)
+            for item in parse_rss_feed_items(feed_text):
+                if len(news_items) >= MAX_AI_NEWS_PER_SOURCE:
+                    break
+                date_tag = item["date"]
+                if date_tag and date_tag.strftime("%Y.%m.%d") != target_dot:
+                    continue
+                news_item = build_source_news_item(
+                    source_name,
+                    item["title"],
+                    item["link"],
+                    target_date,
+                    seen_links,
+                    seen_titles,
+                    context,
+                    desc_text=strip_tags(item.get("description", "")),
+                    story_cache=story_cache,
+                    date_tag=date_tag,
+                    require_article_date=not bool(date_tag),
+                    strict_story_dedupe=False,
+                    seen_title_threshold=0.50,
+                    cache_title_threshold=0.50,
+                )
+                if news_item:
+                    news_items.append(news_item)
+                time.sleep(0.8)
+        except Exception as e:
+            print(f"  - {source_name} RSS failed ({feed_url}): {e}")
+    return news_items
+
+def fetch_ai_listing_items(source_name, listing_items, target_date, seen_links, seen_titles, context, limit=MAX_AI_NEWS_PER_SOURCE, cta_label=""):
+    target_dot = target_date.strftime("%Y.%m.%d")
+    news_items = []
+    story_cache = []
+    for item in listing_items:
+        if len(news_items) >= limit:
+            break
+        date_tag = item.get("date")
+        if date_tag and date_tag.strftime("%Y.%m.%d") != target_dot:
+            continue
+        news_item = build_source_news_item(
+            source_name,
+            item.get("title", ""),
+            item.get("link", ""),
+            target_date,
+            seen_links,
+            seen_titles,
+            context,
+            desc_text=item.get("description", ""),
+            story_cache=story_cache,
+            date_tag=date_tag,
+            require_article_date=not bool(date_tag),
+            cta_label=cta_label,
+            strict_story_dedupe=False,
+            seen_title_threshold=0.50,
+            cache_title_threshold=0.50,
+        )
+        if news_item:
+            news_items.append(news_item)
+        time.sleep(0.8)
+    return news_items
+
+def fetch_ai_sources(target_date, seen_links, seen_titles):
+    source_news = {source_name: [] for source_name in AI_SOURCE_PRIORITY}
+    source_news["AI News"] = fetch_ai_listing_items(
+        "AI News",
+        collect_ai_news_listing_items("https://www.artificialintelligence-news.com/"),
+        target_date,
+        seen_links,
+        seen_titles,
+        "AI News의 글로벌 AI 산업 및 기술 뉴스입니다.",
+    )
+    source_news["AI TIMES"] = fetch_ai_listing_items(
+        "AI TIMES",
+        collect_aitimes_listing_items(target_date),
+        target_date,
+        seen_links,
+        seen_titles,
+        "AI TIMES의 국내외 AI 산업, 기업, 기술 기사입니다.",
+    )
+    for config in AI_RSS_SOURCE_CONFIGS:
+        source_news[config["source"]] = fetch_ai_rss_source(config, target_date, seen_links, seen_titles)
+    source_news["The Batch Data Points"] = fetch_ai_listing_items(
+        "The Batch Data Points",
+        collect_the_batch_listing_items("https://www.deeplearning.ai/the-batch/tag/data-points", exclude_issue_links=True),
+        target_date,
+        seen_links,
+        seen_titles,
+        "DeepLearning.AI The Batch Data Points의 AI 주요 뉴스 브리핑입니다.",
+    )
+    if target_date.weekday() == 4:
+        source_news["The Batch Weekly Issues"] = fetch_ai_listing_items(
+            "The Batch Weekly Issues",
+            collect_the_batch_listing_items("https://www.deeplearning.ai/the-batch", required_path_prefix="/the-batch/issue-"),
+            target_date,
+            seen_links,
+            seen_titles,
+            "DeepLearning.AI The Batch의 주간 AI 이슈 요약입니다.",
+            limit=1,
+            cta_label="원문 링크",
+        )
+    return {
+        "id": "ai",
+        "label": "AI",
+        "groups": [
+            {
+                "title": "AI",
+                "categories": [
+                    {"name": source_name, "news": source_news.get(source_name, [])}
+                    for source_name in AI_SOURCE_PRIORITY
+                ],
+            }
+        ],
+    }
+
 def parse_causeartist_listing_items(html_text, page_url):
     soup = BeautifulSoup(html_text, "html.parser")
     items = []
@@ -1991,6 +3003,8 @@ def fetch_causeartist_news(target_date, seen_links, seen_titles):
                         "date": target_date.strftime("%Y.%m.%d"),
                         "source": "Causeartist",
                         "summary": summary,
+                        "_summary_source": body,
+                        "_summary_context": "Global impact and sustainability content.",
                     })
                     seen_links.add(item["link"])
                     seen_titles.append(title)
@@ -2025,6 +3039,8 @@ def fetch_trellis_news(target_date, seen_links, seen_titles):
                 "date": target_date.strftime("%Y.%m.%d"),
                 "source": "Trellis",
                 "summary": summary,
+                "_summary_source": body,
+                "_summary_context": "Global climate and impact news.",
             })
             seen_links.add(link)
             seen_titles.append(title)
@@ -2057,7 +3073,7 @@ def fetch_google_news_for_category(target_date, section_id, group_title, categor
             
             if section_id == "vcac" and not is_valid_vcac_title(title):
                 continue
-            if should_skip_search_item(section_id, category["name"], source_name):
+            if should_skip_search_item(section_id, category["name"], source_name, title, link):
                 continue
                 
             try:
@@ -2086,14 +3102,19 @@ def fetch_google_news_for_category(target_date, section_id, group_title, categor
                 "link": link,
                 "source": forced_source or source_name,
                 "date": target_dot,
-                "summary": make_three_line_summary(title, summary_source, source_name, category["context"])
+                "summary": make_three_line_summary(title, summary_source, source_name, category["context"]),
+                "_summary_source": summary_source,
+                "_summary_context": category["context"],
             })
     except Exception as e:
         print("수집 오류:", e)
     return dedupe_news_items(news_list)
 
 def fetch_search_sections(target_date, seen_links, seen_titles, trend_keywords=None):
-    results = [fetch_vcac_sources(target_date, seen_links, seen_titles)]
+    results = [
+        fetch_vcac_sources(target_date, seen_links, seen_titles),
+        fetch_ai_sources(target_date, seen_links, seen_titles),
+    ]
     for section in SEARCH_SECTIONS:
         section_result = {"id": section["id"], "label": section["label"], "groups": []}
         for group in section["groups"]:
@@ -2116,7 +3137,7 @@ def fetch_search_sections(target_date, seen_links, seen_titles, trend_keywords=N
 # ==========================================
 # 🌟 HTML 렌더링
 # ==========================================
-def render_html(target_date, domestic_impact, global_impact, search_sections, target_dash, dashboard, strong_theme, chart_data):
+def render_html(target_date, domestic_impact, global_impact, search_sections, target_dash, dashboard, strong_theme, chart_data, industry_trend=None):
     target_dot = target_date.strftime("%Y.%m.%d")
     current_kst = datetime.now(KST)
     updated_at = current_kst.strftime("%Y.%m.%d %H:%M")
@@ -2127,6 +3148,7 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
     counts["indicators"] = 4
     counts["impact"] = len(domestic_impact) + len(global_impact)
     counts["theme"] = 1 if strong_theme and strong_theme["name"] != "강세테마 대기중" else 0
+    counts["industry"] = 1 if industry_trend and industry_trend.get("title") else 0
 
     chart_json = json.dumps(chart_data, ensure_ascii=False)
     esc = html.escape
@@ -2156,11 +3178,21 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
         summary_html = "".join(f"<li>{esc(str(line))}</li>" for line in news.get("summary", []))
         if not summary_html:
             summary_html = "<li>요약 정보가 없습니다.</li>"
+        action_html = ""
+        if news.get("_cta_label") and news.get("link"):
+            action_html = (
+                f'<div class="news-actions">'
+                f'<a class="news-action-link" href="{esc(news.get("link", ""))}" target="_blank" rel="noopener noreferrer">'
+                f'{esc(news.get("_cta_label", "원문 보기"))}'
+                f'</a>'
+                f'</div>'
+            )
         return (
             f'<article class="news-card">'
             f'<div class="news-title"><a href="{esc(news.get("link", ""))}" target="_blank" rel="noopener noreferrer">{esc(news.get("title", ""))}</a></div>'
             f'<div class="news-date">출처: {esc(news.get("source", ""))} | 발행일: {esc(news.get("date", ""))}</div>'
             f'<ul class="news-summary">{summary_html}</ul>'
+            f'{action_html}'
             f'</article>'
         )
 
@@ -2168,6 +3200,56 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
         if not news_items:
             return f'<div class="empty-state">{esc(empty_message)}</div>'
         return "".join(render_news_card(news) for news in news_items)
+
+    def render_industry_trend_section(item):
+        if not item or not item.get("title"):
+            body = '<div class="empty-state">수집된 산업 트랜드 차트가 없습니다.</div>'
+        else:
+            chart_img = ""
+            if item.get("chart_image_url"):
+                chart_img = (
+                    f'<div class="industry-chart-image">'
+                    f'<img src="{esc(item.get("chart_image_url", ""))}" alt="{esc(item.get("chart_image_alt") or item.get("title", ""))}" loading="lazy">'
+                    f'</div>'
+                )
+            report_link = ""
+            if item.get("report_url"):
+                report_label = item.get("report_title") or "원본 보고서 보기"
+                report_link = (
+                    f'<a class="industry-report-link" href="{esc(item.get("report_url", ""))}" target="_blank" rel="noopener noreferrer">'
+                    f'원본 보고서 보기: {esc(report_label)}'
+                    f'</a>'
+                )
+            body = f"""
+                <article class="industry-card">
+                    <div class="industry-meta">
+                        <span>McKinsey · The Week in Charts</span>
+                        <span>{esc(item.get("date", ""))}</span>
+                    </div>
+                    <h3>{esc(item.get("title", ""))}</h3>
+                    <p class="industry-description">{esc(item.get("description_ko") or item.get("description_en") or "")}</p>
+                    {chart_img}
+                    <div class="industry-source-note">Source: {esc(item.get("source", "McKinsey"))}</div>
+                    <div class="industry-actions">
+                        <a class="industry-report-link secondary" href="{esc(item.get("source_url", ""))}" target="_blank" rel="noopener noreferrer">Week in Charts 원문 보기</a>
+                        {report_link}
+                    </div>
+                </article>
+            """
+        return f"""
+        <section id="section-industry" class="content-section">
+            <div class="panel-shell">
+                <div class="panel-header">
+                    <div>
+                        <div class="panel-kicker">Industry Trend</div>
+                        <h2>산업 트랜드</h2>
+                    </div>
+                    <div class="panel-count">{counts.get("industry", 0)}건</div>
+                </div>
+                {body}
+            </div>
+        </section>
+        """
 
     def render_chart_panel(chart_id):
         return (
@@ -2328,6 +3410,12 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
             for category in group.get("categories", []):
                 vcac_groups[category["name"]] = category.get("news", [])
 
+    ai_groups = {}
+    if "ai" in section_map:
+        for group in section_map["ai"].get("groups", []):
+            for category in group.get("categories", []):
+                ai_groups[category["name"]] = category.get("news", [])
+
     impact_section_html = render_source_tab_section(
         "impact",
         "임팩트",
@@ -2352,6 +3440,21 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
         "수집된 VC/AC 뉴스가 없습니다.",
         show_empty_sources=True,
     )
+
+    ai_section_html = render_source_tab_section(
+        "ai",
+        "AI",
+        "AI Briefing",
+        "AI",
+        ai_groups,
+        AI_SOURCE_PRIORITY,
+        AI_BRANDING,
+        "수집된 AI 소스가 없습니다.",
+        "수집된 AI 뉴스가 없습니다.",
+        show_empty_sources=True,
+    )
+
+    industry_section_html = render_industry_trend_section(industry_trend or {})
 
     theme_rate = strong_theme.get("rate", "-")
     theme_rate_class = "up" if "+" in theme_rate else "down" if "-" in theme_rate else "neutral"
@@ -2413,7 +3516,7 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
 
     generic_sections_html = "".join(
         render_generic_section(section_map[sid])
-        for sid in ("ai", "macro")
+        for sid in ("macro",)
         if sid in section_map
     )
 
@@ -2952,6 +4055,11 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
         .impact-brand-recipe { box-shadow: inset 0 4px 0 #f59e0b; }
         .impact-brand-platum { box-shadow: inset 0 4px 0 #2563eb; }
         .impact-brand-venturesquare { box-shadow: inset 0 4px 0 #10b981; }
+        .impact-brand-ai-news { box-shadow: inset 0 4px 0 #2563eb; }
+        .impact-brand-aitimes { box-shadow: inset 0 4px 0 #111827; }
+        .impact-brand-marketingtech { box-shadow: inset 0 4px 0 #ec4899; }
+        .impact-brand-batch { box-shadow: inset 0 4px 0 #0f766e; }
+        .impact-brand-batch-weekly { box-shadow: inset 0 4px 0 #f59e0b; }
 
         .impact-news-stage {
             background: var(--bg-panel-strong);
@@ -3069,6 +4177,112 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
 
         .news-summary li + li {
             margin-top: 4px;
+        }
+
+        .news-actions {
+            margin-top: 14px;
+        }
+
+        .news-action-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 999px;
+            padding: 9px 14px;
+            background: rgba(15, 107, 216, 0.09);
+            color: #0f5fc2;
+            font-size: 0.84rem;
+            font-weight: 800;
+            text-decoration: none;
+            transition: transform 0.2s ease, background 0.2s ease;
+        }
+
+        .news-action-link:hover {
+            transform: translateY(-1px);
+            background: rgba(15, 107, 216, 0.16);
+        }
+
+        .industry-card {
+            background: #ffffff;
+            border: 1px solid var(--border-soft);
+            border-radius: 26px;
+            padding: 24px;
+            box-shadow: var(--shadow-card);
+            display: grid;
+            gap: 18px;
+        }
+
+        .industry-meta {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            color: var(--text-muted);
+            font-size: 0.82rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .industry-card h3 {
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-size: clamp(1.55rem, 2.5vw, 2.25rem);
+            line-height: 1.14;
+            letter-spacing: -0.04em;
+        }
+
+        .industry-description {
+            font-size: 0.98rem;
+            line-height: 1.78;
+            color: #334155;
+            max-width: 980px;
+        }
+
+        .industry-chart-image {
+            background: linear-gradient(135deg, #f8fbfd 0%, #eef7f8 100%);
+            border: 1px solid rgba(15, 23, 42, 0.08);
+            border-radius: 24px;
+            padding: 18px;
+            display: flex;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .industry-chart-image img {
+            width: min(100%, 980px);
+            height: auto;
+            display: block;
+        }
+
+        .industry-source-note {
+            color: var(--text-muted);
+            font-size: 0.82rem;
+            font-weight: 700;
+        }
+
+        .industry-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .industry-report-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: fit-content;
+            border-radius: 999px;
+            padding: 10px 14px;
+            background: #0f6bd8;
+            color: #ffffff;
+            text-decoration: none;
+            font-size: 0.86rem;
+            font-weight: 800;
+        }
+
+        .industry-report-link.secondary {
+            background: #e9f3f6;
+            color: #0f5261;
         }
 
         .empty-state {
@@ -3339,7 +4553,9 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
                 {indicator_section_html}
                 {impact_section_html}
                 {vcac_section_html}
+                {ai_section_html}
                 {generic_sections_html}
+                {industry_section_html}
                 {theme_section_html}
             </main>
         </div>
@@ -3558,6 +4774,8 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
         .replace("{indicator_section_html}", indicator_section_html)
         .replace("{impact_section_html}", impact_section_html)
         .replace("{vcac_section_html}", vcac_section_html)
+        .replace("{industry_section_html}", industry_section_html)
+        .replace("{ai_section_html}", ai_section_html)
         .replace("{generic_sections_html}", generic_sections_html)
         .replace("{theme_section_html}", theme_section_html)
         .replace("{chart_json}", chart_json)
@@ -3572,6 +4790,7 @@ def main():
     target_dash = target_date.strftime("%Y-%m-%d")
     seen_links, seen_titles = set(), [] 
     env = load_env()
+    configure_summary_generator(env)
     trend_keywords = get_or_refresh_trend_keywords(args, target_date, env)
     if args.refresh_keywords_only:
         print(f"[Trend] 키워드 파일만 갱신했습니다: {TREND_KEYWORDS_FILE}")
@@ -3580,6 +4799,7 @@ def main():
     # 1. 대시보드 및 강세테마 데이터 수집
     dashboard_data = fetch_dashboard_data()
     strong_theme = fetch_strong_theme()
+    industry_trend = fetch_industry_trend(target_date)
     dashboard_data["theme_name"] = strong_theme["name"]
 
     # 2. 30일 시계열 차트 데이터 수집
@@ -3641,7 +4861,15 @@ def main():
                     body = extract_best_article_text(soup)
                     summary = make_three_line_summary(title, body, "임팩트온", "국내 ESG 및 임팩트 비즈니스 이슈입니다.")
                     seen_links.add(link); seen_titles.append(title)
-                    impact_news.append({"title": title, "link": link, "date": target_dot, "source": "임팩트온", "summary": summary})
+                    impact_news.append({
+                        "title": title,
+                        "link": link,
+                        "date": target_dot,
+                        "source": "임팩트온",
+                        "summary": summary,
+                        "_summary_source": body,
+                        "_summary_context": "국내 ESG 및 임팩트 비즈니스 이슈입니다.",
+                    })
             except: continue
     except: pass
 
@@ -3652,6 +4880,7 @@ def main():
         else: global_impact.append(news)
 
     search_sections = fetch_search_sections(target_date, seen_links, seen_titles, trend_keywords)
+    apply_ai_summaries_to_news(strong_theme, domestic_impact, global_impact, search_sections)
 
     # 4. 아카이브 및 HTML 생성
     archive_files = list(BASE_DIR.glob("archive_*.html"))
@@ -3660,11 +4889,12 @@ def main():
     dates.sort(reverse=True)
     ARCHIVE_JS_FILE.write_text(f"const archiveDates = {json.dumps(dates)};", encoding="utf-8")
 
-    html_content = render_html(target_date, domestic_impact, global_impact, search_sections, target_dash, dashboard_data, strong_theme, chart_data)
+    html_content = render_html(target_date, domestic_impact, global_impact, search_sections, target_dash, dashboard_data, strong_theme, chart_data, industry_trend)
     share_html_content = build_shareable_html(html_content)
     OUTPUT_FILE.write_text(html_content, encoding="utf-8")
     SHARE_OUTPUT_FILE.write_text(share_html_content, encoding="utf-8")
     (BASE_DIR / f"archive_{target_dash}.html").write_text(html_content, encoding="utf-8")
+    save_summary_cache()
     print(f"\n[Success] 완료! 대시보드가 추가된 파일이 생성되었습니다: {OUTPUT_FILE}")
 
 if __name__ == "__main__":
