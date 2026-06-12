@@ -3,6 +3,7 @@ import hashlib
 import html
 import imaplib
 import json
+import os
 import re
 import time
 import urllib.error
@@ -785,7 +786,11 @@ def get_news_date(args):
     return get_target_date(args.news_date or args.date)
 
 def load_env():
-    env = {}
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if value is not None
+    }
     env_path = BASE_DIR / ".env"
     if not env_path.exists():
         return env
@@ -794,7 +799,9 @@ def load_env():
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, value = line.split("=", 1)
-        env[key.strip()] = value.strip().strip('"').strip("'")
+        key = key.strip()
+        if key and key not in env:
+            env[key] = value.strip().strip('"').strip("'")
     return env
 
 def normalize_space(text): return re.sub(r"\s+", " ", text or "").strip()
