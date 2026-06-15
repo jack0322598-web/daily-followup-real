@@ -108,3 +108,73 @@ jobs:
       - name: Push changes
         if: steps.commit.outputs.changed == 'true'
         run: git push origin HEAD:${GITHUB_REF_NAME}
+
+      - name: Notify Slack
+        if: steps.commit.outputs.changed == 'true' && secrets.SLACK_WEBHOOK_URL != ''
+        continue-on-error: true
+        shell: bash
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          START_DATE: ${{ steps.dates.outputs.start_date }}
+          END_DATE: ${{ steps.dates.outputs.end_date }}
+          REPOSITORY: ${{ github.repository }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+        run: |
+          repo_name="${REPOSITORY#*/}"
+          site_url="https://${REPOSITORY_OWNER}.github.io/${repo_name}/"
+          commit_sha="$(git rev-parse HEAD)"
+          commit_url="https://github.com/${REPOSITORY}/commit/${commit_sha}"
+
+          if [ "$START_DATE" = "$END_DATE" ]; then
+            update_label="$END_DATE"
+            page_url="${site_url}archive_${END_DATE}.html"
+            archive_label="오늘 브리핑 보기"
+          else
+            update_label="${START_DATE} ~ ${END_DATE}"
+            page_url="${site_url}"
+            archive_label="브리핑 메인 보기"
+          fi
+
+          export SITE_URL="$site_url"
+          export PAGE_URL="$page_url"
+          export UPDATE_LABEL="$update_label"
+          export ARCHIVE_LABEL="$archive_label"
+          export COMMIT_URL="$commit_url"
+
+          python - <<'PY' > slack_payload.json
+          import json
+          import os
+
+          payload = {
+              "text": f"뉴스 브리핑 업데이트 완료: {os.environ['UPDATE_LABEL']}",
+              "blocks": [
+                  {
+                      "type": "header",
+                      "text": {
+                          "type": "plain_text",
+                          "text": "뉴스 브리핑 업데이트 완료",
+                      },
+                  },
+                  {
+                      "type": "section",
+                      "text": {
+                          "type": "mrkdwn",
+                          "text": (
+                              f"*업데이트 대상*: `{os.environ['UPDATE_LABEL']}`\n"
+                              f"<{os.environ['PAGE_URL']}|{os.environ['ARCHIVE_LABEL']}> · "
+                              f"<{os.environ['SITE_URL']}|사이트 메인> · "
+                              f"<{os.environ['COMMIT_URL']}|커밋 보기>"
+                          ),
+                      },
+                  },
+              ],
+          }
+
+          print(json.dumps(payload, ensure_ascii=False))
+          PY
+
+          curl --fail --silent --show-error \
+            -X POST \
+            -H "Content-type: application/json" \
+            --data @slack_payload.json \
+            "$SLACK_WEBHOOK_URL"
