@@ -163,7 +163,6 @@ jobs:
                           "text": (
                               f"*업데이트 대상*: `{os.environ['UPDATE_LABEL']}`\n"
                               f"<{os.environ['PAGE_URL']}|{os.environ['ARCHIVE_LABEL']}> · "
-                              f"<{os.environ['SITE_URL']}|사이트 메인> · "
                               f"<{os.environ['COMMIT_URL']}|커밋 보기>"
                           ),
                       },
