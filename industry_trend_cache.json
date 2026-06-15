@@ -1,13 +1,13 @@
 {
   "source": "McKinsey",
-  "title": "The quantum leap for communication",
-  "date": "2026.06.09",
-  "source_url": "https://www.mckinsey.com/featured-insights/week-in-charts/the-quantum-leap-for-communication",
-  "description_en": "The quantum market is growing rapidly, and several trends point to ongoing development, such as investor interest, growth in key verticals, innovation, and commercial customers. For example, while governments anchor the quantum communication market today, future growth will likely come from commercial players such as telecommunications and financial services, say McKinsey's Charlie Lewis, Henning Soller, Sebastian Schneider, and coauthors. McKinsey research shows that the overall quantum communication market is projected to reach between $11 billion and $15 billion by 2035.",
-  "description_ko": "퀀텀 시장은 투자자 관심, 주요 수직 산업의 성장, 기술 혁신, 상업 고객 확대 등 여러 흐름에 힘입어 빠르게 성장하고 있습니다. 현재 양자 통신 시장은 정부 수요가 중심이지만, 앞으로는 통신과 금융 서비스 같은 상업 플레이어가 성장을 이끌 가능성이 큽니다. McKinsey 연구에 따르면 전체 양자 통신 시장은 2035년까지 110억~150억 달러 규모에 이를 것으로 전망됩니다.",
-  "chart_image_url": "https://www.mckinsey.com/~/media/mckinsey/featured%20insights/the%20week%20in%20charts/2026/june/exhibits/cod-the%20quantum%20leap.svgz?cq=50&cpy=Center",
-  "chart_image_alt": "The quantum communications market is projected to reach $11 billion to $15 billion by 2035.",
-  "image_description": "A stacked area chart shows the projected growth and changing customer composition of the quantum communications market from 2023 to 2035. Total market size is estimated to grow to $1.3 billion-$1.6 billion in 2025, from $0.9 billion-$1.0 billion in 2023, $3.5 billion-$4.6 billion in 2030, and $11.0 billion-$15.0 billion in 2035. Government customers, including defense, represent the largest share throughout the period but is expected to decline from about 64% in 2023 to 27-31% in 2035. Academia is projected to decline to 16-20%, from ~28%. Telecom providers, public cloud providers, and cybersecurity companies may increase to 16-26% in 2035, from about 2-6% in 2023. Financial services may also expand to 14-24%, from ~1-5% over the same period. Healthcare and other industries should remain smaller segments, reaching 6-10% and 3-7%, respectively, by 2035.",
+  "title": "GLP-1s bite into snack and drink sales",
+  "date": "2026.06.11",
+  "source_url": "https://www.mckinsey.com/featured-insights/week-in-charts/glp1s-bite-into-snack-and-drink-sales",
+  "description_en": "The past few years have been a stress test for food and beverage companies.",
+  "description_ko": "The past few years have been a stress test for food and beverage companies.",
+  "chart_image_url": "https://www.mckinsey.com/~/media/mckinsey/featured%20insights/the%20week%20in%20charts/2026/june/exhibits/cod-glp1_ex3.svgz?cq=50&cpy=Center",
+  "chart_image_alt": "Glucagon-like peptide-1 adoption could most affect the consumption of high-calorie, high-sugar, and high-fat items.",
+  "image_description": "A horizontal bar chart displays the average changes in grocery spending 6 months after consumers’ adoption of GLP-1 medications. The largest declines are in chips and other savory snacks (–11.5%), sweet bakery items (–8.5%), sides and frozen sides (–7.5%), salad dressings and oil (–7.4%), cheese (–7.2%), cookies (–7.0%), soft drinks (–6.8%), and baking ingredients (–6.5%). Additional declines include spices and condiments (–5.5%); pasta, frozen pasta, and grains (–5.1%); juices (–4.8%); coffee, tea, and energy drinks (–4.0%); candy and chocolate (–3.5%); seafood and frozen seafood (–2.9%); desserts and frozen desserts (–2.7%); crackers (–2.6%); and water (–2.5%). Small increases are shown for nutrition bars (0.5%), meat snacks (1.0%), fresh produce (1.5%), and yogurt (2.5%).",
   "chart_headers": [
     "구분",
     "2023",
@@ -15,58 +15,8 @@
     "2030",
     "2035"
   ],
-  "chart_rows": [
-    [
-      "전체 시장 규모",
-      "$0.9B-$1.0B",
-      "$1.3B-$1.6B",
-      "$3.5B-$4.6B",
-      "$11.0B-$15.0B"
-    ],
-    [
-      "정부·국방 고객",
-      "약 64%",
-      "-",
-      "-",
-      "27-31%"
-    ],
-    [
-      "학계",
-      "약 28%",
-      "-",
-      "-",
-      "16-20%"
-    ],
-    [
-      "통신·클라우드·사이버보안",
-      "약 2-6%",
-      "-",
-      "-",
-      "16-26%"
-    ],
-    [
-      "금융 서비스",
-      "약 1-5%",
-      "-",
-      "-",
-      "14-24%"
-    ],
-    [
-      "헬스케어",
-      "-",
-      "-",
-      "-",
-      "6-10%"
-    ],
-    [
-      "기타 산업",
-      "-",
-      "-",
-      "-",
-      "3-7%"
-    ]
-  ],
-  "report_title": "Quantum is almost here: Are you and your systems ready?",
-  "report_url": "https://www.mckinsey.com/capabilities/risk-and-resilience/our-insights/quantum-is-almost-here-are-you-and-your-systems-ready",
-  "updated_at": "2026-06-10T00:00:00+0900"
+  "chart_rows": [],
+  "report_title": "State of Food and Beverage: The choices CPG leaders can make to renew growth",
+  "report_url": "https://www.mckinsey.com/industries/consumer-packaged-goods/our-insights/state-of-food-and-beverage",
+  "updated_at": "2026-06-15T11:28:49+0900"
 }

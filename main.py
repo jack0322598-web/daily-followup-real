@@ -632,12 +632,30 @@ def parse_mckinsey_date(text):
 def format_dot_date(date_obj):
     return date_obj.strftime("%Y.%m.%d") if date_obj else ""
 
+def parse_dot_date_value(text):
+    text = normalize_space(text)
+    if not text:
+        return None
+    for fmt in ("%Y.%m.%d", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(text, fmt).date()
+        except Exception:
+            pass
+    return None
+
+def slugify_mckinsey_title(title):
+    title = html.unescape(normalize_space(title))
+    title = re.sub(r"\s*-\s*McKinsey.*$", "", title, flags=re.IGNORECASE)
+    title = title.replace("’", "").replace("'", "")
+    title = re.sub(r"[^A-Za-z0-9]+", "-", title)
+    return title.strip("-").lower()
+
 def extract_latest_mckinsey_week_url():
-    query = urllib.parse.quote('site:mckinsey.com/featured-insights/week-in-charts "The Week in Charts"')
+    query = urllib.parse.quote("site:mckinsey.com/featured-insights/week-in-charts")
     rss_url = f"https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
-    rss_text = fetch_text(rss_url, timeout=20)
+    rss_text = fetch_source_text(rss_url, timeout=20)
     root = ElementTree.fromstring(rss_text)
-    best = None
+    candidates = []
     for item in root.findall(".//item"):
         title = normalize_space(item.findtext("title", ""))
         google_link = normalize_space(item.findtext("link", ""))
@@ -646,18 +664,27 @@ def extract_latest_mckinsey_week_url():
         if title.lower().startswith("the week in charts"):
             continue
         pub_dt = parse_datetime_string(item.findtext("pubDate", ""))
-        link = normalize_mckinsey_url(resolve_google_news_url(google_link))
-        if "/featured-insights/week-in-charts/" not in link:
+        if not pub_dt or not google_link:
             continue
-        candidate = {
+        candidates.append({
             "title": title.rsplit(" - ", 1)[0],
-            "source_url": link,
+            "google_link": google_link,
             "published_date": format_dot_date(pub_dt.date()) if pub_dt else "",
             "published_iso": pub_dt.date().isoformat() if pub_dt else "",
-        }
-        if not best or candidate["published_iso"] > best.get("published_iso", ""):
-            best = candidate
-    return best or {}
+        })
+
+    candidates.sort(key=lambda item: (item.get("published_iso", ""), item.get("title", "")), reverse=True)
+    for candidate in candidates[:8]:
+        resolved = normalize_mckinsey_url(resolve_google_news_url(candidate.get("google_link", "")))
+        if "/featured-insights/week-in-charts/" in resolved:
+            candidate["source_url"] = resolved
+            return candidate
+
+        slug = slugify_mckinsey_title(candidate.get("title", ""))
+        if slug:
+            candidate["source_url"] = f"https://www.mckinsey.com/featured-insights/week-in-charts/{slug}"
+            return candidate
+    return {}
 
 def translate_known_mckinsey_description(title, description):
     title_key = normalize_space(title).casefold()
@@ -746,6 +773,50 @@ def parse_mckinsey_week_article(article_html, source_url, fallback_meta=None):
         "updated_at": datetime.now(KST).strftime("%Y-%m-%dT%H:%M:%S%z"),
     }
 
+def fetch_mckinsey_article_text(url):
+    last_error = None
+    for fetcher, timeout in ((fetch_source_text, 20), (fetch_text, 30), (http_get_text, 30)):
+        try:
+            text = fetcher(url, timeout=timeout)
+            if text:
+                return text
+        except Exception as e:
+            last_error = e
+    if last_error:
+        raise last_error
+    raise RuntimeError("Failed to fetch McKinsey article")
+
+def build_mckinsey_fallback_item(latest, cache=None):
+    cache = cache or {}
+    same_source = cache.get("source_url") == latest.get("source_url")
+    description_ko = (
+        cache.get("description_ko")
+        if same_source and cache.get("description_ko")
+        else "McKinsey The Week in Charts 최신 기사입니다. 원문 링크에서 전체 차트와 설명을 확인하세요."
+    )
+    description_en = (
+        cache.get("description_en")
+        if same_source and cache.get("description_en")
+        else "Latest McKinsey Week in Charts article. Open the source link to view the full chart and details."
+    )
+    return {
+        "source": "McKinsey",
+        "title": latest.get("title") or cache.get("title", ""),
+        "date": latest.get("published_date") or cache.get("date", ""),
+        "source_url": latest.get("source_url") or cache.get("source_url", ""),
+        "description_en": description_en,
+        "description_ko": description_ko,
+        "chart_image_url": cache.get("chart_image_url", "") if same_source else "",
+        "chart_image_alt": cache.get("chart_image_alt", "") if same_source else "",
+        "image_description": cache.get("image_description", "") if same_source else "",
+        "chart_headers": cache.get("chart_headers", []),
+        "chart_rows": cache.get("chart_rows", []),
+        "report_title": cache.get("report_title", "") if same_source else "",
+        "report_url": cache.get("report_url", "") if same_source else "",
+        "updated_at": datetime.now(KST).strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "fetch_mode": "metadata-fallback",
+    }
+
 def fetch_industry_trend(target_date):
     cache = load_industry_trend_cache()
     try:
@@ -754,13 +825,22 @@ def fetch_industry_trend(target_date):
             return cache
         if cache.get("source_url") == latest.get("source_url"):
             return cache
-        article_html = fetch_text(latest["source_url"], timeout=35)
+        article_html = fetch_mckinsey_article_text(latest["source_url"])
         item = parse_mckinsey_week_article(article_html, latest["source_url"], latest)
-        if item.get("title") and (item.get("chart_image_url") or item.get("chart_rows")):
+        if item.get("title") and (item.get("chart_image_url") or item.get("chart_rows") or item.get("description_en")):
             save_industry_trend_cache(item)
             return item
     except Exception as e:
         print(f"  - McKinsey industry trend fetch failed, using cache: {e}")
+    latest_date = parse_dot_date_value(latest.get("published_date", "")) if isinstance(latest, dict) else None
+    cache_date = parse_dot_date_value(cache.get("date", ""))
+    if latest and latest.get("source_url") and (
+        cache.get("source_url") != latest.get("source_url")
+        or (latest_date and (not cache_date or latest_date > cache_date))
+    ):
+        fallback_item = build_mckinsey_fallback_item(latest, cache)
+        save_industry_trend_cache(fallback_item)
+        return fallback_item
     return cache
 
 # ==========================================
@@ -2862,21 +2942,26 @@ def fetch_ai_rss_source(config, target_date, seen_links, seen_titles):
             print(f"  - {source_name} RSS failed ({feed_url}): {e}")
     return news_items
 
-def fetch_ai_listing_items(source_name, listing_items, target_date, seen_links, seen_titles, context, limit=MAX_AI_NEWS_PER_SOURCE, cta_label=""):
+def fetch_ai_listing_items(source_name, listing_items, target_date, seen_links, seen_titles, context, limit=MAX_AI_NEWS_PER_SOURCE, cta_label="", accepted_dates=None):
     target_dot = target_date.strftime("%Y.%m.%d")
+    allowed_dates = set(accepted_dates or {target_dot})
     news_items = []
     story_cache = []
     for item in listing_items:
         if len(news_items) >= limit:
             break
         date_tag = item.get("date")
-        if date_tag and date_tag.strftime("%Y.%m.%d") != target_dot:
-            continue
+        item_target_date = target_date
+        if date_tag:
+            date_key = date_tag.strftime("%Y.%m.%d")
+            if date_key not in allowed_dates:
+                continue
+            item_target_date = date_tag.date()
         news_item = build_source_news_item(
             source_name,
             item.get("title", ""),
             item.get("link", ""),
-            target_date,
+            item_target_date,
             seen_links,
             seen_titles,
             context,
@@ -2922,7 +3007,10 @@ def fetch_ai_sources(target_date, seen_links, seen_titles):
         seen_titles,
         "DeepLearning.AI The Batch Data Points의 AI 주요 뉴스 브리핑입니다.",
     )
-    if target_date.weekday() == 4:
+    if target_date.weekday() in {4, 5}:
+        weekly_dates = {target_date.strftime("%Y.%m.%d")}
+        if target_date.weekday() == 5:
+            weekly_dates.add((target_date - timedelta(days=1)).strftime("%Y.%m.%d"))
         source_news["The Batch Weekly Issues"] = fetch_ai_listing_items(
             "The Batch Weekly Issues",
             collect_the_batch_listing_items("https://www.deeplearning.ai/the-batch", required_path_prefix="/the-batch/issue-"),
@@ -2931,6 +3019,7 @@ def fetch_ai_sources(target_date, seen_links, seen_titles):
             seen_titles,
             "DeepLearning.AI The Batch의 주간 AI 이슈 요약입니다.",
             limit=1,
+            accepted_dates=weekly_dates,
             cta_label="원문 링크",
         )
     return {
