@@ -2942,7 +2942,7 @@ def fetch_ai_rss_source(config, target_date, seen_links, seen_titles):
             print(f"  - {source_name} RSS failed ({feed_url}): {e}")
     return news_items
 
-def fetch_ai_listing_items(source_name, listing_items, target_date, seen_links, seen_titles, context, limit=MAX_AI_NEWS_PER_SOURCE, cta_label="", accepted_dates=None):
+def fetch_ai_listing_items(source_name, listing_items, target_date, seen_links, seen_titles, context, limit=MAX_AI_NEWS_PER_SOURCE, cta_label="", accepted_dates=None, latest_on_or_before=False):
     target_dot = target_date.strftime("%Y.%m.%d")
     allowed_dates = set(accepted_dates or {target_dot})
     news_items = []
@@ -2954,7 +2954,10 @@ def fetch_ai_listing_items(source_name, listing_items, target_date, seen_links, 
         item_target_date = target_date
         if date_tag:
             date_key = date_tag.strftime("%Y.%m.%d")
-            if date_key not in allowed_dates:
+            if latest_on_or_before:
+                if date_tag.date() > target_date:
+                    continue
+            elif date_key not in allowed_dates:
                 continue
             item_target_date = date_tag.date()
         news_item = build_source_news_item(
@@ -3007,11 +3010,7 @@ def fetch_ai_sources(target_date, seen_links, seen_titles):
         seen_titles,
         "DeepLearning.AI The Batch Data Points의 AI 주요 뉴스 브리핑입니다.",
     )
-    if target_date.weekday() in {4, 5}:
-        weekly_dates = {target_date.strftime("%Y.%m.%d")}
-        if target_date.weekday() == 5:
-            weekly_dates.add((target_date - timedelta(days=1)).strftime("%Y.%m.%d"))
-        source_news["The Batch Weekly Issues"] = fetch_ai_listing_items(
+    source_news["The Batch Weekly Issues"] = fetch_ai_listing_items(
             "The Batch Weekly Issues",
             collect_the_batch_listing_items("https://www.deeplearning.ai/the-batch", required_path_prefix="/the-batch/issue-"),
             target_date,
@@ -3019,7 +3018,7 @@ def fetch_ai_sources(target_date, seen_links, seen_titles):
             seen_titles,
             "DeepLearning.AI The Batch의 주간 AI 이슈 요약입니다.",
             limit=1,
-            accepted_dates=weekly_dates,
+            latest_on_or_before=True,
             cta_label="원문 링크",
         )
     return {
