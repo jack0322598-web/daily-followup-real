@@ -140,6 +140,7 @@ jobs:
           export UPDATE_LABEL="$update_label"
           export ARCHIVE_LABEL="$archive_label"
           export COMMIT_URL="$commit_url"
+          export RAW_SLACK_WEBHOOK_URL="$SLACK_WEBHOOK_URL"
 
           python - <<'PY' > slack_payload.json
           import json
@@ -173,8 +174,24 @@ jobs:
           print(json.dumps(payload, ensure_ascii=False))
           PY
 
+          webhook_url="$(python - <<'PY'
+          import os
+          print(os.environ.get("RAW_SLACK_WEBHOOK_URL", "").strip().strip('"').strip("'"))
+          PY
+          )"
+
+          if [[ -z "$webhook_url" ]]; then
+            echo "Slack webhook URL is empty after trimming."
+            exit 0
+          fi
+
+          if [[ "$webhook_url" != https://hooks.slack.com/services/* && "$webhook_url" != https://hooks.slack-gov.com/services/* ]]; then
+            echo "Slack webhook URL format looks invalid. Re-save SLACK_WEBHOOK_URL in GitHub Secrets without quotes or extra spaces."
+            exit 0
+          fi
+
           curl --fail --silent --show-error \
             -X POST \
             -H "Content-type: application/json" \
             --data @slack_payload.json \
-            "$SLACK_WEBHOOK_URL"
+            "$webhook_url"
