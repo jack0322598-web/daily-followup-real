@@ -8,6 +8,7 @@
 summary_cache.json
 __pycache__/
 logs/
+pipeline_data/
 run_update_*.log
 .update.lock
 _disabled_local_bs4_shadow_*/

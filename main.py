@@ -30,6 +30,11 @@ try:
 except ImportError:  # pragma: no cover - optional improvement for Google News RSS links
     gnewsdecoder = None
 
+try:
+    import agent_c
+except ImportError:  # pragma: no cover - Agent C is optional for legacy runs
+    agent_c = None
+
 KST = timezone(timedelta(hours=9))
 BASE_DIR = Path(__file__).resolve().parent
 OUTPUT_FILE = BASE_DIR / "index.html"
@@ -126,6 +131,7 @@ TREND_KEYWORDS_PER_CATEGORY = 7
 TREND_REFRESH_WEEKDAY = 1  # Tuesday, because Monday's news starts the weekly cycle.
 GEMINI_KEYWORD_MODEL = "gemini-2.5-flash"
 SINGLE_ITEM_NEWSLETTER_SOURCES = {"Bloomberg Green", "CTVC"}
+NEWSLETTER_IMAP_TIMEOUT_SECONDS = 30
 
 GLOBAL_IMPACT_FEEDS = [
     ("Powerstack", "https://powerstack.sightlineclimate.com/feed/"),
@@ -290,6 +296,17 @@ SEARCH_SECTIONS = [
         ],
     },
 ]
+
+MACRO_ALLOWED_SOURCE_MAP = {
+    "yna.co.kr": "연합뉴스",
+    "mk.co.kr": "매일경제",
+    "hankyung.com": "한국경제",
+    "chosun.com": "조선일보",
+}
+
+MACRO_ALLOWED_SOURCE_QUERY = " OR ".join(
+    f"site:{domain}" for domain in MACRO_ALLOWED_SOURCE_MAP
+)
 
 NAV_SECTIONS = (
     ("indicators", "주요 지표"),
@@ -909,10 +926,30 @@ def normalize_source_name(source_name):
     }
     return source_map.get(source_name, source_name)
 
-def is_blocked_domain(url):
+def normalize_news_netloc(url):
     netloc = urllib.parse.urlparse(url or "").netloc.lower()
     if netloc.startswith("www."):
         netloc = netloc[4:]
+    return netloc
+
+def get_macro_source_domain(url):
+    netloc = normalize_news_netloc(url)
+    for domain in MACRO_ALLOWED_SOURCE_MAP:
+        if netloc == domain or netloc.endswith("." + domain):
+            return domain
+    return ""
+
+def is_allowed_macro_source(url):
+    return bool(get_macro_source_domain(url))
+
+def normalize_macro_source_name(url, fallback_source_name=""):
+    domain = get_macro_source_domain(url)
+    if domain:
+        return MACRO_ALLOWED_SOURCE_MAP[domain]
+    return normalize_macro_source_name_by_hint(fallback_source_name)
+
+def is_blocked_domain(url):
+    netloc = normalize_news_netloc(url)
     return any(netloc == domain or netloc.endswith("." + domain) for domain in BLOCKED_SOURCE_DOMAINS)
 
 def has_spam_news_signal(*parts):
@@ -928,6 +965,111 @@ def should_skip_search_item(section_id, category_name, source_name, title="", li
     if section_id == "macro" and category_name == "외교" and normalized == "브런치":
         return True
     return False
+
+MACRO_SOURCE_NAME_HINTS = {
+    "연합뉴스": "연합뉴스",
+    "매일경제": "매일경제",
+    "스타투데이": "매일경제",
+    "한국경제": "한국경제",
+    "조선일보": "조선일보",
+    "조선비즈": "조선일보",
+    "chosunbiz": "조선일보",
+    "the chosun daily": "조선일보",
+}
+
+MACRO_MATCH_RULES = {
+    ("미국", "경제지표"): {
+        "precheck_any": ("cpi", "ppi", "pce", "gdp", "고용", "실업률", "소매판매", "산업생산", "수입물가", "소비자물가", "생산자물가", "물가", "비농업", "임금"),
+        "required_groups": (
+            ("미국", "美", "fed", "fomc", "연준", "파월"),
+            ("cpi", "ppi", "pce", "gdp", "고용", "실업률", "소매판매", "산업생산", "수입물가", "소비자물가", "생산자물가", "물가", "비농업", "임금"),
+        ),
+    },
+    ("미국", "관세"): {
+        "precheck_any": ("관세", "통상", "tariff", "ustr", "보호무역", "수입제재", "대중 제재"),
+        "required_groups": (
+            ("미국", "美", "트럼프", "백악관", "ustr"),
+            ("관세", "통상", "tariff", "ustr", "보호무역", "수입제재", "제재"),
+        ),
+    },
+    ("미국", "통화정책"): {
+        "precheck_any": ("연준", "fomc", "fed", "파월", "기준금리", "금리 인하", "금리 인상", "미국채"),
+        "required_groups": (
+            ("연준", "fomc", "fed", "파월", "미국채", "미국 국채"),
+            ("기준금리", "금리", "통화정책", "금리 인하", "금리 인상", "동결", "인하", "인상"),
+        ),
+    },
+    ("미국", "외교"): {
+        "precheck_any": ("외교", "제재", "미중", "동맹", "반도체", "백악관", "국무부", "협상", "g7"),
+        "required_groups": (
+            ("미국", "美", "트럼프", "백악관", "국무부", "워싱턴", "g7"),
+            ("외교", "제재", "미중", "동맹", "반도체", "협상", "안보", "수출통제"),
+        ),
+        "exclude_any": ("월드컵", "심판", "축구", "야구", "농구", "재개발", "재건축"),
+    },
+    ("한국", "경제지표"): {
+        "precheck_any": ("소비자물가", "gdp", "성장률", "고용", "실업률", "수출", "수출입", "ict", "무역수지"),
+        "required_groups": (
+            ("소비자물가", "gdp", "성장률", "고용", "실업률", "수출", "수출입", "ict", "무역수지"),
+        ),
+    },
+    ("한국", "통화정책"): {
+        "precheck_any": ("한국은행", "한은", "금통위", "이창용", "기준금리", "통화정책"),
+        "required_groups": (
+            ("한국은행", "한은", "금통위", "이창용"),
+        ),
+    },
+    ("유럽", "통화정책"): {
+        "precheck_any": ("ecb", "유럽중앙은행", "유로존", "라가르드"),
+        "required_groups": (
+            ("ecb", "유럽중앙은행", "유로존", "라가르드"),
+        ),
+    },
+    ("중국", "통화정책"): {
+        "precheck_any": ("중국", "中", "인민은행", "lpr", "지급준비율", "지준율", "경기 부양", "위안화"),
+        "required_groups": (
+            ("중국", "中", "인민은행", "lpr", "지급준비율", "지준율", "경기 부양", "위안화"),
+        ),
+    },
+}
+
+def contains_macro_token(text, tokens):
+    return any(token.lower() in text for token in tokens)
+
+def is_macro_news_candidate(group_title, category_name, *parts):
+    rule = MACRO_MATCH_RULES.get((group_title, category_name))
+    if not rule:
+        return True
+    haystack = normalize_space(" ".join(str(part or "") for part in parts)).lower()
+    exclude_any = rule.get("exclude_any", ())
+    if exclude_any and contains_macro_token(haystack, exclude_any):
+        return False
+    precheck_any = rule.get("precheck_any", ())
+    if precheck_any and not contains_macro_token(haystack, precheck_any):
+        return False
+    return True
+
+def is_macro_news_match(group_title, category_name, *parts):
+    rule = MACRO_MATCH_RULES.get((group_title, category_name))
+    if not rule:
+        return True
+    haystack = normalize_space(" ".join(str(part or "") for part in parts)).lower()
+    exclude_any = rule.get("exclude_any", ())
+    if exclude_any and contains_macro_token(haystack, exclude_any):
+        return False
+    required_groups = rule.get("required_groups", ())
+    return all(contains_macro_token(haystack, tokens) for tokens in required_groups)
+
+def normalize_macro_source_name_by_hint(source_name):
+    normalized = normalize_source_name(source_name)
+    lowered = normalized.lower()
+    for hint, canonical in MACRO_SOURCE_NAME_HINTS.items():
+        if hint.lower() in lowered:
+            return canonical
+    return normalized
+
+def is_allowed_macro_source_name(source_name):
+    return normalize_macro_source_name_by_hint(source_name) in set(MACRO_ALLOWED_SOURCE_MAP.values())
 
 def build_shareable_html(html_text):
     return html_text.replace('<script src="archive_list.js"></script>', "")
@@ -2080,8 +2222,9 @@ def fetch_newsletter_emails(gmail_user, gmail_password, target_date, seen_links,
         ("Bloomberg Green", lambda subject, sender: "bloomberg green" in sender or "bloomberg green" in subject),
     ]
     collected = []
+    mail = None
     try:
-        mail = imaplib.IMAP4_SSL("imap.gmail.com")
+        mail = imaplib.IMAP4_SSL("imap.gmail.com", timeout=NEWSLETTER_IMAP_TIMEOUT_SECONDS)
         mail.login(gmail_user, gmail_password)
         mail.select("INBOX")
         since = (target_date - timedelta(days=1)).strftime("%d-%b-%Y")
@@ -2155,9 +2298,14 @@ def fetch_newsletter_emails(gmail_user, gmail_password, target_date, seen_links,
                 seen_links.add(item["link"])
                 seen_titles.append(item["title"])
                 collected.append(item)
-        mail.logout()
     except Exception as e:
         print(f"  - Newsletter fetch failed: {e}")
+    finally:
+        if mail is not None:
+            try:
+                mail.logout()
+            except Exception:
+                pass
     return collected
 
 # --- News Fetching Logic ---
@@ -3153,8 +3301,11 @@ def fetch_google_news_for_category(target_date, section_id, group_title, categor
     trend_anchor = category.get("trend_anchor") or category.get("trend_query") or f"{group_title} {category['name']}"
     enhanced_query = enhance_query_with_trends(category["query"], trend_anchor, dynamic_keywords)
     try:
+        search_query = f"({enhanced_query})"
+        if section_id == "macro":
+            search_query = f"{search_query} ({MACRO_ALLOWED_SOURCE_QUERY})"
         query = urllib.parse.quote(
-            f"({enhanced_query}) after:{start_date} before:{end_date} -블로그 -카페 -blog -cafe"
+            f"{search_query} after:{start_date} before:{end_date} -블로그 -카페 -blog -cafe"
         )
         rss_text = fetch_text(f"https://news.google.com/rss/search?q={query}&hl=ko&gl=KR")
         for item in ElementTree.fromstring(rss_text).findall(".//item"):
@@ -3162,26 +3313,32 @@ def fetch_google_news_for_category(target_date, section_id, group_title, categor
                 break
             title, source_name = parse_google_news_item(item)
             source_name = normalize_source_name(source_name)
-            google_link = item.findtext("link", "")
-            article_link = resolve_google_news_url(google_link)
-            link = article_link or google_link
-            
-            if section_id == "vcac" and not is_valid_vcac_title(title):
-                continue
-            if should_skip_search_item(section_id, category["name"], source_name, title, link):
-                continue
-                
             try:
                 if parsedate_to_datetime(item.findtext("pubDate", "")).astimezone(KST).strftime("%Y.%m.%d") != target_dot:
                     continue
             except:
                 continue
-
             desc_text = strip_tags(item.findtext("description", ""))
+            if section_id == "macro" and not is_macro_news_candidate(group_title, category["name"], title, desc_text):
+                continue
+            google_link = item.findtext("link", "")
+            article_link = resolve_google_news_url(google_link)
+            link = article_link or google_link
+            if section_id == "macro":
+                if not is_allowed_macro_source(link):
+                    continue
+                source_name = normalize_macro_source_name(link, source_name)
+            
+            if section_id == "vcac" and not is_valid_vcac_title(title):
+                continue
+            if should_skip_search_item(section_id, category["name"], source_name, title, link):
+                continue
             if link in seen_links or google_link in seen_links or any(is_similar_title(title, st) for st in seen_titles):
                 continue
             article_body = fetch_article_body_text(article_link)
             summary_source = article_body if len(article_body) >= 180 else desc_text
+            if section_id == "macro" and not is_macro_news_match(group_title, category["name"], title, desc_text, article_body):
+                continue
             if any(
                 is_duplicate_story(title, summary_source, cached["title"], cached["text"])
                 for cached in category_story_cache
@@ -4934,6 +5091,7 @@ def main():
     gmail_user = env.get("GMAIL_USER", "")
     gmail_password = env.get("GMAIL_APP_PASSWORD", "")
     if gmail_user and gmail_password:
+        print("\n[Newsletter] 메일 뉴스레터 수집 중...")
         newsletter_news = fetch_newsletter_emails(gmail_user, gmail_password, target_date, seen_links, seen_titles)
     
     impact_news = []
@@ -4975,7 +5133,32 @@ def main():
         else: global_impact.append(news)
 
     search_sections = fetch_search_sections(target_date, seen_links, seen_titles, trend_keywords)
-    apply_ai_summaries_to_news(strong_theme, domestic_impact, global_impact, search_sections)
+    agent_c_report = None
+    if agent_c is not None:
+        try:
+            agent_c_report = agent_c.apply_agent_b_summaries(
+                target_date,
+                strong_theme,
+                domestic_impact,
+                global_impact,
+                search_sections,
+            )
+            if agent_c_report.get("applied", 0):
+                print(
+                    f"[Agent C] Agent B 요약 적용: "
+                    f"{agent_c_report.get('applied', 0)}/{agent_c_report.get('news_items', 0)}건 "
+                    f"({agent_c_report.get('summary_path', '')})"
+                )
+                if agent_c_report.get("report_path"):
+                    print(f"[Agent C] 리포트: {agent_c_report['report_path']}")
+            else:
+                print(f"[Agent C] 적용할 Agent B 요약이 없습니다: {agent_c_report.get('summary_path', '')}")
+        except Exception as exc:
+            print(f"[Agent C] Agent B 요약 적용 실패: {exc}")
+            agent_c_report = None
+
+    if not agent_c_report or not agent_c_report.get("applied", 0):
+        apply_ai_summaries_to_news(strong_theme, domestic_impact, global_impact, search_sections)
 
     # 4. 아카이브 및 HTML 생성
     archive_files = list(BASE_DIR.glob("archive_*.html"))

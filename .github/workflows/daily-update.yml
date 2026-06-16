@@ -81,6 +81,8 @@ jobs:
 
           while [[ "$current" < "$end" || "$current" == "$end" ]]; do
             echo "Generating briefing for $current"
+            python agent_a.py --date "$current"
+            python agent_b.py --date "$current"
             python main.py --date "$current"
             current="$(TZ=Asia/Seoul date -d "$current + 1 day" +%F)"
           done

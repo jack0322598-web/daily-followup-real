@@ -94,12 +94,26 @@ try {
     "News date: $NewsDate" | Tee-Object -FilePath $LogFile -Append
     "Backup dir: $BackupDir" | Tee-Object -FilePath $LogFile -Append
 
-    if ($Python -eq "py") {
-        & py (Join-Path $Workspace "main.py") --date $NewsDate 2>&1 | Tee-Object -FilePath $LogFile -Append
-    } else {
-        & $Python (Join-Path $Workspace "main.py") --date $NewsDate 2>&1 | Tee-Object -FilePath $LogFile -Append
+    $pipelineSteps = @(
+        @{ Name = "Agent A"; Args = @("-u", (Join-Path $Workspace "agent_a.py"), "--date", $NewsDate) },
+        @{ Name = "Agent B"; Args = @("-u", (Join-Path $Workspace "agent_b.py"), "--date", $NewsDate) },
+        @{ Name = "Agent C / main render"; Args = @("-u", (Join-Path $Workspace "main.py"), "--date", $NewsDate) }
+    )
+
+    $exitCode = 0
+    foreach ($step in $pipelineSteps) {
+        "Running $($step.Name)..." | Tee-Object -FilePath $LogFile -Append
+        if ($Python -eq "py") {
+            & py @($step.Args) 2>&1 | Tee-Object -FilePath $LogFile -Append
+        } else {
+            & $Python @($step.Args) 2>&1 | Tee-Object -FilePath $LogFile -Append
+        }
+        $exitCode = if ($LASTEXITCODE -ne $null) { $LASTEXITCODE } else { 0 }
+        if ($exitCode -ne 0) {
+            "Step failed: $($step.Name) with exit code $exitCode" | Tee-Object -FilePath $LogFile -Append
+            exit $exitCode
+        }
     }
-    $exitCode = if ($LASTEXITCODE -ne $null) { $LASTEXITCODE } else { 0 }
 
     if (-not (Test-Path -LiteralPath $ArchiveFile)) {
         "Expected archive was not created: $ArchiveFile" | Tee-Object -FilePath $LogFile -Append
