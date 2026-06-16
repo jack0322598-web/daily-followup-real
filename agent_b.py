@@ -5,6 +5,7 @@ import random
 import re
 import time
 import urllib.error
+import urllib.request
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -26,6 +27,7 @@ DEFAULT_RETRY_BASE_DELAY = 20.0
 DEFAULT_INTER_BATCH_DELAY = 12.0
 DEFAULT_PRIMARY_MODEL = "gemini-2.5-flash-lite"
 DEFAULT_FALLBACK_MODELS = "gemini-2.5-flash-lite"
+DEFAULT_OPENAI_MODEL = "gpt-5-mini"
 
 SUMMARY_COLUMNS = [
     "article_id",
@@ -68,6 +70,8 @@ class AgentBOptions:
     retry_base_delay: float = DEFAULT_RETRY_BASE_DELAY
     inter_batch_delay: float = DEFAULT_INTER_BATCH_DELAY
     fallback_models: str = DEFAULT_FALLBACK_MODELS
+    openai_model: str = DEFAULT_OPENAI_MODEL
+    disable_openai_fallback: bool = False
 
 
 def parse_args():
@@ -87,6 +91,8 @@ def parse_args():
     parser.add_argument("--retry-base-delay", type=float, default=DEFAULT_RETRY_BASE_DELAY, help="Initial retry delay in seconds. Exponential backoff is applied.")
     parser.add_argument("--inter-batch-delay", type=float, default=DEFAULT_INTER_BATCH_DELAY, help="Seconds to wait between successful Gemini batches.")
     parser.add_argument("--fallback-models", default=DEFAULT_FALLBACK_MODELS, help="Comma-separated Gemini models to try only for articles that failed the primary model. Use 'none' to disable.")
+    parser.add_argument("--openai-model", default="", help=f"OpenAI model for Gemini-failed articles. Defaults to OPENAI_SUMMARY_MODEL/{DEFAULT_OPENAI_MODEL}.")
+    parser.add_argument("--disable-openai-fallback", action="store_true", help="Do not retry Gemini-failed articles with OpenAI before extractive fallback.")
     return parser.parse_args()
 
 
@@ -490,6 +496,137 @@ def summarize_with_gemini(rows, env, model, batch_size, retry_attempts, retry_ba
     return results, errors
 
 
+def is_retryable_openai_error(exc):
+    if isinstance(exc, urllib.error.HTTPError):
+        return exc.code in {429, 500, 502, 503, 504}
+    error_text = str(exc)
+    return any(code in error_text for code in ["429", "500", "502", "503", "504"])
+
+
+def format_exception_message(exc):
+    if isinstance(exc, urllib.error.HTTPError):
+        try:
+            body = exc.read().decode("utf-8", errors="replace")
+        except Exception:
+            body = ""
+        body = normalize_text(body)
+        if body:
+            return f"HTTP {exc.code}: {body[:700]}"
+        return f"HTTP {exc.code}: {exc.reason}"
+    return str(exc)
+
+
+def extract_openai_output_text(data):
+    if isinstance(data.get("output_text"), str) and data["output_text"].strip():
+        return data["output_text"]
+
+    texts = []
+    for output_item in data.get("output", []) or []:
+        if not isinstance(output_item, dict):
+            continue
+        for content_item in output_item.get("content", []) or []:
+            if isinstance(content_item, dict):
+                text = content_item.get("text") or content_item.get("output_text")
+                if text:
+                    texts.append(str(text))
+            elif isinstance(content_item, str):
+                texts.append(content_item)
+
+    # This keeps the parser compatible if the endpoint is swapped to chat/completions later.
+    for choice in data.get("choices", []) or []:
+        if not isinstance(choice, dict):
+            continue
+        message = choice.get("message") or {}
+        if isinstance(message, dict) and message.get("content"):
+            texts.append(str(message["content"]))
+
+    return "\n".join(texts).strip()
+
+
+def call_openai_json(api_key, model, prompt, timeout=120):
+    body = {
+        "model": model,
+        "instructions": (
+            "You are a careful Korean newsletter editor. "
+            "Return only valid JSON that matches the requested schema."
+        ),
+        "input": prompt,
+        "text": {"format": {"type": "json_object"}},
+        "max_output_tokens": 1800,
+        "store": False,
+    }
+    request = urllib.request.Request(
+        "https://api.openai.com/v1/responses",
+        data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
+        headers={
+            **scraper.HEADERS,
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        data = json.loads(response.read().decode("utf-8", errors="replace"))
+    text = extract_openai_output_text(data)
+    if not text:
+        raise ValueError("OpenAI response did not include output text")
+    parsed = scraper.extract_json_payload(text)
+    if not parsed:
+        raise ValueError("OpenAI response did not contain a JSON payload")
+    return parsed
+
+
+def summarize_with_openai(rows, env, model, batch_size, retry_attempts, retry_base_delay, inter_batch_delay):
+    api_key = env.get("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        return {}, "missing OPENAI_API_KEY"
+    results = {}
+    errors = {}
+    for start in range(0, len(rows), batch_size):
+        batch = rows[start : start + batch_size]
+        prompt = build_summary_prompt(batch)
+        for attempt in range(max(1, retry_attempts)):
+            try:
+                parsed = call_openai_json(api_key, model, prompt, timeout=120)
+                batch_result = parse_batch_result(parsed)
+                for row in batch:
+                    article_id = row["article_id"]
+                    if article_id in batch_result:
+                        results[article_id] = {
+                            **batch_result[article_id],
+                            "model": f"openai:{model}",
+                        }
+                    else:
+                        errors[article_id] = "missing summary in OpenAI response"
+                if inter_batch_delay > 0:
+                    time.sleep(inter_batch_delay)
+                break
+            except Exception as exc:
+                error_text = format_exception_message(exc)
+                should_retry = is_retryable_openai_error(exc) and attempt < max(1, retry_attempts) - 1
+                if should_retry:
+                    delay = retry_delay_seconds(exc, attempt, retry_base_delay)
+                    print(
+                        f"  - OpenAI retry {attempt + 1}/{retry_attempts} "
+                        f"for rows {start + 1}-{start + len(batch)} after {delay:.1f}s: {error_text}"
+                    )
+                    time.sleep(delay)
+                    continue
+                for row in batch:
+                    errors[row["article_id"]] = error_text
+                break
+    return results, errors
+
+
+def combine_summary_errors(*labeled_errors):
+    parts = []
+    for label, error in labeled_errors:
+        error = normalize_text(error)
+        if error:
+            parts.append(f"{label}: {error}")
+    return "; ".join(parts)
+
+
 def infer_summary_confidence(row, lines, status, original_text=""):
     complete = len([line for line in lines if line]) == 3
     formal = complete and all(has_formal_korean_ending(line) for line in lines[:3])
@@ -542,8 +679,12 @@ def summarize_rows(rows, options):
     env = scraper.load_env()
     scraper.configure_summary_generator(env)
     model = options.model or env.get("AGENT_B_GEMINI_MODEL") or DEFAULT_PRIMARY_MODEL
+    openai_model = options.openai_model or env.get("OPENAI_SUMMARY_MODEL") or DEFAULT_OPENAI_MODEL
 
     target_rows = rows[: options.limit] if options.limit and options.limit > 0 else rows
+    openai_results = {}
+    openai_errors = {}
+    openai_shared_error = ""
     if options.fallback_only:
         gemini_results, gemini_errors, shared_error = {}, {}, "fallback only"
     else:
@@ -584,6 +725,27 @@ def summarize_rows(rows, options):
                 for row in remaining_rows
                 if row.get("article_id", "") not in gemini_results
             ]
+        if remaining_rows and not options.disable_openai_fallback:
+            print(f"[Agent B] OpenAI fallback pass: {openai_model} ({len(remaining_rows)} articles)")
+            model_results, model_errors = summarize_with_openai(
+                remaining_rows,
+                env,
+                openai_model,
+                max(1, options.batch_size),
+                max(1, options.retry_attempts),
+                max(1.0, options.retry_base_delay),
+                max(0.0, options.inter_batch_delay),
+            )
+            if isinstance(model_errors, str):
+                openai_shared_error = model_errors
+            else:
+                openai_results.update(model_results)
+                for row in remaining_rows:
+                    article_id = row.get("article_id", "")
+                    if article_id in model_results:
+                        openai_errors.pop(article_id, None)
+                    else:
+                        openai_errors[article_id] = model_errors.get(article_id, f"missing summary from OpenAI {openai_model}")
 
     output_rows = []
     for row in target_rows:
@@ -599,7 +761,15 @@ def summarize_rows(rows, options):
             output_rows.append(build_summary_row(row, result["lines"], "ai", result.get("model", model), result.get("confidence", "medium")))
             continue
 
-        error = gemini_errors.get(article_id) or shared_error
+        if article_id in openai_results:
+            result = openai_results[article_id]
+            output_rows.append(build_summary_row(row, result["lines"], "ai", result.get("model", f"openai:{openai_model}"), result.get("confidence", "medium")))
+            continue
+
+        error = combine_summary_errors(
+            ("gemini", gemini_errors.get(article_id) or shared_error),
+            ("openai", openai_errors.get(article_id) or openai_shared_error),
+        )
         lines = fallback_summary(row)
         confidence = infer_summary_confidence(row, lines, "fallback", original_text)
         output_rows.append(build_summary_row(row, lines, "fallback", "extractive", confidence, error))
@@ -772,6 +942,8 @@ def main():
         retry_base_delay=args.retry_base_delay,
         inter_batch_delay=args.inter_batch_delay,
         fallback_models=args.fallback_models,
+        openai_model=args.openai_model,
+        disable_openai_fallback=args.disable_openai_fallback,
     )
     rows = load_agent_a_rows(input_path)
     summary_rows = summarize_rows(rows, options)
