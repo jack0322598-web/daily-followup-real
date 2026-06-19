@@ -1,6 +1,8 @@
 import argparse
+import concurrent.futures
 import hashlib
 import html
+import http.cookiejar
 import imaplib
 import json
 import os
@@ -9,7 +11,6 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections import Counter
 from datetime import datetime, timedelta, timezone
 from email import message_from_bytes
 from email.header import decode_header
@@ -40,7 +41,6 @@ BASE_DIR = Path(__file__).resolve().parent
 OUTPUT_FILE = BASE_DIR / "index.html"
 SHARE_OUTPUT_FILE = BASE_DIR / "share_index.html"
 ARCHIVE_JS_FILE = BASE_DIR / "archive_list.js"
-TREND_KEYWORDS_FILE = BASE_DIR / "weekly_keywords.json"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -109,9 +109,21 @@ def http_get_json(url, timeout=10):
         return res.json()
     return json.loads(http_get_text(url, timeout=timeout))
 
+def http_get_reader_text(url, timeout=30):
+    reader_headers = {"User-Agent": "Mozilla/5.0", "Accept": "text/plain"}
+    if requests is not None:
+        response = requests.get(url, headers=reader_headers, timeout=timeout)
+        response.raise_for_status()
+        return response.text
+    request = urllib.request.Request(url, headers=reader_headers)
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return response.read().decode("utf-8", errors="replace")
+
 MAX_IMPACT_NEWS = 5
 MAX_GLOBAL_IMPACT_NEWS_PER_SOURCE = 2
 MAX_NEWS_PER_CATEGORY = 3
+MAX_CANDIDATE_NEWS_PER_CATEGORY = 30
+MAX_RANKED_ISSUES_PER_CATEGORY = 8
 MAX_VCAC_NEWS_PER_SOURCE = 8
 MAX_AI_NEWS_PER_SOURCE = 8
 SUMMARY_LINE_COUNT = 3
@@ -122,28 +134,31 @@ SUMMARY_BATCH_SIZE = 5
 GEMINI_SUMMARY_MODEL = "gemini-2.5-flash"
 SUMMARY_CACHE_FILE = BASE_DIR / "summary_cache.json"
 INDUSTRY_TREND_CACHE_FILE = BASE_DIR / "industry_trend_cache.json"
+INDUSTRY_SOURCE_CACHE_FILE = BASE_DIR / "industry_source_cache.json"
 MCKINSEY_WEEK_IN_CHARTS_URL = "https://www.mckinsey.com/featured-insights/week-in-charts"
+BAIN_INSIGHTS_URL = "https://www.bain.com/insights/"
+BAIN_INSIGHTS_FEED_URL = "https://www.bain.com/insights/GetFeedItems"
+BCG_PUBLICATIONS_URL = "https://www.bcg.com/publications"
+BCG_PUBLICATIONS_READER_URL = "https://r.jina.ai/https://www.bcg.com/publications"
+BCG_SITEMAP_READER_URL = "https://r.jina.ai/https://www.bcg.com/google_sitemap-content.xml"
+KPMG_INSIGHTS_URL = "https://kpmg.com/kr/ko/insights.html"
+DELOITTE_INSIGHTS_URL = "https://www.deloitte.com/kr/ko/our-thinking/deloitte-insights.html"
 AI_SUMMARY_PROMPT_VERSION = "editor-v1"
 AI_SUMMARY_MIN_INTERVAL_SECONDS = 4.0
-TREND_LOOKBACK_DAYS = 7
-TREND_TITLES_PER_CATEGORY = 12
-TREND_KEYWORDS_PER_CATEGORY = 7
-TREND_REFRESH_WEEKDAY = 1  # Tuesday, because Monday's news starts the weekly cycle.
-GEMINI_KEYWORD_MODEL = "gemini-2.5-flash"
 SINGLE_ITEM_NEWSLETTER_SOURCES = {"Bloomberg Green", "CTVC"}
 NEWSLETTER_IMAP_TIMEOUT_SECONDS = 30
 
 GLOBAL_IMPACT_FEEDS = [
-    ("Powerstack", "https://powerstack.sightlineclimate.com/feed/"),
     ("ImpactAlpha", "https://impactalpha.com/feed/")
 ]
 
 IMPACTON_ALLOWED_SECTIONS = {"산업", "정책", "투자·평가", "투자.평가"}
 
-VCAC_SOURCE_PRIORITY = ("유니콘팩토리", "스타트업레시피", "플래텀", "벤처스퀘어")
+VCAC_SOURCE_PRIORITY = ("유니콘팩토리", "딜사이트", "스타트업레시피", "플래텀", "벤처스퀘어")
 
 VCAC_BRANDING = {
     "유니콘팩토리": ("unicorn", "https://menu.mt.co.kr/ucfactory/images/meta_unicornfactory.png"),
+    "딜사이트": ("dealsite", "https://dealsite.co.kr/images/favicon.svg"),
     "스타트업레시피": ("recipe", "https://startuprecipe.co.kr/wp-content/uploads/2025/05/StartupRecipe_logo-removebg-preview.png"),
     "플래텀": ("platum", "https://cdn.platum.kr/wp-content/uploads/2024/11/Platum-logo.svg"),
     "벤처스퀘어": ("venturesquare", "https://www.venturesquare.net/wp-content/uploads/2026/04/cropped-vs-symbol-color-192x192.png"),
@@ -159,6 +174,13 @@ AI_BRANDING = {
     "The Batch Weekly Issues": ("batch-weekly", "https://www.deeplearning.ai/_next/image?url=%2F_next%2Fstatic%2Fmedia%2Fthe-batch-logo.0b7c10a2.png&w=1080&q=75"),
 }
 
+INDUSTRY_SOURCE_PRIORITY = ("KPMG", "Deloitte")
+
+INDUSTRY_SOURCE_BRANDING = {
+    "KPMG": ("kpmg", "https://kpmg.com/content/experience-fragments/kpmgpublic/kr/ko/site/header/master/_jcr_content/root/header_v2_copy/logo.coreimg.svg/1754641605270/logo.svg"),
+    "Deloitte": ("deloitte", "https://www.deloitte.com/content/dam/assets-shared/logos/png/a-d/deloitte-print.png"),
+}
+
 AI_RSS_SOURCE_CONFIGS = [
     {
         "source": "MarketingTech",
@@ -168,6 +190,12 @@ AI_RSS_SOURCE_CONFIGS = [
 ]
 
 VCAC_RSS_SOURCE_CONFIGS = [
+    {
+        "source": "플래텀",
+        "feeds": ["https://platum.kr/archives/category/investment/feed"],
+        "use_browser_headers": True,
+        "context": "플래텀 투자 섹션의 스타트업 투자 및 회수 소식입니다.",
+    },
     {
         "source": "스타트업레시피",
         "feeds": [
@@ -193,49 +221,26 @@ VCAC_LISTING_SOURCE_CONFIGS = [
         "link_pattern": r"/article/\d+",
         "context": "유니콘팩토리 투자·회수 섹션의 스타트업 투자 및 회수 소식입니다.",
     },
-    {
-        "source": "플래텀",
-        "pages": ["https://platum.kr/news"],
-        "link_pattern": r"/archives/\d+",
-        "context": "플래텀 뉴스 섹션의 스타트업 생태계 소식입니다.",
-    },
 ]
 
-VCAC_TREND_CATEGORIES = [
+DEALSITE_CATEGORY_CONFIGS = (
     {
-        "name": "스타트업 투자/VC/AC",
-        "query": "(스타트업 투자유치 OR 벤처캐피탈 OR 액셀러레이터 OR 모태펀드 OR 시리즈A OR 시리즈B OR 프리IPO OR 스타트업 IPO OR 스타트업 M&A)",
-        "trend_anchor": "(스타트업 투자유치 OR 벤처캐피탈 OR 액셀러레이터 OR 모태펀드 OR 스타트업 IPO OR 스타트업 M&A)",
-        "context": "스타트업 투자, 회수, VC/AC 생태계 흐름입니다.",
-    }
-]
-
-IMPACT_TREND_CATEGORIES = [
-    {
-        "name": "ESG/지속가능경영",
-        "query": "(ESG OR 지속가능경영 OR 기후공시 OR 공급망 실사 OR RE100 OR 탄소중립)",
-        "context": "ESG와 지속가능경영 흐름입니다.",
-        "trend_anchor": "(ESG OR 지속가능경영 OR 기후공시 OR 공급망 실사)",
+        "name": "대체투자",
+        "code": "075000",
+        "keywords": (
+            "투자유치", "후속투자", "출자사업", "펀드 결성", "블라인드펀드", "벤처캐피탈",
+            "사모펀드", "PEF", "VC", "GP", "LP", "엑시트", "회수", "IPO", "출자", "투자",
+        ),
     },
     {
-        "name": "임팩트투자/소셜벤처",
-        "query": "(임팩트투자 OR 소셜벤처 OR 사회적기업 OR 사회혁신 OR 로컬임팩트)",
-        "context": "임팩트투자와 소셜벤처 생태계 흐름입니다.",
-        "trend_anchor": "(임팩트투자 OR 소셜벤처 OR 사회적기업)",
+        "name": "인수합병",
+        "code": "080000",
+        "keywords": (
+            "인수합병", "M&A", "매각전", "경영권", "원매자", "예비입찰", "본입찰", "우선협상",
+            "주식매매계약", "SPA", "공개매수", "실사", "매각", "인수", "합병", "지분",
+        ),
     },
-    {
-        "name": "기후/에너지 전환",
-        "query": "(기후테크 OR 에너지 전환 OR 재생에너지 OR 배터리 재활용 OR 탄소감축)",
-        "context": "기후와 에너지 전환 관련 흐름입니다.",
-        "trend_anchor": "(기후테크 OR 에너지 전환 OR 탄소감축)",
-    },
-    {
-        "name": "글로벌 임팩트",
-        "query": "(impact investing OR climate tech OR sustainability disclosure OR blended finance OR social impact)",
-        "context": "글로벌 임팩트와 지속가능성 흐름입니다.",
-        "trend_anchor": "(impact investing OR climate tech OR sustainability)",
-    },
-]
+)
 
 SUMMARY_SKIP_KEYWORDS = (
     "무단전재", "재배포", "저작권", "copyright", "구독", "광고", "로그인",
@@ -311,10 +316,11 @@ MACRO_ALLOWED_SOURCE_QUERY = " OR ".join(
 NAV_SECTIONS = (
     ("indicators", "주요 지표"),
     ("impact", "임팩트"),
-    ("vcac", "VC/AC"),
+    ("vcac", "VC/AC/대체투자"),
     ("ai", "AI"),
     ("macro", "거시경제"),
-    ("industry", "산업 트랜드"),
+    ("industrytrend", "산업트랜드"),
+    ("industry", "MBB 인사이트"),
     ("theme", "강세 테마"),
 )
 
@@ -625,6 +631,19 @@ def save_industry_trend_cache(payload):
     if payload:
         INDUSTRY_TREND_CACHE_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
+def load_industry_source_cache():
+    if not INDUSTRY_SOURCE_CACHE_FILE.exists():
+        return {}
+    try:
+        payload = json.loads(INDUSTRY_SOURCE_CACHE_FILE.read_text(encoding="utf-8"))
+        return payload if isinstance(payload, dict) else {}
+    except Exception:
+        return {}
+
+def save_industry_source_cache(payload):
+    if payload:
+        INDUSTRY_SOURCE_CACHE_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
 def normalize_mckinsey_url(url):
     if not url:
         return ""
@@ -729,6 +748,42 @@ def parse_mckinsey_chart_rows(image_description):
         ])
     return rows
 
+def get_mckinsey_fallback_overrides(latest=None, cache=None):
+    latest = latest or {}
+    cache = cache or {}
+    source_url = normalize_mckinsey_url(latest.get("source_url") or cache.get("source_url", ""))
+    title_key = normalize_space(latest.get("title") or cache.get("title", "")).casefold()
+
+    if "traumas-toll-on-the-workforce" in source_url or ("trauma" in title_key and "workforce" in title_key):
+        image_description = (
+            "Employees who report experiencing trauma describe lower levels of work performance "
+            "and satisfaction as measured in six important areas."
+        )
+        return {
+            "description_en": (
+                "Employees who report experiencing trauma show lower levels of adaptability, "
+                "learning, engagement, and other work outcomes."
+            ),
+            "description_ko": (
+                "트라우마를 경험했다고 응답한 직원들은 적응력·학습·몰입 등 주요 업무 지표와 "
+                "직무 만족도가 전반적으로 더 낮게 나타났습니다."
+            ),
+            "chart_image_url": (
+                "https://www.mckinsey.com/~/media/mckinsey/business%20functions/"
+                "people%20and%20organizational%20performance/our%20insights/"
+                "how%20leaders%20can%20help%20their%20organizations%20metabolize%20strain/"
+                "leadersstrain-ex1.svgz?cpy=Center&cq=50"
+            ),
+            "chart_image_alt": image_description,
+            "image_description": image_description,
+            "report_title": "How leaders can help their organizations metabolize strain",
+            "report_url": (
+                "https://www.mckinsey.com/capabilities/people-and-organizational-performance/"
+                "our-insights/how-leaders-can-help-their-organizations-metabolize-strain"
+            ),
+        }
+    return {}
+
 def parse_mckinsey_week_article(article_html, source_url, fallback_meta=None):
     soup = BeautifulSoup(article_html, "html.parser")
     title = extract_page_title(soup) or (fallback_meta or {}).get("title", "")
@@ -816,15 +871,20 @@ def build_mckinsey_fallback_item(latest, cache=None):
         if same_source and cache.get("description_en")
         else "Latest McKinsey Week in Charts article. Open the source link to view the full chart and details."
     )
-    return {
+    title = latest.get("title") or cache.get("title", "")
+    chart_image_url = cache.get("chart_image_url", "") if same_source else ""
+    if chart_image_url.startswith("data:image/svg+xml;utf8,"):
+        chart_image_url = ""
+    chart_image_alt = cache.get("chart_image_alt", "") if same_source else ""
+    item = {
         "source": "McKinsey",
-        "title": latest.get("title") or cache.get("title", ""),
+        "title": title,
         "date": latest.get("published_date") or cache.get("date", ""),
         "source_url": latest.get("source_url") or cache.get("source_url", ""),
         "description_en": description_en,
         "description_ko": description_ko,
-        "chart_image_url": cache.get("chart_image_url", "") if same_source else "",
-        "chart_image_alt": cache.get("chart_image_alt", "") if same_source else "",
+        "chart_image_url": chart_image_url,
+        "chart_image_alt": chart_image_alt,
         "image_description": cache.get("image_description", "") if same_source else "",
         "chart_headers": cache.get("chart_headers", []),
         "chart_rows": cache.get("chart_rows", []),
@@ -833,32 +893,703 @@ def build_mckinsey_fallback_item(latest, cache=None):
         "updated_at": datetime.now(KST).strftime("%Y-%m-%dT%H:%M:%S%z"),
         "fetch_mode": "metadata-fallback",
     }
+    for key, value in get_mckinsey_fallback_overrides(latest, cache).items():
+        if value:
+            item[key] = value
+    return item
+
+def parse_mbb_date(text):
+    text = normalize_space(text)
+    for fmt in ("%B %d, %Y", "%b %d, %Y", "%Y-%m-%d", "%Y.%m.%d"):
+        try:
+            return datetime.strptime(text, fmt).date()
+        except Exception:
+            pass
+    return None
+
+def should_exclude_bcg_item(title, source_url=""):
+    title = normalize_space(title)
+    source_url = normalize_space(source_url)
+    han_count = sum(1 for ch in title if "\u4e00" <= ch <= "\u9fff")
+    has_hangul = any("\uac00" <= ch <= "\ud7a3" for ch in title)
+    if "china-global-fintech-report" in source_url.lower():
+        return True
+    if han_count >= 4 and not has_hangul:
+        return True
+    return False
+
+def build_mbb_item(source, title, source_url, published_date, description="", image_url="", raw_text=""):
+    summary_source = clean_summary_source_text(
+        normalize_space(raw_text) or normalize_space(description),
+        source=source,
+        title=title,
+    )
+    context = f"{source}가 발행한 경영·산업 인사이트입니다."
+    return {
+        "source": source,
+        "title": normalize_space(title),
+        "date": format_dot_date(published_date),
+        "source_url": source_url,
+        "description_en": normalize_space(description),
+        "description_ko": "",
+        "summary": make_three_line_summary(title, summary_source, source, context),
+        "_summary_source": summary_source,
+        "_summary_context": context,
+        "chart_image_url": image_url,
+        "chart_image_alt": normalize_space(title),
+        "report_title": "",
+        "report_url": "",
+        "updated_at": datetime.now(KST).strftime("%Y-%m-%dT%H:%M:%S%z"),
+    }
+
+def build_industry_source_item(source, title, link, published_date=None, description="", image_url="", raw_text=""):
+    summary_source = clean_summary_source_text(
+        normalize_space(raw_text) or normalize_space(description) or normalize_space(title),
+        source=source,
+        title=title,
+    )
+    context = f"{source} Insights 최신 발행 자료입니다."
+    return {
+        "source": source,
+        "title": normalize_space(title),
+        "link": link,
+        "source_url": link,
+        "date": format_dot_date(published_date) if published_date else "",
+        "description_en": normalize_space(description),
+        "summary": make_three_line_summary(title, summary_source, source, context),
+        "_summary_source": summary_source,
+        "_summary_context": context,
+        "_cta_label": "원문 보기",
+        "image_url": image_url,
+        "updated_at": datetime.now(KST).strftime("%Y-%m-%dT%H:%M:%S%z"),
+    }
+
+def clean_consulting_insight_title(title):
+    title = normalize_space(title)
+    title = re.sub(r"\s*[|｜]\s*(?:Deloitte(?: Korea)?|KPMG(?: International)?)\s*$", "", title, flags=re.IGNORECASE)
+    return normalize_space(title)
+
+def extract_meta_content(soup, *candidates):
+    for attrs in candidates:
+        tag = soup.find("meta", attrs=attrs)
+        if tag and tag.get("content"):
+            return normalize_space(tag.get("content"))
+    return ""
+
+def parse_article_date_from_html(html_text):
+    dt = extract_html_datetime(html_text)
+    if dt:
+        return dt.date()
+    for pattern in (
+        r'"datePublished"\s*:\s*"([^"]+)"',
+        r'"dateModified"\s*:\s*"([^"]+)"',
+        r'Published Time:\s*([^\n<]+)',
+    ):
+        match = re.search(pattern, html_text, flags=re.IGNORECASE)
+        if not match:
+            continue
+        dt = parse_datetime_string(match.group(1))
+        if dt:
+            return dt.date()
+        parsed = parse_mbb_date(match.group(1))
+        if parsed:
+            return parsed
+        for fmt in ("%d %b %Y", "%d %B %Y"):
+            try:
+                return datetime.strptime(match.group(1), fmt).date()
+            except Exception:
+                pass
+    return None
+
+def extract_best_selector_text(soup, selectors, min_chars=120):
+    best_text = ""
+    for selector in selectors:
+        for node in soup.select(selector):
+            candidate = clean_article_text(node.get_text(" ", strip=True))
+            if len(candidate) >= min_chars and len(candidate) > len(best_text):
+                best_text = candidate
+    return best_text
+
+def extract_consulting_article_body_text(soup, title, source=""):
+    title = normalize_space(title)
+    page_text = clean_article_text(soup.get_text(" ", strip=True))
+    if not page_text:
+        return ""
+    source_key = compact_text(source)
+    content = ""
+    if source_key == "kpmg":
+        content = extract_best_selector_text(
+            soup,
+            ("main .cmp-text", ".cmp-text", "main .text", ".text", "main"),
+            min_chars=120,
+        )
+    elif source_key == "deloitte":
+        content = extract_best_selector_text(
+            soup,
+            (".cmp-text", ".article-copy", ".article-content", "[itemprop='articleBody']", "main article"),
+            min_chars=120,
+        )
+    if not content:
+        content = page_text
+    if title and title in content:
+        content = content.rsplit(title, 1)[-1]
+    for marker in (
+        "Deloitte Insights 인사이트 리포트 구독 신청",
+        "유용한 정보가 있으신가요?",
+        "Let's connect",
+        "Explore more",
+        "보고서 Download",
+        "Media 사보(Channel)",
+        "Contacts Request for Proposal",
+        "Careers Career site 바로가기",
+    ):
+        if marker in content:
+            content = content.split(marker, 1)[0]
+    return clean_summary_source_text(content, source=source, title=title)[:SUMMARY_INPUT_MAX_CHARS]
+
+def fetch_consulting_article_metadata(url, title_fallback="", description_fallback="", image_fallback="", source=""):
+    html_text = http_get_text(url, timeout=30)
+    soup = BeautifulSoup(html_text, "html.parser")
+    title = clean_consulting_insight_title(extract_page_title(soup) or title_fallback)
+    description = (
+        extract_meta_content(
+            soup,
+            {"name": "description"},
+            {"property": "og:description"},
+            {"name": "twitter:description"},
+        )
+        or normalize_space(description_fallback)
+    )
+    image_url = (
+        extract_meta_content(
+            soup,
+            {"property": "og:image"},
+            {"name": "twitter:image"},
+            {"name": "thumbnail"},
+        )
+        or image_fallback
+    )
+    published_date = parse_article_date_from_html(html_text)
+    body_text = extract_consulting_article_body_text(soup, title, source=source)
+    return {
+        "title": title,
+        "description": description,
+        "image_url": urllib.parse.urljoin(url, image_url),
+        "published_date": published_date,
+        "raw_text": normalize_space(f"{description} {body_text}") or description,
+    }
+
+def parse_kpmg_listing_items(page_html):
+    soup = BeautifulSoup(page_html, "html.parser")
+    candidates = []
+    seen = set()
+    excluded = {
+        normalize_mckinsey_url("https://kpmg.com/kr/ko/insights.html"),
+        normalize_mckinsey_url("https://kpmg.com/kr/ko/insights/eri.html"),
+        normalize_mckinsey_url("https://kpmg.com/kr/ko/insights/aci.html"),
+        normalize_mckinsey_url("https://kpmg.com/kr/ko/insights/tkc.html"),
+    }
+    for teaser in soup.select(".cmp-teaser"):
+        title_link = teaser.select_one('.cmp-teaser__title-link[href]')
+        if not title_link:
+            continue
+        source_url = normalize_mckinsey_url(urllib.parse.urljoin("https://kpmg.com", title_link.get("href", "")))
+        title = normalize_space(title_link.get_text(" ", strip=True))
+        if not title or title.lower() == "read more" or source_url in excluded or source_url in seen:
+            continue
+        seen.add(source_url)
+        description_node = teaser.select_one(".cmp-teaser__description")
+        image_node = teaser.select_one(".cmp-teaser__image img")
+        image_url = urllib.parse.urljoin("https://kpmg.com", (image_node.get("src") or "") if image_node else "")
+        candidates.append({
+            "title": title,
+            "url": source_url,
+            "description": normalize_space(description_node.get_text(" ", strip=True)) if description_node else "",
+            "image_url": image_url,
+        })
+    return candidates
+
+def fetch_kpmg_latest_from_sitemap():
+    sitemap_xml = http_get_text("https://kpmg.com/kr/ko/sitemap.xml", timeout=40)
+    root = ElementTree.fromstring(sitemap_xml)
+    namespace = {"sm": "http://www.sitemaps.org/schemas/sitemap/0.9"}
+    candidates = []
+    for node in root.findall("sm:url", namespace):
+        loc = normalize_space(node.findtext("sm:loc", "", namespace))
+        lastmod = normalize_space(node.findtext("sm:lastmod", "", namespace))
+        if not loc.endswith(".html") or "/kr/ko/insights/eri/" not in loc:
+            continue
+        if any(token in loc for token in ("/past-reports", "/eri.html")):
+            continue
+        dt = parse_datetime_string(lastmod)
+        candidates.append((dt, loc))
+    candidates.sort(key=lambda entry: entry[0] or datetime.min.replace(tzinfo=KST), reverse=True)
+    return candidates[0][1] if candidates else ""
+
+def parse_deloitte_listing_items(page_html):
+    soup = BeautifulSoup(page_html, "html.parser")
+    candidates = []
+    seen = set()
+    excluded_paths = (
+        "/kr/ko/our-thinking/deloitte-insights.html",
+        "/kr/ko/our-thinking/deloitte-insights-publications.html",
+        "/kr/ko/our-thinking/deloitte-global-economic-review.html",
+        "/kr/ko/our-thinking/mobile-app-kakao.html",
+        "/kr/ko/our-thinking/industry-thinking.html",
+        "/kr/ko/our-thinking/insights-archive.html",
+        "/kr/ko/our-thinking/deloitte-at-ces.html",
+    )
+    promos = soup.select(".promo.cmp-promo--featured-primary")
+    if not promos:
+        promos = [promo for promo in soup.select(".promo") if "nav-promo-v3" not in (promo.get("class") or [])]
+    for promo in promos:
+        link = promo.find("a", href=True)
+        title_node = promo.select_one(".cmp-promo__content__title")
+        if not link or not title_node:
+            continue
+        source_url = urllib.parse.urljoin("https://www.deloitte.com", link.get("href", ""))
+        if any(source_url.endswith(path) or path in source_url for path in excluded_paths) or source_url in seen:
+            continue
+        seen.add(source_url)
+        title = normalize_space(title_node.get_text(" ", strip=True))
+        if not title:
+            continue
+        description = normalize_space(" ".join(
+            node.get_text(" ", strip=True) for node in promo.select(".cmp-promo__content__desc p")
+        ))
+        image_node = promo.find("img")
+        image_url = urllib.parse.urljoin("https://www.deloitte.com", (image_node.get("src") or "") if image_node else "")
+        candidates.append({
+            "title": title,
+            "url": source_url,
+            "description": description,
+            "image_url": image_url,
+        })
+    return candidates
+
+def choose_latest_consulting_item(source, candidates, max_candidates=12):
+    best_item = None
+    inspected = candidates[:max_candidates]
+    for order, candidate in enumerate(inspected):
+        metadata = fetch_consulting_article_metadata(
+            candidate.get("url", ""),
+            title_fallback=candidate.get("title", ""),
+            description_fallback=candidate.get("description", ""),
+            image_fallback=candidate.get("image_url", ""),
+            source=source,
+        )
+        summary_source = metadata.get("raw_text") or metadata.get("description") or candidate.get("description", "")
+        if source == "Deloitte" and summary_source.count("더 알아보기") >= 2:
+            summary_source = metadata.get("description") or candidate.get("description", "")
+        item = build_industry_source_item(
+            source,
+            metadata.get("title") or candidate.get("title", ""),
+            candidate.get("url", ""),
+            metadata.get("published_date"),
+            metadata.get("description") or candidate.get("description", ""),
+            metadata.get("image_url") or candidate.get("image_url", ""),
+            summary_source,
+        )
+        item["_sort_order"] = order
+        item["_published_date_obj"] = metadata.get("published_date")
+        if best_item is None:
+            best_item = item
+            continue
+        best_date = best_item.get("_published_date_obj")
+        item_date = item.get("_published_date_obj")
+        if item_date and (not best_date or item_date > best_date):
+            best_item = item
+        elif item_date == best_date and order < best_item.get("_sort_order", 9999):
+            best_item = item
+        elif item_date and not best_date:
+            best_item = item
+    if best_item:
+        best_item.pop("_sort_order", None)
+        best_item.pop("_published_date_obj", None)
+    return best_item
+
+def fetch_kpmg_industry_source_item():
+    latest_url = fetch_kpmg_latest_from_sitemap()
+    if latest_url:
+        metadata = fetch_consulting_article_metadata(latest_url, source="KPMG")
+        item = build_industry_source_item(
+            "KPMG",
+            metadata.get("title", ""),
+            latest_url,
+            metadata.get("published_date"),
+            metadata.get("description", ""),
+            metadata.get("image_url", ""),
+            metadata.get("raw_text", ""),
+        )
+        if item.get("title"):
+            return item
+
+    page_html = http_get_text(KPMG_INSIGHTS_URL, timeout=30)
+    candidates = parse_kpmg_listing_items(page_html)
+    if not candidates:
+        raise RuntimeError("KPMG insights listing returned no candidates")
+    item = choose_latest_consulting_item("KPMG", candidates, max_candidates=8)
+    if not item:
+        raise RuntimeError("KPMG insights latest article could not be determined")
+    return item
+
+def fetch_deloitte_industry_source_item():
+    page_html = http_get_text(DELOITTE_INSIGHTS_URL, timeout=30)
+    candidates = parse_deloitte_listing_items(page_html)
+    if not candidates:
+        raise RuntimeError("Deloitte insights listing returned no candidates")
+    item = choose_latest_consulting_item("Deloitte", candidates, max_candidates=16)
+    if not item:
+        raise RuntimeError("Deloitte insights latest article could not be determined")
+    return item
+
+def fetch_industry_source_trend():
+    cache = load_industry_source_cache()
+    cached_by_source = {item.get("source", ""): item for item in cache.get("items", []) if isinstance(item, dict)}
+    items = []
+    source_fetchers = (
+        ("KPMG", fetch_kpmg_industry_source_item),
+        ("Deloitte", fetch_deloitte_industry_source_item),
+    )
+    for source, fetcher in source_fetchers:
+        try:
+            item = fetcher()
+            if item:
+                items.append(item)
+            print(f"  - {source} 산업트랜드: {1 if item else 0}건")
+        except Exception as exc:
+            fallback = cached_by_source.get(source)
+            if fallback:
+                items.append(fallback)
+            print(f"  - {source} 산업트랜드 fetch failed, cache {1 if fallback else 0}건 사용: {exc}")
+    items.sort(key=lambda item: INDUSTRY_SOURCE_PRIORITY.index(item.get("source")) if item.get("source") in INDUSTRY_SOURCE_PRIORITY else 99)
+    payload = {
+        "items": items,
+        "updated_at": datetime.now(KST).strftime("%Y-%m-%dT%H:%M:%S%z"),
+    }
+    save_industry_source_cache(payload)
+    return items
+
+def fetch_mckinsey_items(target_date):
+    query = urllib.parse.quote("site:mckinsey.com/featured-insights/week-in-charts")
+    rss_url = f"https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
+    root = ElementTree.fromstring(fetch_source_text(rss_url, timeout=20))
+    candidates = []
+    seen = set()
+    for node in root.findall(".//item"):
+        title = normalize_space(node.findtext("title", ""))
+        pub_dt = parse_datetime_string(node.findtext("pubDate", ""))
+        google_link = normalize_space(node.findtext("link", ""))
+        if not pub_dt or pub_dt.date() != target_date or not google_link or " - McKinsey" not in title:
+            continue
+        if title.lower().startswith("the week in charts"):
+            continue
+        title = title.rsplit(" - ", 1)[0]
+        source_url = normalize_mckinsey_url(resolve_google_news_url(google_link))
+        if "/featured-insights/week-in-charts/" not in source_url:
+            slug = slugify_mckinsey_title(title)
+            source_url = f"{MCKINSEY_WEEK_IN_CHARTS_URL}/{slug}" if slug else ""
+        if not source_url or source_url in seen:
+            continue
+        seen.add(source_url)
+        candidates.append({"title": title, "source_url": source_url, "published_date": format_dot_date(target_date)})
+
+    items = []
+    for candidate in candidates:
+        try:
+            article_html = fetch_mckinsey_article_text(candidate["source_url"])
+            item = parse_mckinsey_week_article(article_html, candidate["source_url"], candidate)
+        except Exception:
+            item = build_mckinsey_fallback_item(candidate)
+        item_date = parse_dot_date_value(item.get("date", ""))
+        if item.get("title") and item_date == target_date:
+            summary_source = item.get("description_ko") or item.get("description_en") or item.get("image_description", "")
+            item["summary"] = make_three_line_summary(
+                item.get("title", ""), summary_source, "McKinsey", "McKinsey의 The Week in Charts 인사이트입니다."
+            )
+            item["_summary_source"] = summary_source
+            item["_summary_context"] = "McKinsey의 The Week in Charts 인사이트입니다."
+            items.append(item)
+    return items
+
+def parse_bain_feed_items(payload, target_date):
+    raw_items = []
+    featured = payload.get("featuredResult") if isinstance(payload, dict) else None
+    if isinstance(featured, dict):
+        raw_items.append(featured)
+    raw_items.extend(payload.get("results", []) if isinstance(payload, dict) else [])
+    items, seen = [], set()
+    for entry in raw_items:
+        published_date = parse_mbb_date(entry.get("date", ""))
+        source_url = urllib.parse.urljoin("https://www.bain.com", entry.get("url", ""))
+        if published_date != target_date or not entry.get("title") or not source_url or source_url in seen:
+            continue
+        seen.add(source_url)
+        image_data = entry.get("imageSrc") or {}
+        image_url = urllib.parse.urljoin("https://www.bain.com", image_data.get("large", ""))
+        items.append(build_mbb_item(
+            "Bain & Company", entry.get("title", ""), source_url, published_date,
+            entry.get("description", ""), image_url,
+        ))
+    return items
+
+def fetch_bain_items(target_date):
+    query = urllib.parse.urlencode({
+        "start": 0, "results": 40, "filters": "", "searchValue": "", "isInPreviewMode": "False"
+    })
+    feed_url = f"{BAIN_INSIGHTS_FEED_URL}?{query}"
+    feed_headers = {**HEADERS, "Referer": BAIN_INSIGHTS_URL}
+    if requests is not None:
+        response = requests.get(feed_url, headers=feed_headers, timeout=30)
+        response.raise_for_status()
+        payload = response.json()
+    else:
+        request = urllib.request.Request(feed_url, headers=feed_headers)
+        with urllib.request.urlopen(request, timeout=30) as response:
+            payload = json.loads(response.read().decode("utf-8", errors="replace"))
+    return parse_bain_feed_items(payload, target_date)
+
+def parse_bcg_publication_items(page_html, target_date):
+    soup = BeautifulSoup(page_html, "html.parser")
+    items, seen = [], set()
+    for promo in soup.select(".Promo"):
+        date_node = promo.select_one(".Promo-date")
+        title_node = promo.select_one('.Promo-title a[href*="/publications/"]')
+        if not date_node or not title_node:
+            continue
+        published_date = parse_mbb_date(date_node.get_text(" ", strip=True))
+        source_url = urllib.parse.urljoin("https://www.bcg.com", title_node.get("href", ""))
+        if published_date != target_date or source_url in seen:
+            continue
+        title = normalize_space(title_node.get_text(" ", strip=True))
+        if should_exclude_bcg_item(title, source_url):
+            continue
+        seen.add(source_url)
+        description_node = promo.select_one(".Promo-description")
+        image_node = promo.select_one("img")
+        description = description_node.get_text(" ", strip=True) if description_node else ""
+        image_url = urllib.parse.urljoin(
+            "https://www.bcg.com", (image_node.get("src") or image_node.get("data-src") or "") if image_node else ""
+        )
+        items.append(build_mbb_item(
+            "BCG", title, source_url, published_date, description, image_url,
+        ))
+    return items
+
+def parse_bcg_publication_markdown(markdown_text, target_date):
+    recent_section = markdown_text.split("## Most Recent Insights", 1)[-1]
+    recent_section = recent_section.split("## Featured Campaigns", 1)[0]
+    pattern = re.compile(
+        r'(?:!\[Image[^\]]*\]\((?P<image>https?://[^)]+)\)\s*)?'
+        r'(?:\[[^\]]+\]\(https?://[^)]+\)\s*)?'
+        r'Article\s+(?P<date>[A-Z][a-z]+\s+\d{1,2},\s+\d{4})\s+'
+        r'\[(?P<title>[^\]]+)\]\((?P<url>https?://www\.bcg\.com/publications/[^)]+)\)\s+'
+        r'(?P<description>.*?)(?=\n\s*\[Learn More\])',
+        flags=re.DOTALL,
+    )
+    items, seen = [], set()
+    for match in pattern.finditer(recent_section):
+        published_date = parse_mbb_date(match.group("date"))
+        source_url = match.group("url")
+        if published_date != target_date or source_url in seen:
+            continue
+        title = normalize_space(match.group("title"))
+        if should_exclude_bcg_item(title, source_url):
+            continue
+        seen.add(source_url)
+        items.append(build_mbb_item(
+            "BCG",
+            title,
+            source_url,
+            published_date,
+            normalize_space(match.group("description")),
+            match.group("image") or "",
+        ))
+    return items
+
+def parse_bcg_sitemap_candidates(markdown_text, target_date, window_days=2):
+    pattern = re.compile(
+        rf'\[(?P<url>https://www\.bcg\.com/publications/{target_date.year}/[^\]]+)\]'
+        r'\([^)]*\)\s+(?P<date>\d{4}-\d{2}-\d{2})T'
+    )
+    lower_bound = target_date - timedelta(days=window_days)
+    upper_bound = target_date + timedelta(days=1)
+    candidates = []
+    seen = set()
+    for match in pattern.finditer(markdown_text):
+        modified_date = parse_mbb_date(match.group("date"))
+        source_url = match.group("url")
+        if not modified_date or not (lower_bound <= modified_date <= upper_bound) or source_url in seen:
+            continue
+        seen.add(source_url)
+        candidates.append(source_url)
+    return candidates
+
+def clean_bcg_markdown_text(markdown_text):
+    content = markdown_text.split("Markdown Content:", 1)[-1]
+    if "## Key Takeaways" in content:
+        content = content.split("## Key Takeaways", 1)[-1]
+    elif "### Key Takeaways" in content:
+        content = content.split("### Key Takeaways", 1)[-1]
+    elif re.search(r"\bArticle\s+[A-Z][a-z]+\s+\d{1,2},\s+\d{4}", content):
+        content = re.split(r"\bArticle\s+[A-Z][a-z]+\s+\d{1,2},\s+\d{4}.*?\n", content, maxsplit=1)[-1]
+    for marker in (
+        "Save It For Later",
+        "Weekly Insights Subscription",
+        "Subscribe Stay ahead",
+        "Related Content",
+        "## Authors",
+        "### Authors",
+        "Contact Us",
+    ):
+        if marker in content:
+            content = content.split(marker, 1)[0]
+    content = re.sub(r'!\[[^\]]*\]\([^)]+\)', ' ', content)
+    content = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', content)
+    content = re.sub(r'^#{1,6}\s+', '', content, flags=re.MULTILINE)
+    content = re.sub(r'(?m)^\s*[*-]\s+', '', content)
+    content = re.sub(r'[_*`]+', '', content)
+    return clean_summary_source_text(normalize_space(content), source="BCG")
+
+def parse_bcg_reader_article(markdown_text, source_url, target_date):
+    published_match = re.search(r'^Published Time:\s*(\d{4}-\d{2}-\d{2})', markdown_text, flags=re.MULTILINE)
+    if not published_match or parse_mbb_date(published_match.group(1)) != target_date:
+        return None
+    title_match = re.search(r'^Title:\s*(.+)$', markdown_text, flags=re.MULTILINE)
+    title = normalize_space(title_match.group(1)) if title_match else ""
+    if should_exclude_bcg_item(title, source_url):
+        return None
+    raw_text = clean_bcg_markdown_text(markdown_text)
+    if not title or not raw_text:
+        return None
+    raw_text = raw_text[:SUMMARY_INPUT_MAX_CHARS]
+    description = truncate_text(raw_text, 320)
+    return build_mbb_item("BCG", title, source_url, target_date, description, raw_text=raw_text)
+
+def fetch_bcg_items_from_sitemap(target_date):
+    sitemap_markdown = http_get_reader_text(BCG_SITEMAP_READER_URL, timeout=90)
+    candidates = parse_bcg_sitemap_candidates(sitemap_markdown, target_date)
+
+    def fetch_candidate(source_url):
+        try:
+            article_markdown = http_get_reader_text(f"https://r.jina.ai/{source_url}", timeout=60)
+            return parse_bcg_reader_article(article_markdown, source_url, target_date)
+        except Exception:
+            return None
+
+    items = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+        futures = [executor.submit(fetch_candidate, url) for url in candidates]
+        for future in concurrent.futures.as_completed(futures):
+            item = future.result()
+            if item:
+                items.append(item)
+    items.sort(key=lambda item: item.get("title", ""))
+    return items
+
+def fetch_bcg_items_from_google_news(target_date):
+    query = urllib.parse.quote(f"site:bcg.com/publications/{target_date.year}")
+    rss_url = f"https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
+    root = ElementTree.fromstring(fetch_source_text(rss_url, timeout=20))
+    items, seen = [], set()
+    for node in root.findall(".//item"):
+        pub_dt = parse_datetime_string(node.findtext("pubDate", ""))
+        title = normalize_space(node.findtext("title", ""))
+        if not pub_dt or pub_dt.date() != target_date or " - BCG" not in title:
+            continue
+        title = re.sub(r"\s+-\s+BCG.*$", "", title, flags=re.IGNORECASE)
+        source_url = resolve_google_news_url(normalize_space(node.findtext("link", "")))
+        if "/publications/" not in source_url or source_url in seen or should_exclude_bcg_item(title, source_url):
+            continue
+        seen.add(source_url)
+        description = strip_tags(node.findtext("description", ""))
+        items.append(build_mbb_item("BCG", title, source_url, target_date, description))
+    return items
+
+def fetch_bcg_items(target_date):
+    listing_items = []
+    direct_error = None
+    try:
+        page_html = http_get_text(BCG_PUBLICATIONS_URL, timeout=30)
+        if "Access Denied" in page_html or "Reference #" in page_html:
+            raise RuntimeError("BCG blocked the listing request")
+        direct_items = parse_bcg_publication_items(page_html, target_date)
+        if direct_items:
+            listing_items = direct_items
+    except Exception as exc:
+        direct_error = exc
+    reader_error = None
+    if not listing_items:
+        try:
+            markdown_text = http_get_reader_text(BCG_PUBLICATIONS_READER_URL, timeout=60)
+            if markdown_text:
+                listing_items = parse_bcg_publication_markdown(markdown_text, target_date)
+        except Exception as exc:
+            reader_error = exc
+
+    sitemap_error = None
+    try:
+        sitemap_items = fetch_bcg_items_from_sitemap(target_date)
+    except Exception as exc:
+        sitemap_items = []
+        sitemap_error = exc
+
+    merged = {}
+    for item in listing_items + sitemap_items:
+        if item.get("source_url"):
+            merged[item["source_url"]] = item
+    if merged:
+        return sorted(merged.values(), key=lambda item: item.get("title", ""))
+
+    try:
+        return fetch_bcg_items_from_google_news(target_date)
+    except Exception as exc:
+        raise RuntimeError(
+            f"BCG listing, sitemap, and RSS fetch failed: {direct_error}; {reader_error}; {sitemap_error}; {exc}"
+        ) from exc
 
 def fetch_industry_trend(target_date):
     cache = load_industry_trend_cache()
-    try:
-        latest = extract_latest_mckinsey_week_url()
-        if not latest:
-            return cache
-        if cache.get("source_url") == latest.get("source_url"):
-            return cache
-        article_html = fetch_mckinsey_article_text(latest["source_url"])
-        item = parse_mckinsey_week_article(article_html, latest["source_url"], latest)
-        if item.get("title") and (item.get("chart_image_url") or item.get("chart_rows") or item.get("description_en")):
-            save_industry_trend_cache(item)
-            return item
-    except Exception as e:
-        print(f"  - McKinsey industry trend fetch failed, using cache: {e}")
-    latest_date = parse_dot_date_value(latest.get("published_date", "")) if isinstance(latest, dict) else None
-    cache_date = parse_dot_date_value(cache.get("date", ""))
-    if latest and latest.get("source_url") and (
-        cache.get("source_url") != latest.get("source_url")
-        or (latest_date and (not cache_date or latest_date > cache_date))
-    ):
-        fallback_item = build_mckinsey_fallback_item(latest, cache)
-        save_industry_trend_cache(fallback_item)
-        return fallback_item
-    return cache
+    target_dot = format_dot_date(target_date)
+    cached_items = cache.get("items", []) if cache.get("date") == target_dot else []
+    cached_by_source = {}
+    for item in cached_items:
+        cached_by_source.setdefault(item.get("source", ""), []).append(item)
+
+    items = []
+    source_fetchers = (
+        ("McKinsey", fetch_mckinsey_items),
+        ("Bain & Company", fetch_bain_items),
+        ("BCG", fetch_bcg_items),
+    )
+    for source, fetcher in source_fetchers:
+        try:
+            source_items = fetcher(target_date)
+            if source == "BCG":
+                source_items = [
+                    item for item in source_items
+                    if not should_exclude_bcg_item(item.get("title", ""), item.get("source_url", ""))
+                ]
+            items.extend(source_items)
+            print(f"  - {source} MBB insights: {len(source_items)}건")
+        except Exception as exc:
+            fallback = cached_by_source.get(source, [])
+            if source == "BCG":
+                fallback = [
+                    item for item in fallback
+                    if not should_exclude_bcg_item(item.get("title", ""), item.get("source_url", ""))
+                ]
+            items.extend(fallback)
+            print(f"  - {source} MBB insights fetch failed, cache {len(fallback)}건 사용: {exc}")
+
+    items.sort(key=lambda item: (item.get("source", ""), item.get("title", "")))
+    payload = {
+        "date": target_dot,
+        "items": items,
+        "updated_at": datetime.now(KST).strftime("%Y-%m-%dT%H:%M:%S%z"),
+    }
+    save_industry_trend_cache(payload)
+    return items
 
 # ==========================================
 # 기본 함수들 (필터링 및 텍스트 정리)
@@ -867,9 +1598,6 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--date", help="뉴스 수집 및 달력 표시 날짜 (YYYY-MM-DD). 기본값은 KST 기준 어제입니다.")
     parser.add_argument("--news-date", help="--date와 동일한 별칭입니다. 둘 다 있으면 --news-date가 우선합니다.")
-    parser.add_argument("--refresh-keywords", action="store_true", help="주간 트렌드 키워드를 강제로 다시 생성합니다.")
-    parser.add_argument("--skip-keyword-refresh", action="store_true", help="화요일이어도 주간 트렌드 키워드 갱신을 건너뜁니다.")
-    parser.add_argument("--refresh-keywords-only", action="store_true", help="주간 트렌드 키워드만 생성하고 브리핑 HTML은 만들지 않습니다.")
     return parser.parse_args()
 
 def parse_date_arg(date_arg):
@@ -1116,130 +1844,6 @@ def fetch_source_text(url, timeout=20):
     with urllib.request.urlopen(urllib.request.Request(url, headers=SOURCE_FETCH_HEADERS), timeout=timeout) as response:
         body = response.read()
         return decode_response_body(body, response.headers.get_content_charset())
-
-def week_start_for(date_obj):
-    return date_obj - timedelta(days=date_obj.weekday())
-
-def trend_category_key(section_id, group_title, category_name):
-    return f"{section_id}::{group_title or section_id}::{category_name}"
-
-def iter_trend_categories():
-    for category in IMPACT_TREND_CATEGORIES:
-        yield {
-            "key": trend_category_key("impact", "임팩트", category["name"]),
-            "section_id": "impact",
-            "section_label": "임팩트",
-            "group": "임팩트",
-            "category": category["name"],
-            "query": category.get("trend_query", category["query"]),
-            "trend_anchor": category.get("trend_anchor", category["query"]),
-            "context": category["context"],
-        }
-    for category in VCAC_TREND_CATEGORIES:
-        yield {
-            "key": trend_category_key("vcac", "VC/AC", category["name"]),
-            "section_id": "vcac",
-            "section_label": "VC/AC",
-            "group": "VC/AC",
-            "category": category["name"],
-            "query": category.get("trend_query", category["query"]),
-            "trend_anchor": category.get("trend_anchor", category["query"]),
-            "context": category["context"],
-        }
-    for section in SEARCH_SECTIONS:
-        for group in section["groups"]:
-            for category in group["categories"]:
-                yield {
-                    "key": trend_category_key(section["id"], group["title"], category["name"]),
-                    "section_id": section["id"],
-                    "section_label": section["label"],
-                    "group": group["title"],
-                    "category": category["name"],
-                    "query": category.get("trend_query", category["query"]),
-                    "trend_anchor": category.get("trend_anchor", f'{section["label"]} {group["title"]} {category["name"]}'),
-                    "context": category["context"],
-                }
-
-def load_trend_keywords():
-    if not TREND_KEYWORDS_FILE.exists():
-        return {}
-    try:
-        return json.loads(TREND_KEYWORDS_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-
-def save_trend_keywords(payload):
-    TREND_KEYWORDS_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-
-def normalize_keyword_list(keywords):
-    normalized = []
-    seen = set()
-    for keyword in keywords or []:
-        keyword = normalize_space(str(keyword)).strip(" ,.;:|/\\\"'")
-        if not keyword or len(keyword) < 2 or len(keyword) > 32:
-            continue
-        lowered = keyword.casefold()
-        if lowered in seen:
-            continue
-        seen.add(lowered)
-        normalized.append(keyword)
-        if len(normalized) >= TREND_KEYWORDS_PER_CATEGORY:
-            break
-    return normalized
-
-def format_google_query_term(keyword):
-    keyword = normalize_space(keyword).replace('"', "")
-    if not keyword:
-        return ""
-    return f'"{keyword}"' if " " in keyword else keyword
-
-def keyword_clause(keywords):
-    terms = [format_google_query_term(keyword) for keyword in keywords]
-    terms = [term for term in terms if term]
-    return " OR ".join(terms)
-
-def get_trend_entry(trend_keywords, section_id, group_title, category_name):
-    key = trend_category_key(section_id, group_title, category_name)
-    return (trend_keywords or {}).get("categories", {}).get(key, {})
-
-def get_trend_keywords_for_category(trend_keywords, section_id, group_title, category_name):
-    entry = get_trend_entry(trend_keywords, section_id, group_title, category_name)
-    return normalize_keyword_list(entry.get("keywords", []))
-
-def enhance_query_with_trends(base_query, trend_anchor, keywords):
-    keywords = normalize_keyword_list(keywords)
-    if not keywords:
-        return base_query
-    clause = keyword_clause(keywords)
-    if not clause:
-        return base_query
-    return f"({base_query}) OR ({trend_anchor} ({clause}))"
-
-def fetch_trend_titles_for_query(query, reference_date):
-    start_date = (reference_date - timedelta(days=TREND_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
-    end_date = (reference_date + timedelta(days=1)).strftime("%Y-%m-%d")
-    encoded_query = urllib.parse.quote(f"({query}) after:{start_date} before:{end_date} -블로그 -카페 -blog -cafe")
-    titles = []
-    try:
-        rss_text = fetch_text(f"https://news.google.com/rss/search?q={encoded_query}&hl=ko&gl=KR", timeout=12)
-        for item in ElementTree.fromstring(rss_text).findall(".//item"):
-            title, source_name = parse_google_news_item(item)
-            title = normalize_space(title)
-            source_name = normalize_source_name(source_name)
-            if title and not any(is_similar_title(title, existing, threshold=0.28) for existing in titles):
-                titles.append(f"{title} ({source_name})")
-            if len(titles) >= TREND_TITLES_PER_CATEGORY:
-                break
-    except Exception as e:
-        print(f"  - trend title fetch failed: {e}")
-    return titles
-
-def collect_trend_signals(reference_date):
-    signals = []
-    for category in iter_trend_categories():
-        titles = fetch_trend_titles_for_query(category["query"], reference_date)
-        signals.append({**category, "recent_titles": titles})
-    return signals
 
 def extract_json_payload(text):
     text = normalize_space(text)
@@ -1524,7 +2128,7 @@ def normalize_batch_summary_payload(parsed):
             normalized[item_id] = lines
     return normalized
 
-def iter_news_items_for_summary(strong_theme, domestic_impact, global_impact, search_sections):
+def iter_news_items_for_summary(strong_theme, domestic_impact, global_impact, search_sections, industry_trend=None, industry_source_trend=None):
     seen_object_ids = set()
 
     def yield_once(news_item):
@@ -1541,6 +2145,12 @@ def iter_news_items_for_summary(strong_theme, domestic_impact, global_impact, se
     for news in domestic_impact or []:
         yield from yield_once(news)
     for news in global_impact or []:
+        yield from yield_once(news)
+    industry_items = industry_trend if isinstance(industry_trend, list) else (industry_trend or {}).get("items", [])
+    for news in industry_items:
+        yield from yield_once(news)
+    source_items = industry_source_trend if isinstance(industry_source_trend, list) else (industry_source_trend or {}).get("items", [])
+    for news in source_items:
         yield from yield_once(news)
     for section in search_sections or []:
         for group in section.get("groups", []):
@@ -1559,7 +2169,7 @@ def apply_ai_summary_batch(batch, model, api_key):
     parsed = call_gemini_json(api_key, model, prompt, timeout=90)
     return normalize_batch_summary_payload(parsed)
 
-def apply_ai_summaries_to_news(strong_theme, domestic_impact, global_impact, search_sections):
+def apply_ai_summaries_to_news(strong_theme, domestic_impact, global_impact, search_sections, industry_trend=None, industry_source_trend=None):
     global SUMMARY_CACHE_DIRTY
     if not env_flag(SUMMARY_ENV, "AI_SUMMARY_ENABLED", True):
         return
@@ -1576,7 +2186,9 @@ def apply_ai_summaries_to_news(strong_theme, domestic_impact, global_impact, sea
     candidates = []
     cached_count = 0
     skipped_count = 0
-    for index, news in enumerate(iter_news_items_for_summary(strong_theme, domestic_impact, global_impact, search_sections), 1):
+    for index, news in enumerate(iter_news_items_for_summary(
+        strong_theme, domestic_impact, global_impact, search_sections, industry_trend, industry_source_trend
+    ), 1):
         raw_text = fit_summary_input(get_news_summary_text(news), item_limit)
         if len(raw_text) < 80:
             skipped_count += 1
@@ -1673,167 +2285,6 @@ def apply_ai_summaries_to_news(strong_theme, domestic_impact, global_impact, sea
         SUMMARY_CACHE_DIRTY = True
     print(f"[Summary] 완료: AI {success_count}건, 캐시 {cached_count}건, fallback {fallback_count}건")
 
-def generate_trend_keywords_with_gemini(env, signals, reference_date):
-    api_key = env.get("GEMINI_API_KEY", "")
-    if not api_key:
-        return None
-    primary_model = env.get("GEMINI_MODEL", GEMINI_KEYWORD_MODEL)
-    model_candidates = list(dict.fromkeys([primary_model, "gemini-2.5-flash-lite"]))
-    merged_categories = {}
-
-    def call_model(signal_chunk, model):
-        prompt_payload = [
-            {
-                "key": signal["key"],
-                "section": signal["section_label"],
-                "group": signal["group"],
-                "category": signal["category"],
-                "base_query": signal["query"],
-                "recent_titles": signal["recent_titles"],
-            }
-            for signal in signal_chunk
-        ]
-        prompt = (
-            "You are improving a Korean morning market/news briefing search system. "
-            "For each category, infer this week's concrete search keywords from the recent Google News titles. "
-            "Return only valid JSON. For each category key, provide 4-7 keywords. "
-            "Prefer specific entities, countries, companies, technologies, policies, tickers, conflicts, laws, and event names. "
-            "Avoid generic category words such as 뉴스, 이슈, 전망, 시장, 투자, 경제, AI, ESG unless attached to a specific phrase. "
-            "Include Korean keywords, and include English proper nouns when they are common search terms.\n\n"
-            f"Reference news date: {reference_date.strftime('%Y-%m-%d')}\n"
-            "JSON schema: {\"categories\":{\"<key>\":{\"keywords\":[\"...\"],\"rationale\":\"short Korean reason\"}}}\n"
-            f"Categories and recent titles:\n{json.dumps(prompt_payload, ensure_ascii=False)}"
-        )
-        body = {
-            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0.2, "responseMimeType": "application/json"},
-        }
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{urllib.parse.quote(model)}:generateContent?key={urllib.parse.quote(api_key)}"
-        request = urllib.request.Request(
-            url,
-            data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
-            headers={**HEADERS, "Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(request, timeout=45) as response:
-            data = json.loads(response.read().decode("utf-8", errors="replace"))
-        text = " ".join(
-            part.get("text", "")
-            for candidate in data.get("candidates", [])
-            for part in candidate.get("content", {}).get("parts", [])
-        )
-        parsed = extract_json_payload(text)
-        return parsed.get("categories", {}) if isinstance(parsed, dict) else {}
-
-    for i in range(0, len(signals), 5):
-        chunk = signals[i:i + 5]
-        chunk_categories = {}
-        last_error = None
-        for model in model_candidates:
-            for attempt in range(3):
-                try:
-                    chunk_categories = call_model(chunk, model)
-                    if chunk_categories:
-                        break
-                except Exception as e:
-                    last_error = e
-                    time.sleep(1.5 * (attempt + 1))
-            if chunk_categories:
-                break
-        if chunk_categories:
-            merged_categories.update(chunk_categories)
-        else:
-            print(f"  - Gemini keyword chunk failed: {last_error}")
-    return {"categories": merged_categories} if merged_categories else None
-
-TREND_TOKEN_STOPWORDS = STORY_TOKEN_STOPWORDS.union({
-    "경제", "시장", "관련", "브리핑", "전망", "투자", "기업", "산업", "글로벌", "국내",
-    "미국", "한국", "중국", "유럽", "주요", "이번주", "지난주", "상승", "하락",
-    "머니투데이", "경향신문", "연합뉴스", "조선비즈", "한국경제", "매일경제", "파이낸셜뉴스",
-    "news", "google", "ai", "esg", "vc", "ipo", "m&a", "or",
-})
-
-def fallback_keywords_from_texts(texts):
-    counter = Counter()
-    for title in texts:
-        title = re.sub(r"\([^)]{1,40}\)\s*$", "", title)
-        for token in extract_story_tokens(title):
-            token = token.strip()
-            if token.casefold() in TREND_TOKEN_STOPWORDS:
-                continue
-            if token.isdigit() or len(token) < 2:
-                continue
-            counter[token] += 1
-    return [token for token, _ in counter.most_common(TREND_KEYWORDS_PER_CATEGORY)]
-
-def fallback_keywords_from_titles(titles, base_query=""):
-    keywords = fallback_keywords_from_texts(titles)
-    if len(keywords) >= 4:
-        return keywords
-    query_terms = re.sub(r"\bOR\b|[()\"']", " ", base_query, flags=re.IGNORECASE)
-    for token in fallback_keywords_from_texts([query_terms]):
-        if token not in keywords:
-            keywords.append(token)
-        if len(keywords) >= TREND_KEYWORDS_PER_CATEGORY:
-            break
-    return keywords
-
-def build_trend_keyword_payload(reference_date, signals, model_payload=None):
-    model_categories = (model_payload or {}).get("categories", {}) if isinstance(model_payload, dict) else {}
-    categories = {}
-    for signal in signals:
-        model_entry = model_categories.get(signal["key"], {}) if isinstance(model_categories, dict) else {}
-        keywords = normalize_keyword_list(model_entry.get("keywords", []))
-        source = "gemini" if keywords else "fallback"
-        if not keywords:
-            keywords = fallback_keywords_from_titles(signal["recent_titles"], signal["query"])
-        categories[signal["key"]] = {
-            "section": signal["section_label"],
-            "group": signal["group"],
-            "category": signal["category"],
-            "query": signal["query"],
-            "trend_anchor": signal["trend_anchor"],
-            "keywords": normalize_keyword_list(keywords),
-            "rationale": normalize_space(model_entry.get("rationale", ""))[:160],
-            "source": source,
-            "sample_titles": signal["recent_titles"][:5],
-        }
-    now = datetime.now(KST)
-    return {
-        "generated_at": now.strftime("%Y-%m-%dT%H:%M:%S%z"),
-        "reference_date": reference_date.strftime("%Y-%m-%d"),
-        "week_start": week_start_for(reference_date).strftime("%Y-%m-%d"),
-        "lookback_days": TREND_LOOKBACK_DAYS,
-        "model": "gemini" if model_payload else "fallback",
-        "categories": categories,
-    }
-
-def should_refresh_trend_keywords(args, target_date, existing_payload):
-    if args.skip_keyword_refresh:
-        return False
-    if args.refresh_keywords or args.refresh_keywords_only:
-        return True
-    if not existing_payload:
-        return True
-    expected_week = week_start_for(target_date).strftime("%Y-%m-%d")
-    if existing_payload.get("week_start") != expected_week:
-        return True
-    now = datetime.now(KST)
-    return now.weekday() == TREND_REFRESH_WEEKDAY and target_date == now.date() - timedelta(days=1) and existing_payload.get("reference_date") != target_date.strftime("%Y-%m-%d")
-
-def get_or_refresh_trend_keywords(args, target_date, env):
-    existing = load_trend_keywords()
-    if not should_refresh_trend_keywords(args, target_date, existing):
-        return existing
-    print("\n[Trend] 주간 카테고리 키워드 갱신 중...")
-    signals = collect_trend_signals(target_date)
-    model_payload = generate_trend_keywords_with_gemini(env, signals, target_date)
-    payload = build_trend_keyword_payload(target_date, signals, model_payload)
-    save_trend_keywords(payload)
-    keyword_count = sum(len(entry.get("keywords", [])) for entry in payload.get("categories", {}).values())
-    print(f"[Trend] 완료: {len(payload.get('categories', {}))}개 카테고리, {keyword_count}개 키워드")
-    return payload
-
 def resolve_google_news_url(url):
     if "news.google.com" not in (url or ""):
         return url
@@ -1912,11 +2363,396 @@ def dedupe_news_items(news_items):
         deduped.append(item)
     return deduped
 
+ISSUE_ACTION_SIGNALS = (
+    "발표", "결정", "확정", "시행", "공개", "체결", "승인", "통과", "출범", "착수",
+    "인상", "인하", "동결", "제재", "관세", "투자", "인수", "합병", "상장", "파산",
+    "announces", "launches", "approves", "raises", "cuts", "acquires", "merger",
+)
+ISSUE_OFFICIAL_SIGNALS = (
+    "정부", "기획재정부", "산업부", "금융위", "한국은행", "금통위", "연준", "fomc",
+    "백악관", "미 재무부", "ustr", "ecb", "유럽중앙은행", "인민은행", "국회", "법원",
+)
+ISSUE_LOW_VALUE_SIGNALS = (
+    "전망", "가능성", "관측", "예상", "관련주", "수혜주", "급등주", "주목", "알아보니",
+    "왜", "어떻게", "칼럼", "기고", "오피니언", "인터뷰", "홍보", "이벤트", "모집",
+)
+ISSUE_SOURCE_SCORES = {
+    "연합뉴스": 20,
+    "한국경제": 18,
+    "매일경제": 18,
+    "조선일보": 17,
+    "조선비즈": 17,
+    "reuters": 20,
+    "bloomberg": 19,
+    "associated press": 19,
+}
+
+def issue_title_tokens(title):
+    return {
+        token for token in extract_story_tokens(title)
+        if len(token) >= 2 and token not in {"미국", "한국", "중국", "유럽", "정부", "기업"}
+    }
+
+def is_same_news_issue(title_a, title_b):
+    if is_similar_title(title_a, title_b, threshold=0.30):
+        return True
+    tokens_a = issue_title_tokens(title_a)
+    tokens_b = issue_title_tokens(title_b)
+    if not tokens_a or not tokens_b:
+        return False
+    shared = tokens_a.intersection(tokens_b)
+    overlap = len(shared) / max(1, min(len(tokens_a), len(tokens_b)))
+    return (len(shared) >= 2 and overlap >= 0.60) or len(shared) >= 4
+
+def load_recent_briefing_titles(target_date, lookback_days=3):
+    titles = []
+    for days_ago in range(1, lookback_days + 1):
+        archive_path = BASE_DIR / f"archive_{(target_date - timedelta(days=days_ago)).strftime('%Y-%m-%d')}.html"
+        if not archive_path.exists():
+            continue
+        try:
+            soup = BeautifulSoup(archive_path.read_text(encoding="utf-8", errors="ignore"), "html.parser")
+            titles.extend(
+                normalize_space(anchor.get_text(" ", strip=True))
+                for anchor in soup.select(".news-title a")
+                if normalize_space(anchor.get_text(" ", strip=True))
+            )
+        except Exception:
+            continue
+    return titles
+
+def source_authority_score(source_name):
+    lowered = normalize_space(source_name).lower()
+    for source_hint, score in ISSUE_SOURCE_SCORES.items():
+        if source_hint.lower() in lowered:
+            return score
+    return 12
+
+def score_issue_candidate(item, previous_titles=None):
+    title = normalize_space(item.get("title", ""))
+    raw_text = normalize_space(item.get("_summary_source", ""))
+    text = f"{title} {raw_text[:1800]}".lower()
+    score = source_authority_score(item.get("source", ""))
+    score += 18  # category rules already admitted this candidate
+    if any(signal in text for signal in ISSUE_ACTION_SIGNALS):
+        score += 12
+    if any(signal in text for signal in ISSUE_OFFICIAL_SIGNALS):
+        score += 10
+    if re.search(r"\d+(?:[.,]\d+)?\s*(?:%|조|억|만|bp|p|달러|원|명|건)", text, flags=re.IGNORECASE):
+        score += 8
+    if len(raw_text) >= 500:
+        score += 5
+    if any(signal in title.lower() for signal in ISSUE_LOW_VALUE_SIGNALS):
+        score -= 14
+    if previous_titles and any(is_same_news_issue(title, old_title) for old_title in previous_titles):
+        score -= 18
+        item["_repeated_issue"] = True
+    return max(0, min(100, score))
+
+def cluster_and_rank_issues(news_items, previous_titles=None):
+    clusters = []
+    for item in news_items:
+        item["_base_importance_score"] = score_issue_candidate(item, previous_titles)
+        matched_cluster = None
+        for cluster in clusters:
+            if any(is_same_news_issue(item.get("title", ""), member.get("title", "")) for member in cluster):
+                matched_cluster = cluster
+                break
+        if matched_cluster is None:
+            clusters.append([item])
+        else:
+            matched_cluster.append(item)
+
+    ranked = []
+    for cluster in clusters:
+        sources = {normalize_space(item.get("source", "")).casefold() for item in cluster if item.get("source")}
+        coverage_bonus = min(28, max(0, len(sources) - 1) * 12)
+        representative = max(
+            cluster,
+            key=lambda item: (
+                item.get("_base_importance_score", 0),
+                source_authority_score(item.get("source", "")),
+                len(item.get("_summary_source", "")),
+            ),
+        )
+        representative["_coverage_count"] = len(sources)
+        representative["_related_articles"] = [
+            {"title": item.get("title", ""), "source": item.get("source", ""), "link": item.get("link", "")}
+            for item in cluster if item is not representative
+        ]
+        representative["_importance_score"] = min(
+            100,
+            representative.get("_base_importance_score", 0) + coverage_bonus,
+        )
+        ranked.append(representative)
+    return sorted(
+        ranked,
+        key=lambda item: (
+            item.get("_importance_score", 0),
+            item.get("_coverage_count", 0),
+            source_authority_score(item.get("source", "")),
+        ),
+        reverse=True,
+    )
+
+def refine_issue_ranking_with_gemini(items, section_label, group_title, category_name):
+    if not items:
+        return items
+    api_key = SUMMARY_ENV.get("GEMINI_API_KEY", "")
+    if not api_key or str(SUMMARY_ENV.get("AI_ISSUE_RANKING_ENABLED", "1")).lower() in {"0", "false", "no", "off"}:
+        return items
+    candidates = items[:MAX_RANKED_ISSUES_PER_CATEGORY]
+    payload = [
+        {
+            "id": f"i{index}",
+            "title": item.get("title", ""),
+            "source": item.get("source", ""),
+            "coverage": item.get("_coverage_count", 1),
+            "rule_score": item.get("_importance_score", 0),
+            "text": normalize_space(item.get("_summary_source", ""))[:700],
+        }
+        for index, item in enumerate(candidates, 1)
+    ]
+    prompt = (
+        "한국어 뉴스 브리핑의 주요 이슈 편집자 역할을 하라. 후보가 지정 카테고리에 직접 관련되는지와 "
+        "실제 정책 결정·공식 발표·시장/산업 영향이 큰 주요 뉴스인지 평가하라. 단순 전망, 칼럼, 홍보, "
+        "관련주 기사는 낮게 평가하라. JSON만 반환하라.\n"
+        f"섹션: {section_label} / 그룹: {group_title} / 카테고리: {category_name}\n"
+        "스키마: {\"items\":[{\"id\":\"i1\",\"relevance\":0,\"importance\":0,\"reason\":\"짧은 이유\"}]}\n"
+        f"후보: {json.dumps(payload, ensure_ascii=False)}"
+    )
+    model = SUMMARY_ENV.get("GEMINI_MODEL", GEMINI_SUMMARY_MODEL)
+    body = {
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0.1, "responseMimeType": "application/json"},
+    }
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{urllib.parse.quote(model)}:generateContent?key={urllib.parse.quote(api_key)}"
+    try:
+        request = urllib.request.Request(
+            url,
+            data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
+            headers={**HEADERS, "Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=45) as response:
+            data = json.loads(response.read().decode("utf-8", errors="replace"))
+        response_text = " ".join(
+            part.get("text", "")
+            for candidate in data.get("candidates", [])
+            for part in candidate.get("content", {}).get("parts", [])
+        )
+        parsed = extract_json_payload(response_text)
+        assessments = {
+            entry.get("id"): entry
+            for entry in parsed.get("items", [])
+            if isinstance(entry, dict) and entry.get("id")
+        }
+        if not assessments:
+            return items
+        for index, item in enumerate(candidates, 1):
+            assessment = assessments.get(f"i{index}", {})
+            if not assessment:
+                continue
+            relevance = max(0, min(100, int(assessment.get("relevance", 50))))
+            importance = max(0, min(100, int(assessment.get("importance", 50))))
+            rule_score = item.get("_importance_score", 0)
+            item["_ai_relevance"] = relevance
+            item["_ai_importance"] = importance
+            item["_ranking_reason"] = normalize_space(assessment.get("reason", ""))[:160]
+            item["_importance_score"] = round(rule_score * 0.70 + relevance * 0.10 + importance * 0.20, 1)
+            if relevance < 45:
+                item["_importance_score"] -= 25
+        return sorted(candidates, key=lambda item: item.get("_importance_score", 0), reverse=True)
+    except Exception as exc:
+        print(f"  - issue ranking AI fallback ({group_title}/{category_name}): {exc}")
+        return items
+
+def rank_existing_section_categories(section, previous_titles=None, limit=MAX_NEWS_PER_CATEGORY):
+    for group in section.get("groups", []):
+        for category in group.get("categories", []):
+            news_items = category.get("news", [])
+            if not news_items:
+                continue
+            if category.get("preserve_selection"):
+                category["news"] = news_items[:limit]
+                print(
+                    f"  - {section.get('label', section.get('id', ''))}/{category.get('name', '')}: "
+                    f"균형 선택 {len(category['news'])}건 유지"
+                )
+                continue
+            ranked = cluster_and_rank_issues(news_items, previous_titles)
+            category["news"] = ranked[:limit]
+            print(
+                f"  - {section.get('label', section.get('id', ''))}/{category.get('name', '')}: "
+                f"후보 {len(news_items)}건 → 주요 뉴스 {len(category['news'])}건"
+            )
+    return section
+
+def rank_news_by_source(news_items, previous_titles=None, limit=MAX_NEWS_PER_CATEGORY):
+    grouped = {}
+    source_order = []
+    for item in news_items:
+        source = item.get("source", "")
+        if source not in grouped:
+            grouped[source] = []
+            source_order.append(source)
+        grouped[source].append(item)
+    selected = []
+    for source in source_order:
+        ranked = cluster_and_rank_issues(grouped[source], previous_titles)
+        selected.extend(ranked[:limit])
+    return selected
+
+def count_selected_news(strong_theme, impact_news, search_sections):
+    count = len((strong_theme or {}).get("news", [])) + len(impact_news or [])
+    count += sum(
+        len(category.get("news", []))
+        for section in search_sections or []
+        for group in section.get("groups", [])
+        for category in group.get("categories", [])
+    )
+    return count
+
 def truncate_text(text, limit=90):
     text = normalize_space(text)
     if len(text) <= limit:
         return text
     return text[: max(0, limit - 1)].rstrip() + "…"
+
+def summary_source_family(source):
+    key = compact_text(source)
+    if "kpmg" in key:
+        return "kpmg"
+    if "deloitte" in key:
+        return "deloitte"
+    if "bcg" in key:
+        return "bcg"
+    return key
+
+def split_into_summary_candidates(text):
+    text = normalize_space(text)
+    if not text:
+        return []
+    text = re.sub(r"\s*[|/]\s*", ". ", text)
+    text = re.sub(r"[•·▪■◆▶]", ". ", text)
+    text = re.sub(r"\.\.\.|…", ". ", text)
+    text = re.sub(r"\s+(?=\d+\.\s)", "|", text)
+    text = re.sub(r"([.!?])\s+", r"\1|", text)
+    text = re.sub(r"(습니다|입니다|됩니다|했습니다|했다|한다|됐다|이다)\s+(?=[가-힣A-Za-z0-9])", r"\1|", text)
+    raw_parts = [normalize_space(part) for part in text.split("|") if normalize_space(part)]
+    candidates = []
+    seen = set()
+    for part in raw_parts:
+        key = compact_text(part)
+        if key and key not in seen:
+            seen.add(key)
+            candidates.append(part)
+    return candidates
+
+def compress_summary_sentence(sentence, limit=SUMMARY_MAX_CHARS):
+    sentence = normalize_space(sentence)
+    if len(sentence) <= limit:
+        return sentence.rstrip(" ,;:-")
+    clauses = re.split(r"(?<=[,;:])\s+|\s+-\s+|\s+—\s+", sentence)
+    built = ""
+    for clause in clauses:
+        clause = normalize_space(clause)
+        if not clause:
+            continue
+        candidate = f"{built} {clause}".strip() if built else clause
+        if len(candidate) > limit:
+            break
+        built = candidate
+    result = built or sentence
+    if len(result) <= limit:
+        return result.rstrip(" ,;:-")
+    clipped = result[: max(0, limit - 1)].rstrip()
+    if " " in clipped:
+        clipped = clipped.rsplit(" ", 1)[0]
+    clipped = clipped.rstrip(" ,;:-")
+    return (clipped or result[: max(0, limit - 1)].rstrip(" ,;:-")) + "…"
+
+def normalize_summary_candidate(sentence, source=""):
+    sentence = normalize_space(sentence)
+    sentence = re.sub(r"\bv\.daum\.net\b", "파이낸셜뉴스", sentence, flags=re.IGNORECASE)
+    sentence = re.sub(r"^[가-힣]{2,5}\s기자\s+", "", sentence)
+    sentence = re.sub(r"^\([^)]{2,30}\)\s*", "", sentence)
+    sentence = re.sub(r"^\[[^\]]{2,40}\]\s*", "", sentence)
+    sentence = re.sub(r"^.{0,90}?\d{4}[-./]\d{1,2}[-./]\d{1,2}\s+[가-힣]{2,5}\s+기자\s+", "", sentence)
+    sentence = re.sub(r"^[가-힣A-Za-z·.\s]{2,20}\s기자\s*=\s*", "", sentence)
+    sentence = re.sub(r"^[가-힣A-Za-z·.\s]{2,40}\s제공\s+", "", sentence)
+    sentence = re.sub(r"^(송고|입력|수정)\s+\d{4}[-./년\s]\d{1,2}.*", "", sentence)
+    sentence = re.sub(r"\b(Read more|Learn more|Visit page|Subscribe|Manage subscriptions|Download article)\b", "", sentence, flags=re.IGNORECASE)
+    sentence = re.sub(r"\s{2,}", " ", sentence)
+    if source:
+        sentence = normalize_space(re.sub(rf"\s*[-|]?\s*{re.escape(source)}\s*$", "", sentence, flags=re.IGNORECASE))
+    return sentence.strip(" -–—•·|")
+
+def clean_summary_source_text(text, source="", title=""):
+    text = clean_article_text(text)
+    if not text:
+        return ""
+    family = summary_source_family(source)
+    title = normalize_space(title)
+
+    common_patterns = (
+        r"https?://\S+",
+        r"\[/?[^\]]+\]",
+        r"\(\s*javascript:[^)]+\)",
+        r"\b(Skip to Main|Skip to main content|Log in|Log error|View Profile|Edit Profile|Manage Subscriptions|My Saved Content|Logout)\b",
+        r"\b(Visit Page|Save It For Later|Link copied)\b",
+    )
+    for pattern in common_patterns:
+        text = re.sub(pattern, " ", text, flags=re.IGNORECASE)
+
+    if family == "kpmg":
+        for marker in (
+            "Skip to main content",
+            "Services Main menu",
+            "Featured Services",
+            "바로 가기",
+            "전체 보기",
+            "삼정회계법인 공식 홈페이지입니다",
+        ):
+            if marker in text and len(text.split(marker, 1)[0]) >= 100:
+                text = text.split(marker, 1)[0]
+                break
+        text = re.sub(r"\bimport_contacts\b", " ", text, flags=re.IGNORECASE)
+
+    elif family == "deloitte":
+        text = re.sub(r"^바로가기:\s*.*?(?=(안정적이던|딜로이트는|제품 복잡성과|본 보고서가))", "", text)
+        for marker in (
+            "리포트 전문 다운로드",
+            "PDF 카드뉴스 다운로드",
+            "문의하기",
+            "관련 인사이트",
+            "추천 콘텐츠",
+            "Contact us",
+            "Let’s connect",
+            "Let's connect",
+        ):
+            if marker in text and len(text.split(marker, 1)[0]) >= 100:
+                text = text.split(marker, 1)[0]
+                break
+
+    elif family == "bcg":
+        for marker in (
+            "Featured Insights",
+            "Weekly Insights Subscription",
+            "Subscribe Stay ahead",
+            "Manage Subscriptions",
+            "Contact Us",
+            "Privacy Policy",
+        ):
+            if marker in text and len(text.split(marker, 1)[0]) >= 100:
+                text = text.split(marker, 1)[0]
+                break
+        text = re.sub(r"\b(BCG Skip to Main|Our Services|Industries|Capabilities|Featured Insights)\b", " ", text, flags=re.IGNORECASE)
+
+    if title:
+        text = re.sub(rf"^\s*{re.escape(title)}\s*[|｜-]?\s*(?:BCG|Deloitte Korea|KPMG(?: International)?)?\s*", "", text, flags=re.IGNORECASE)
+    text = normalize_space(text)
+    return " ".join(split_into_summary_candidates(text))[:SUMMARY_INPUT_MAX_CHARS]
 
 def brief_company_overview(raw_text, stock_name="", limit=None):
     text = normalize_space(raw_text)
@@ -2025,28 +2861,89 @@ def extract_html_datetime(text):
                 return dt
     return None
 
+def score_summary_candidate(sentence, index, role="generic"):
+    sentence_lower = sentence.lower()
+    score = 0
+    length = len(sentence)
+    if 35 <= length <= 120:
+        score += 18
+    elif 20 <= length <= 145:
+        score += 10
+    if index == 0:
+        score += 14
+    elif index < 3:
+        score += 8
+    if re.search(r"\d", sentence):
+        score += 10
+    if re.search(r"\b(?:ai|kpi|oem|cbam|scenario|scenarios|value|productivity|yield|market|growth|margin)\b", sentence_lower):
+        score += 10
+    for keyword in (
+        "전환", "재편", "구조", "시나리오", "영향", "분석", "전략", "대응", "고려", "핵심",
+        "도입", "규제", "위기", "기회", "시장", "성과", "생산성", "가치", "성장", "리스크",
+    ):
+        if keyword in sentence:
+            score += 5
+    if role == "lead":
+        if any(token in sentence for token in ("핵심", "전환", "재편", "위기", "시장", "산업", "Players are", "Almost all", "딜로이트는", "본 보고서")):
+            score += 10
+    elif role == "evidence":
+        if re.search(r"\d|%|시나리오|분석|영향|도출|increase|productivity|yield|value potential", sentence_lower):
+            score += 14
+    elif role == "implication":
+        if any(token in sentence for token in ("전략", "대응", "고려", "시사", "출발점", "권고", "필요", "도움", "제시", "recommendations")):
+            score += 14
+    return score
+
+def pick_summary_candidate(candidates, used_keys, role="generic"):
+    best_sentence, best_score = "", None
+    for index, sentence in enumerate(candidates):
+        key = sentence.casefold()
+        if key in used_keys:
+            continue
+        score = score_summary_candidate(sentence, index, role=role)
+        if best_score is None or score > best_score:
+            best_sentence, best_score = sentence, score
+    return best_sentence
+
+def combine_summary_sentences(first, second):
+    first = normalize_space(first)
+    second = normalize_space(second)
+    if not first or not second:
+        return first or second
+    if compact_text(first) == compact_text(second):
+        return first
+    tails = []
+    for chunk in re.split(r"(?<=[,;:])\s+", second):
+        chunk = normalize_space(chunk)
+        if 18 <= len(chunk) <= 60:
+            tails.append(chunk)
+            break
+    tails.extend((
+        re.split(r"(?<=[,;:])\s+", second, maxsplit=1)[0],
+        compress_summary_sentence(second, limit=max(36, min(72, SUMMARY_MAX_CHARS - len(first) - 1))),
+    ))
+    for tail in tails:
+        tail = normalize_space(tail)
+        candidate = normalize_space(f"{first} {tail}")
+        if (
+            tail
+            and len(tail) <= 72
+            and len(candidate) <= min(115, SUMMARY_MAX_CHARS)
+            and compact_text(first) not in compact_text(tail)
+        ):
+            return candidate
+    return compress_summary_sentence(first)
+
 def make_extractive_three_line_summary(title, raw_text="", source="", context=""):
     title = normalize_space(title)
-    lines, seen = [], set()
-    text = clean_article_text(raw_text)
-    text = re.sub(r"\bv\.daum\.net\b", "파이낸셜뉴스", text, flags=re.IGNORECASE)
-    text = re.sub(r"\s*[|/]\s*", ". ", text)
-    text = re.sub(r"…", ". ", text)
-    text = re.sub(r"([.!?])\s+", r"\1|", text)
-    text = re.sub(r"([.!?])(?=[가-힣\"'‘“])", r"\1|", text)
+    source = normalize_space(source)
+    context = normalize_space(context)
+    text = clean_summary_source_text(raw_text, source=source, title=title)
     title_key = compact_text(title)
     source_key = compact_text(source)
-    for sentence in [normalize_space(p) for p in text.split("|") if normalize_space(p)]:
-        sentence = re.sub(r"\bv\.daum\.net\b", "파이낸셜뉴스", sentence, flags=re.IGNORECASE)
-        sentence = re.sub(r"^[가-힣]{2,5}\s기자\s+", "", sentence)
-        sentence = re.sub(r"^\([^)]{2,30}\)\s*", "", sentence)
-        sentence = re.sub(r"^\[[^\]]{2,40}\]\s*", "", sentence)
-        sentence = re.sub(r"^.{0,90}?\d{4}[-./]\d{1,2}[-./]\d{1,2}\s+[가-힣]{2,5}\s+기자\s+", "", sentence)
-        sentence = re.sub(r"^[가-힣A-Za-z·.\s]{2,20}\s기자\s*=\s*", "", sentence)
-        sentence = re.sub(r"^[가-힣A-Za-z·.\s]{2,40}\s제공\s+", "", sentence)
-        sentence = re.sub(r"^(송고|입력|수정)\s+\d{4}[-./년\s]\d{1,2}.*", "", sentence)
-        if source:
-            sentence = normalize_space(re.sub(rf"\s*[-|]?\s*{re.escape(source)}\s*$", "", sentence, flags=re.IGNORECASE))
+    candidates = []
+    for sentence in split_into_summary_candidates(text):
+        sentence = normalize_summary_candidate(sentence, source=source)
         sentence_key = compact_text(sentence)
         sentence_lower = sentence.lower()
         if len(sentence) < 15 or any(k.lower() in sentence_lower for k in SUMMARY_SKIP_KEYWORDS):
@@ -2058,31 +2955,55 @@ def make_extractive_three_line_summary(title, raw_text="", source="", context=""
             or (title_key and sentence_key and sentence_key in title_key and len(sentence_key) >= 8)
         ):
             continue
+        candidates.append(sentence)
+
+    lines, seen = [], set()
+    lead = pick_summary_candidate(candidates, seen, role="lead")
+    if lead:
+        lead_key = lead.casefold()
+        supporting = pick_summary_candidate(candidates[: min(4, len(candidates))], {lead_key}, role="generic")
+        if (
+            supporting
+            and len(lead) < 80
+            and summary_source_family(source) != "bcg"
+            and not re.match(r"^[a-z]", supporting)
+        ):
+            lead = combine_summary_sentences(lead, supporting)
+        lead = compress_summary_sentence(lead)
+        lines.append(lead)
+        seen.add(lead.casefold())
+        seen.add(lead_key)
+        if supporting:
+            seen.add(supporting.casefold())
+
+    for role in ("evidence", "implication", "generic"):
+        if len(lines) >= SUMMARY_LINE_COUNT:
+            break
+        sentence = pick_summary_candidate(candidates, seen, role=role)
+        if not sentence:
+            continue
+        sentence = compress_summary_sentence(sentence)
         key = sentence.casefold()
         if key not in seen:
-            lines.append(sentence[:SUMMARY_MAX_CHARS - 1] + "…" if len(sentence) > SUMMARY_MAX_CHARS else sentence)
+            lines.append(sentence)
             seen.add(key)
-        if len(lines) >= SUMMARY_LINE_COUNT:
-            break
 
-    if lines:
-        fallbacks = [
-            truncate_text(context or "관련 흐름을 함께 볼 수 있는 기사입니다.", SUMMARY_MAX_CHARS),
-            truncate_text(f"{source or '원문'} 보도를 바탕으로 정리했습니다.", SUMMARY_MAX_CHARS),
-            truncate_text(title, SUMMARY_MAX_CHARS),
-        ]
-    else:
-        fallbacks = [
-            truncate_text(title, SUMMARY_MAX_CHARS),
-            truncate_text(context or "관련 흐름을 함께 볼 수 있는 기사입니다.", SUMMARY_MAX_CHARS),
-            truncate_text(f"{source or '원문'} 보도를 바탕으로 정리했습니다.", SUMMARY_MAX_CHARS),
-        ]
-    for fb in fallbacks:
+    recomposed_fallbacks = []
+    if source:
+        recomposed_fallbacks.append(f"{source}가 짚은 핵심 쟁점과 영향 포인트를 함께 확인할 수 있습니다.")
+    if title:
+        recomposed_fallbacks.append(f"{truncate_text(title, 68)} 관련 핵심 내용을 정리한 자료입니다.")
+    if context:
+        recomposed_fallbacks.append(context)
+
+    for fallback in recomposed_fallbacks:
         if len(lines) >= SUMMARY_LINE_COUNT:
             break
-        if fb.casefold() not in seen:
-            lines.append(fb)
-            seen.add(fb.casefold())
+        fallback = compress_summary_sentence(fallback)
+        if fallback and fallback.casefold() not in seen:
+            lines.append(fallback)
+            seen.add(fallback.casefold())
+
     return lines[:SUMMARY_LINE_COUNT]
 
 def make_three_line_summary(title, raw_text="", source="", context=""):
@@ -2779,11 +3700,12 @@ def parse_rss_feed_items(feed_text):
         })
     return items
 
-def collect_listing_article_links(page_url, link_pattern):
+def collect_listing_article_links(page_url, link_pattern, use_browser_headers=False):
     items = []
     seen = set()
     try:
-        page_html = fetch_source_text(page_url, timeout=20)
+        page_fetcher = fetch_text if use_browser_headers else fetch_source_text
+        page_html = page_fetcher(page_url, timeout=20)
         soup = BeautifulSoup(page_html, "html.parser")
         for anchor in soup.find_all("a", href=True):
             href = anchor.get("href", "").strip()
@@ -2803,7 +3725,7 @@ def collect_listing_article_links(page_url, link_pattern):
             seen.add(link)
             items.append({"title": title, "link": link})
     except Exception as e:
-        print(f"  - VC/AC listing failed ({page_url}): {e}")
+        print(f"  - VC/AC/대체투자 listing failed ({page_url}): {e}")
     return items
 
 def build_vcac_news_item(source_name, title, link, target_date, seen_links, seen_titles, context, desc_text="", story_cache=None, require_article_date=True):
@@ -2865,7 +3787,8 @@ def fetch_vcac_rss_source(config, target_date, seen_links, seen_titles):
         if len(news_items) >= MAX_VCAC_NEWS_PER_SOURCE:
             break
         try:
-            feed_text = fetch_source_text(feed_url, timeout=20)
+            feed_fetcher = fetch_text if config.get("use_browser_headers", False) else fetch_source_text
+            feed_text = feed_fetcher(feed_url, timeout=20)
             for item in parse_rss_feed_items(feed_text):
                 if len(news_items) >= MAX_VCAC_NEWS_PER_SOURCE:
                     break
@@ -2904,7 +3827,11 @@ def fetch_vcac_listing_source(config, target_date, seen_links, seen_titles):
     for page_url in config["pages"]:
         if len(news_items) >= MAX_VCAC_NEWS_PER_SOURCE:
             break
-        for item in collect_listing_article_links(page_url, config["link_pattern"]):
+        for item in collect_listing_article_links(
+            page_url,
+            config["link_pattern"],
+            use_browser_headers=config.get("use_browser_headers", False),
+        ):
             if len(news_items) >= MAX_VCAC_NEWS_PER_SOURCE:
                 break
             news_item = build_vcac_news_item(
@@ -2923,20 +3850,236 @@ def fetch_vcac_listing_source(config, target_date, seen_links, seen_titles):
             time.sleep(0.8)
     return dedupe_news_items(news_items)
 
+def fetch_dealsite_category_html(category_code, start_date, end_date):
+    page_url = f"https://dealsite.co.kr/categories/{category_code}"
+    api_url = "https://dealsite.co.kr/api/articles/categoryNews"
+    params = {
+        "categoryCode": category_code,
+        "page": 0,
+        "size": 30,
+        "pageBlockSize": 10,
+        "startDt": start_date.strftime("%Y-%m-%d"),
+        "endDt": end_date.strftime("%Y-%m-%d"),
+    }
+
+    if requests is not None:
+        session = requests.Session()
+        page_response = session.get(page_url, headers=HEADERS, timeout=20)
+        page_response.raise_for_status()
+        page_soup = BeautifulSoup(
+            decode_response_body(
+                page_response.content,
+                extract_charset_from_content_type(page_response.headers.get("content-type", "")),
+            ),
+            "html.parser",
+        )
+        token_node = page_soup.select_one('meta[name="_csrf"]')
+        header_node = page_soup.select_one('meta[name="_csrf_header"]')
+        if not token_node or not token_node.get("content"):
+            raise RuntimeError("딜사이트 CSRF 토큰을 찾지 못했습니다.")
+        csrf_header = header_node.get("content", "X-XSRF-TOKEN") if header_node else "X-XSRF-TOKEN"
+        api_headers = {
+            **HEADERS,
+            "Accept": "application/json",
+            "Referer": page_url,
+            "X-Requested-With": "XMLHttpRequest",
+            csrf_header: token_node["content"],
+        }
+        api_response = session.get(api_url, params=params, headers=api_headers, timeout=20)
+        api_response.raise_for_status()
+        return api_response.json().get("articlesHtml", "")
+
+    cookie_jar = http.cookiejar.CookieJar()
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookie_jar))
+    with opener.open(urllib.request.Request(page_url, headers=HEADERS), timeout=20) as response:
+        page_text = decode_response_body(response.read(), response.headers.get_content_charset())
+    page_soup = BeautifulSoup(page_text, "html.parser")
+    token_node = page_soup.select_one('meta[name="_csrf"]')
+    header_node = page_soup.select_one('meta[name="_csrf_header"]')
+    if not token_node or not token_node.get("content"):
+        raise RuntimeError("딜사이트 CSRF 토큰을 찾지 못했습니다.")
+    csrf_header = header_node.get("content", "X-XSRF-TOKEN") if header_node else "X-XSRF-TOKEN"
+    request_url = f"{api_url}?{urllib.parse.urlencode(params)}"
+    api_headers = {
+        **HEADERS,
+        "Accept": "application/json",
+        "Referer": page_url,
+        "X-Requested-With": "XMLHttpRequest",
+        csrf_header: token_node["content"],
+    }
+    with opener.open(urllib.request.Request(request_url, headers=api_headers), timeout=20) as response:
+        payload = json.loads(decode_response_body(response.read(), response.headers.get_content_charset()))
+    return payload.get("articlesHtml", "")
+
+def parse_dealsite_category_items(articles_html, category_name):
+    items = []
+    seen_article_ids = set()
+    soup = BeautifulSoup(articles_html or "", "html.parser")
+    for node in soup.select(".mnm-news"):
+        title_node = node.select_one("a.ss-news-top-title[href]")
+        if not title_node:
+            continue
+        link = urllib.parse.urljoin("https://dealsite.co.kr", title_node.get("href", ""))
+        article_match = re.search(r"/articles/(\d+)", urllib.parse.urlparse(link).path)
+        if not article_match or article_match.group(1) in seen_article_ids:
+            continue
+        title = normalize_space(title_node.get_text(" ", strip=True))
+        date_nodes = node.select(".mnm-news-info span")
+        date_text = normalize_space(date_nodes[-1].get_text(" ", strip=True)) if date_nodes else ""
+        article_date = parse_datetime_string(date_text)
+        if not title or not article_date:
+            continue
+        summary_node = node.select_one("a.mnm-news-txt")
+        description = normalize_space(summary_node.get_text(" ", strip=True)) if summary_node else ""
+        seen_article_ids.add(article_match.group(1))
+        items.append({
+            "title": title,
+            "link": link,
+            "date": article_date,
+            "description": description,
+            "source": "딜사이트",
+            "_dealsite_category": category_name,
+            "_article_id": article_match.group(1),
+        })
+    return items
+
+def score_dealsite_candidate(item, category_config):
+    text = normalize_space(f"{item.get('title', '')} {item.get('description', '')}").casefold()
+    keyword_score = 0
+    for index, keyword in enumerate(category_config.get("keywords", ())):
+        if keyword.casefold() in text:
+            keyword_score += 10 if index < 8 else 4
+    if any(marker in text for marker in ("기자수첩", "칼럼", "인사", "부고")):
+        keyword_score -= 25
+    ranking_item = {
+        "title": item.get("title", ""),
+        "source": "딜사이트",
+        "_summary_source": item.get("description", ""),
+    }
+    return score_issue_candidate(ranking_item) + keyword_score
+
+def select_balanced_dealsite_candidates(category_candidates, limit=MAX_NEWS_PER_CATEGORY):
+    ranked_by_category = {}
+    for config in DEALSITE_CATEGORY_CONFIGS:
+        name = config["name"]
+        ranked = sorted(
+            category_candidates.get(name, []),
+            key=lambda item: (score_dealsite_candidate(item, config), item.get("date")),
+            reverse=True,
+        )
+        for item in ranked:
+            item["_dealsite_score"] = score_dealsite_candidate(item, config)
+        ranked_by_category[name] = ranked
+
+    selected = []
+    selected_ids = set()
+    category_order = sorted(
+        DEALSITE_CATEGORY_CONFIGS,
+        key=lambda config: len(ranked_by_category.get(config["name"], [])),
+    )
+    for config in category_order:
+        for item in ranked_by_category.get(config["name"], []):
+            if item["_article_id"] in selected_ids:
+                continue
+            selected.append(item)
+            selected_ids.add(item["_article_id"])
+            break
+
+    remainder = sorted(
+        (
+            item
+            for ranked in ranked_by_category.values()
+            for item in ranked
+            if item["_article_id"] not in selected_ids
+        ),
+        key=lambda item: (item.get("_dealsite_score", 0), item.get("date")),
+        reverse=True,
+    )
+    for item in remainder:
+        if len(selected) >= limit:
+            break
+        if item["_article_id"] in selected_ids:
+            continue
+        selected.append(item)
+        selected_ids.add(item["_article_id"])
+    return selected[:limit]
+
+def build_dealsite_news_item(item, seen_links, seen_titles):
+    title = normalize_space(item.get("title", ""))
+    link = clean_tracking_url(item.get("link", ""))
+    article_date = item.get("date")
+    if not title or not link or not article_date or link in seen_links:
+        return None
+    article_html = ""
+    soup = None
+    try:
+        article_html = fetch_text(link, timeout=20)
+        soup = BeautifulSoup(article_html, "html.parser")
+        title = clean_source_article_title(extract_page_title(soup) or title, "딜사이트")
+    except Exception as exc:
+        print(f"  - 딜사이트 article fetch failed ({link}): {exc}")
+    body = extract_best_article_text(soup) if soup else ""
+    summary_source = body if len(body) >= 180 else item.get("description", "")
+    category_name = item.get("_dealsite_category", "")
+    context = f"딜사이트 {category_name} 카테고리의 주요 거래 및 자본시장 기사입니다."
+    seen_links.add(link)
+    seen_titles.append(title)
+    return {
+        "title": title,
+        "link": link,
+        "date": article_date.strftime("%Y.%m.%d"),
+        "source": "딜사이트",
+        "summary": make_three_line_summary(title, summary_source, "딜사이트", context),
+        "_summary_source": summary_source,
+        "_summary_context": context,
+        "_dealsite_category": category_name,
+        "_dealsite_score": item.get("_dealsite_score", 0),
+    }
+
+def fetch_dealsite_vcac_source(target_date, seen_links, seen_titles):
+    category_candidates = {}
+    for config in DEALSITE_CATEGORY_CONFIGS:
+        category_name = config["name"]
+        try:
+            exact_html = fetch_dealsite_category_html(config["code"], target_date, target_date)
+            candidates = parse_dealsite_category_items(exact_html, category_name)
+            category_candidates[category_name] = candidates
+        except Exception as exc:
+            print(f"  - 딜사이트/{category_name} 수집 실패: {exc}")
+            category_candidates[category_name] = []
+
+    selected = select_balanced_dealsite_candidates(category_candidates)
+    news_items = []
+    for item in selected:
+        news_item = build_dealsite_news_item(item, seen_links, seen_titles)
+        if news_item:
+            news_items.append(news_item)
+    category_counts = {
+        config["name"]: sum(1 for item in news_items if item.get("_dealsite_category") == config["name"])
+        for config in DEALSITE_CATEGORY_CONFIGS
+    }
+    print(f"  - 딜사이트: 대체투자 {category_counts['대체투자']}건 / 인수합병 {category_counts['인수합병']}건")
+    return news_items
+
 def fetch_vcac_sources(target_date, seen_links, seen_titles):
     source_news = {source_name: [] for source_name in VCAC_SOURCE_PRIORITY}
     for config in VCAC_LISTING_SOURCE_CONFIGS:
         source_news[config["source"]] = fetch_vcac_listing_source(config, target_date, seen_links, seen_titles)
     for config in VCAC_RSS_SOURCE_CONFIGS:
         source_news[config["source"]] = fetch_vcac_rss_source(config, target_date, seen_links, seen_titles)
+    source_news["딜사이트"] = fetch_dealsite_vcac_source(target_date, seen_links, seen_titles)
     return {
         "id": "vcac",
-        "label": "VC/AC",
+        "label": "VC/AC/대체투자",
         "groups": [
             {
-                "title": "VC/AC",
+                "title": "VC/AC/대체투자",
                 "categories": [
-                    {"name": source_name, "news": source_news.get(source_name, [])}
+                    {
+                        "name": source_name,
+                        "news": source_news.get(source_name, []),
+                        "preserve_selection": source_name == "딜사이트",
+                    }
                     for source_name in VCAC_SOURCE_PRIORITY
                 ],
             }
@@ -3291,17 +4434,15 @@ def fetch_trellis_news(target_date, seen_links, seen_titles):
         print(f"  - Trellis failed: {e}")
     return news_items
 
-def fetch_google_news_for_category(target_date, section_id, group_title, category, trend_keywords, seen_links, seen_titles, limit=MAX_NEWS_PER_CATEGORY, forced_source=None):
-    news_list = []
-    category_story_cache = []
+def fetch_google_news_for_category(target_date, section_id, group_title, category, seen_links, seen_titles, previous_titles=None, limit=MAX_NEWS_PER_CATEGORY, forced_source=None):
+    candidates = []
+    candidate_links = set()
+    existing_titles = list(seen_titles)
     target_dot = target_date.strftime("%Y.%m.%d")
     start_date = target_date.strftime("%Y-%m-%d")
     end_date = (target_date + timedelta(days=1)).strftime("%Y-%m-%d")
-    dynamic_keywords = get_trend_keywords_for_category(trend_keywords, section_id, group_title, category["name"])
-    trend_anchor = category.get("trend_anchor") or category.get("trend_query") or f"{group_title} {category['name']}"
-    enhanced_query = enhance_query_with_trends(category["query"], trend_anchor, dynamic_keywords)
     try:
-        search_query = f"({enhanced_query})"
+        search_query = f"({category['query']})"
         if section_id == "macro":
             search_query = f"{search_query} ({MACRO_ALLOWED_SOURCE_QUERY})"
         query = urllib.parse.quote(
@@ -3309,7 +4450,7 @@ def fetch_google_news_for_category(target_date, section_id, group_title, categor
         )
         rss_text = fetch_text(f"https://news.google.com/rss/search?q={query}&hl=ko&gl=KR")
         for item in ElementTree.fromstring(rss_text).findall(".//item"):
-            if len(news_list) >= limit:
+            if len(candidates) >= MAX_CANDIDATE_NEWS_PER_CATEGORY:
                 break
             title, source_name = parse_google_news_item(item)
             source_name = normalize_source_name(source_name)
@@ -3319,7 +4460,7 @@ def fetch_google_news_for_category(target_date, section_id, group_title, categor
             except:
                 continue
             desc_text = strip_tags(item.findtext("description", ""))
-            if section_id == "macro" and not is_macro_news_candidate(group_title, category["name"], title, desc_text):
+            if section_id == "macro" and not is_macro_news_match(group_title, category["name"], title):
                 continue
             google_link = item.findtext("link", "")
             article_link = resolve_google_news_url(google_link)
@@ -3333,39 +4474,58 @@ def fetch_google_news_for_category(target_date, section_id, group_title, categor
                 continue
             if should_skip_search_item(section_id, category["name"], source_name, title, link):
                 continue
-            if link in seen_links or google_link in seen_links or any(is_similar_title(title, st) for st in seen_titles):
+            if link in seen_links or google_link in seen_links or link in candidate_links or google_link in candidate_links:
+                continue
+            if any(is_similar_title(title, existing, threshold=0.40) for existing in existing_titles):
                 continue
             article_body = fetch_article_body_text(article_link)
             summary_source = article_body if len(article_body) >= 180 else desc_text
-            if section_id == "macro" and not is_macro_news_match(group_title, category["name"], title, desc_text, article_body):
-                continue
-            if any(
-                is_duplicate_story(title, summary_source, cached["title"], cached["text"])
-                for cached in category_story_cache
-            ):
-                continue
-
-            seen_links.add(link)
-            seen_links.add(google_link)
-            seen_titles.append(title)
-            category_story_cache.append({"title": title, "text": summary_source})
-            news_list.append({
+            candidate_links.add(link)
+            candidate_links.add(google_link)
+            candidates.append({
                 "title": title,
                 "link": link,
                 "source": forced_source or source_name,
                 "date": target_dot,
-                "summary": make_three_line_summary(title, summary_source, source_name, category["context"]),
                 "_summary_source": summary_source,
                 "_summary_context": category["context"],
+                "_google_link": google_link,
             })
     except Exception as e:
         print("수집 오류:", e)
-    return dedupe_news_items(news_list)
+    ranked = cluster_and_rank_issues(candidates, previous_titles)
+    ranked = refine_issue_ranking_with_gemini(ranked, section_id, group_title, category["name"])
+    eligible = [item for item in ranked if item.get("_ai_relevance", 100) >= 45]
+    selected = (eligible or ranked)[:limit]
+    for news in selected:
+        news["summary"] = make_three_line_summary(
+            news.get("title", ""),
+            news.get("_summary_source", ""),
+            news.get("source", ""),
+            category["context"],
+        )
+        seen_links.add(news.get("link", ""))
+        if news.get("_google_link"):
+            seen_links.add(news["_google_link"])
+        seen_titles.append(news.get("title", ""))
+    if candidates:
+        print(
+            f"  - {group_title}/{category['name']}: 후보 {len(candidates)}건 → "
+            f"이슈 {len(ranked)}개 → 주요 뉴스 {len(selected)}건"
+        )
+    return selected
 
-def fetch_search_sections(target_date, seen_links, seen_titles, trend_keywords=None):
+def fetch_search_sections(target_date, seen_links, seen_titles):
+    previous_titles = load_recent_briefing_titles(target_date)
     results = [
-        fetch_vcac_sources(target_date, seen_links, seen_titles),
-        fetch_ai_sources(target_date, seen_links, seen_titles),
+        rank_existing_section_categories(
+            fetch_vcac_sources(target_date, seen_links, seen_titles),
+            previous_titles,
+        ),
+        rank_existing_section_categories(
+            fetch_ai_sources(target_date, seen_links, seen_titles),
+            previous_titles,
+        ),
     ]
     for section in SEARCH_SECTIONS:
         section_result = {"id": section["id"], "label": section["label"], "groups": []}
@@ -3377,9 +4537,9 @@ def fetch_search_sections(target_date, seen_links, seen_titles, trend_keywords=N
                     section["id"],
                     group["title"],
                     category,
-                    trend_keywords or {},
                     seen_links,
                     seen_titles,
+                    previous_titles,
                 )
                 group_result["categories"].append({"name": category["name"], "news": news_list})
             section_result["groups"].append(group_result)
@@ -3389,7 +4549,7 @@ def fetch_search_sections(target_date, seen_links, seen_titles, trend_keywords=N
 # ==========================================
 # 🌟 HTML 렌더링
 # ==========================================
-def render_html(target_date, domestic_impact, global_impact, search_sections, target_dash, dashboard, strong_theme, chart_data, industry_trend=None):
+def render_html(target_date, domestic_impact, global_impact, search_sections, target_dash, dashboard, strong_theme, chart_data, industry_trend=None, industry_source_trend=None):
     target_dot = target_date.strftime("%Y.%m.%d")
     current_kst = datetime.now(KST)
     updated_at = current_kst.strftime("%Y.%m.%d %H:%M")
@@ -3400,7 +4560,10 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
     counts["indicators"] = 4
     counts["impact"] = len(domestic_impact) + len(global_impact)
     counts["theme"] = 1 if strong_theme and strong_theme["name"] != "강세테마 대기중" else 0
-    counts["industry"] = 1 if industry_trend and industry_trend.get("title") else 0
+    industry_items = industry_trend if isinstance(industry_trend, list) else (industry_trend or {}).get("items", [])
+    industry_source_items = industry_source_trend if isinstance(industry_source_trend, list) else (industry_source_trend or {}).get("items", [])
+    counts["industrytrend"] = len(industry_source_items)
+    counts["industry"] = len(industry_items)
 
     chart_json = json.dumps(chart_data, ensure_ascii=False)
     esc = html.escape
@@ -3453,48 +4616,110 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
             return f'<div class="empty-state">{esc(empty_message)}</div>'
         return "".join(render_news_card(news) for news in news_items)
 
-    def render_industry_trend_section(item):
-        if not item or not item.get("title"):
-            body = '<div class="empty-state">수집된 산업 트랜드 차트가 없습니다.</div>'
-        else:
+    def render_industry_trend_section(items):
+        items = items if isinstance(items, list) else (items or {}).get("items", [])
+
+        def render_industry_item(item):
             chart_img = ""
-            if item.get("chart_image_url"):
+            if item.get("source") == "McKinsey" and item.get("chart_image_url"):
                 chart_img = (
                     f'<div class="industry-chart-image">'
                     f'<img src="{esc(item.get("chart_image_url", ""))}" alt="{esc(item.get("chart_image_alt") or item.get("title", ""))}" loading="lazy">'
                     f'</div>'
                 )
-            report_link = ""
-            if item.get("report_url"):
-                report_label = item.get("report_title") or "원본 보고서 보기"
-                report_link = (
-                    f'<a class="industry-report-link" href="{esc(item.get("report_url", ""))}" target="_blank" rel="noopener noreferrer">'
-                    f'원본 보고서 보기: {esc(report_label)}'
-                    f'</a>'
-                )
-            body = f"""
-                <article class="industry-card">
-                    <div class="industry-meta">
-                        <span>McKinsey · The Week in Charts</span>
-                        <span>{esc(item.get("date", ""))}</span>
-                    </div>
-                    <h3>{esc(item.get("title", ""))}</h3>
-                    <p class="industry-description">{esc(item.get("description_ko") or item.get("description_en") or "")}</p>
+            summary_lines = item.get("summary", [])
+            summary_html = "".join(f"<li>{esc(str(line))}</li>" for line in summary_lines)
+            description = item.get("description_ko") or item.get("description_en") or ""
+            if not summary_html:
+                summary_html = f"<li>{esc(description)}</li>" if description else ""
+            source_label = item.get("source", "MBB")
+            if item.get("source") == "McKinsey":
+                report_link = ""
+                if item.get("report_url"):
+                    report_label = item.get("report_title") or "원본 보고서 보기"
+                    report_link = (
+                        f'<a class="industry-report-link" href="{esc(item.get("report_url", ""))}" target="_blank" rel="noopener noreferrer">'
+                        f'원본 보고서 보기: {esc(report_label)}'
+                        f'</a>'
+                    )
+                return f"""
+                    <article class="industry-card">
+                        <div class="industry-meta">
+                            <span>McKinsey · The Week in Charts</span>
+                            <span>{esc(item.get("date", ""))}</span>
+                        </div>
+                        <h3>{esc(item.get("title", ""))}</h3>
+                        <p class="industry-description">{esc(description)}</p>
+                        {chart_img}
+                        <div class="industry-source-note">Source: {esc(source_label)}</div>
+                        <div class="industry-actions">
+                            <a class="industry-report-link secondary" href="{esc(item.get("source_url", ""))}" target="_blank" rel="noopener noreferrer">Week in Charts 원문 보기</a>
+                            {report_link}
+                        </div>
+                    </article>
+                """
+            return f"""
+                <article class="news-card mbb-news-card">
+                    <div class="news-title"><a href="{esc(item.get("source_url", ""))}" target="_blank" rel="noopener noreferrer">{esc(item.get("title", ""))}</a></div>
+                    <div class="news-date">출처: {esc(source_label)} | 발행일: {esc(item.get("date", ""))}</div>
+                    <ul class="news-summary industry-summary">{summary_html}</ul>
                     {chart_img}
-                    <div class="industry-source-note">Source: {esc(item.get("source", "McKinsey"))}</div>
-                    <div class="industry-actions">
-                        <a class="industry-report-link secondary" href="{esc(item.get("source_url", ""))}" target="_blank" rel="noopener noreferrer">Week in Charts 원문 보기</a>
-                        {report_link}
-                    </div>
                 </article>
             """
+
+        if not items:
+            body = '<div class="empty-state">해당 날짜에 발행된 MBB 인사이트가 없습니다.</div>'
+        else:
+            source_order = ("McKinsey", "Bain & Company", "BCG")
+            source_groups = {source: [] for source in source_order}
+            for item in items:
+                source_groups.setdefault(item.get("source", "MBB"), []).append(item)
+            ordered_sources = list(source_order) + [
+                source for source in source_groups if source not in source_order
+            ]
+            default_source = next((source for source in ordered_sources if source_groups.get(source)), ordered_sources[0])
+            mbb_branding = {
+                "McKinsey": ("mckinsey", '<span class="impact-source-logo mbb-wordmark mbb-wordmark-mckinsey">McKinsey <small>&amp; Company</small></span>'),
+                "Bain & Company": ("bain", '<span class="impact-source-logo mbb-logo-image"><img src="https://www.bain.com/contentassets/0b88e3e10a7b4592809517c28b75847e/logo_red_bain.svg" alt="Bain &amp; Company 로고" loading="lazy"></span>'),
+                "BCG": ("bcg", '<span class="impact-source-logo mbb-wordmark mbb-wordmark-bcg">Boston Consulting Group</span>'),
+            }
+            source_buttons = []
+            source_panels = []
+            for source in ordered_sources:
+                key = f"industry-{source_key(source)}"
+                active_class = " active" if source == default_source else ""
+                brand_class, logo_html = mbb_branding.get(
+                    source,
+                    ("generic", f'<span class="impact-source-logo fallback-logo">{esc(source)}</span>'),
+                )
+                panel_logo_html = logo_html.replace("impact-source-logo", "impact-source-logo panel-logo", 1)
+                source_buttons.append(
+                    f'<button class="impact-source-card impact-brand-{esc(brand_class)}{active_class}" data-source-target="{esc(key)}">'
+                    f'{logo_html}'
+                    f'<strong>{esc(source)}</strong>'
+                    f'<span class="impact-source-count">{len(source_groups.get(source, []))}건</span>'
+                    f'</button>'
+                )
+                source_body = "".join(render_industry_item(item) for item in source_groups.get(source, []))
+                if not source_body:
+                    source_body = '<div class="empty-state">해당 날짜에 발행된 인사이트가 없습니다.</div>'
+                source_panels.append(
+                    f'<div class="impact-news-panel{active_class}" data-source-panel="{esc(key)}">'
+                    f'<div class="impact-panel-head">{panel_logo_html}<h3>{esc(source)}</h3></div>'
+                    f'<div class="industry-list">{source_body}</div>'
+                    f'</div>'
+                )
+            body = (
+                f'<div class="impact-source-strip mbb-source-strip">{"".join(source_buttons)}</div>'
+                f'<div class="impact-news-stage">{"".join(source_panels)}</div>'
+            )
         return f"""
-        <section id="section-industry" class="content-section">
+        <section id="section-industry" class="content-section source-tab-section">
             <div class="panel-shell">
                 <div class="panel-header">
                     <div>
-                        <div class="panel-kicker">Industry Trend</div>
-                        <h2>산업 트랜드</h2>
+                        <div class="panel-kicker">MBB Insights</div>
+                        <h2>MBB 인사이트</h2>
                     </div>
                     <div class="panel-count">{counts.get("industry", 0)}건</div>
                 </div>
@@ -3570,7 +4795,6 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
         "Bloomberg Green": ("bloomberg", "https://www.bloomberg.com/favicon.ico"),
         "CTVC": ("ctvc", "https://www.ctvc.co/assets/img/logo.svg?v=af7ed10043"),
         "ImpactAlpha": ("impactalpha", "https://impactalpha.com/wp-content/themes/impactalpha/assets/images/ia-subtitle-logo-color.svg"),
-        "Powerstack": ("powerstack", "https://media.beehiiv.com/cdn-cgi/image/format=auto,onerror=redirect/uploads/asset/file/19ec0b41-333b-4831-92b4-af055d65d058/Full.png"),
         "Causeartist": ("causeartist", "https://causeartist.com/favicon.png"),
     }
 
@@ -3682,14 +4906,14 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
 
     vcac_section_html = render_source_tab_section(
         "vcac",
-        "VC/AC",
+        "VC/AC/대체투자",
         "Startup & Capital",
-        "VC/AC",
+        "VC/AC/대체투자",
         vcac_groups,
         VCAC_SOURCE_PRIORITY,
         VCAC_BRANDING,
-        "수집된 VC/AC 소스가 없습니다.",
-        "수집된 VC/AC 뉴스가 없습니다.",
+        "수집된 VC/AC/대체투자 소스가 없습니다.",
+        "수집된 VC/AC/대체투자 뉴스가 없습니다.",
         show_empty_sources=True,
     )
 
@@ -3706,7 +4930,24 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
         show_empty_sources=True,
     )
 
-    industry_section_html = render_industry_trend_section(industry_trend or {})
+    industry_source_groups = {}
+    for item in industry_source_items:
+        industry_source_groups.setdefault(item.get("source", "기타"), []).append(item)
+
+    industry_source_section_html = render_source_tab_section(
+        "industrytrend",
+        "산업트랜드",
+        "Industry Trend",
+        "산업트랜드",
+        industry_source_groups,
+        INDUSTRY_SOURCE_PRIORITY,
+        INDUSTRY_SOURCE_BRANDING,
+        "수집된 산업트랜드 소스가 없습니다.",
+        "수집된 산업트랜드 기사가 없습니다.",
+        show_empty_sources=True,
+    )
+
+    industry_section_html = render_industry_trend_section(industry_trend or [])
 
     theme_rate = strong_theme.get("rate", "-")
     theme_rate_class = "up" if "+" in theme_rate else "down" if "-" in theme_rate else "neutral"
@@ -4301,9 +5542,9 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
         .impact-brand-bloomberg { box-shadow: inset 0 4px 0 #65a30d; }
         .impact-brand-ctvc { box-shadow: inset 0 4px 0 #7c3aed; }
         .impact-brand-impactalpha { box-shadow: inset 0 4px 0 #ec4899; }
-        .impact-brand-powerstack { box-shadow: inset 0 4px 0 #ea580c; }
         .impact-brand-causeartist { box-shadow: inset 0 4px 0 #0f766e; }
         .impact-brand-unicorn { box-shadow: inset 0 4px 0 #111827; }
+        .impact-brand-dealsite { box-shadow: inset 0 4px 0 #0f172a; }
         .impact-brand-recipe { box-shadow: inset 0 4px 0 #f59e0b; }
         .impact-brand-platum { box-shadow: inset 0 4px 0 #2563eb; }
         .impact-brand-venturesquare { box-shadow: inset 0 4px 0 #10b981; }
@@ -4312,6 +5553,44 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
         .impact-brand-marketingtech { box-shadow: inset 0 4px 0 #ec4899; }
         .impact-brand-batch { box-shadow: inset 0 4px 0 #0f766e; }
         .impact-brand-batch-weekly { box-shadow: inset 0 4px 0 #f59e0b; }
+        .impact-brand-mckinsey { box-shadow: inset 0 4px 0 #003b5c; }
+        .impact-brand-bain { box-shadow: inset 0 4px 0 #c41230; }
+        .impact-brand-bcg { box-shadow: inset 0 4px 0 #177663; }
+
+        .mbb-source-strip {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .mbb-wordmark {
+            min-height: 42px;
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-size: 1.28rem;
+            line-height: 1.05;
+            letter-spacing: -0.045em;
+            color: #173042;
+        }
+
+        .mbb-wordmark small {
+            display: block;
+            margin-left: 5px;
+            font-size: 0.68rem;
+            letter-spacing: -0.02em;
+        }
+
+        .mbb-wordmark-bcg {
+            max-width: 185px;
+            color: #177663;
+            font-weight: 800;
+        }
+
+        .mbb-logo-image img {
+            max-width: 190px;
+            max-height: 42px;
+        }
+
+        #section-industry .impact-news-stage {
+            min-height: 0;
+        }
 
         .impact-news-stage {
             background: var(--bg-panel-strong);
@@ -4462,6 +5741,18 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
             box-shadow: var(--shadow-card);
             display: grid;
             gap: 18px;
+        }
+
+        .industry-list {
+            display: block;
+        }
+
+        .industry-summary {
+            margin: 0;
+        }
+
+        .mbb-news-card .industry-chart-image {
+            margin-top: 16px;
         }
 
         .industry-meta {
@@ -4807,6 +6098,7 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
                 {vcac_section_html}
                 {ai_section_html}
                 {generic_sections_html}
+                {industry_source_section_html}
                 {industry_section_html}
                 {theme_section_html}
             </main>
@@ -5027,6 +6319,7 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
         .replace("{impact_section_html}", impact_section_html)
         .replace("{vcac_section_html}", vcac_section_html)
         .replace("{industry_section_html}", industry_section_html)
+        .replace("{industry_source_section_html}", industry_source_section_html)
         .replace("{ai_section_html}", ai_section_html)
         .replace("{generic_sections_html}", generic_sections_html)
         .replace("{theme_section_html}", theme_section_html)
@@ -5043,14 +6336,11 @@ def main():
     seen_links, seen_titles = set(), [] 
     env = load_env()
     configure_summary_generator(env)
-    trend_keywords = get_or_refresh_trend_keywords(args, target_date, env)
-    if args.refresh_keywords_only:
-        print(f"[Trend] 키워드 파일만 갱신했습니다: {TREND_KEYWORDS_FILE}")
-        return
     
     # 1. 대시보드 및 강세테마 데이터 수집
     dashboard_data = fetch_dashboard_data()
     strong_theme = fetch_strong_theme()
+    industry_source_trend = fetch_industry_source_trend()
     industry_trend = fetch_industry_trend(target_date)
     dashboard_data["theme_name"] = strong_theme["name"]
 
@@ -5127,12 +6417,15 @@ def main():
     except: pass
 
     all_impact = impact_news + global_impact + trellis_news + causeartist_news + socialimpact_news + eroun_news + newsletter_news
+    all_impact = rank_news_by_source(all_impact, load_recent_briefing_titles(target_date))
+    search_sections = fetch_search_sections(target_date, seen_links, seen_titles)
+    selected_count = count_selected_news(strong_theme, all_impact, search_sections)
+    print(f"[Selection] 최종 기사 {selected_count}건")
+
     domestic_impact, global_impact = [], []
     for news in all_impact:
         if is_domestic_news(news["title"], news["summary"], news["source"]): domestic_impact.append(news)
         else: global_impact.append(news)
-
-    search_sections = fetch_search_sections(target_date, seen_links, seen_titles, trend_keywords)
     agent_c_report = None
     if agent_c is not None:
         try:
@@ -5158,7 +6451,10 @@ def main():
             agent_c_report = None
 
     if not agent_c_report or not agent_c_report.get("applied", 0):
-        apply_ai_summaries_to_news(strong_theme, domestic_impact, global_impact, search_sections)
+        apply_ai_summaries_to_news(strong_theme, domestic_impact, global_impact, search_sections, industry_trend, industry_source_trend)
+    else:
+        # Agent C는 일반 뉴스만 다루므로 새 MBB 기사 요약은 별도로 같은 AI 요약기에 전달한다.
+        apply_ai_summaries_to_news({}, [], [], [], industry_trend, industry_source_trend)
 
     # 4. 아카이브 및 HTML 생성
     archive_files = list(BASE_DIR.glob("archive_*.html"))
@@ -5167,7 +6463,18 @@ def main():
     dates.sort(reverse=True)
     ARCHIVE_JS_FILE.write_text(f"const archiveDates = {json.dumps(dates)};", encoding="utf-8")
 
-    html_content = render_html(target_date, domestic_impact, global_impact, search_sections, target_dash, dashboard_data, strong_theme, chart_data, industry_trend)
+    html_content = render_html(
+        target_date,
+        domestic_impact,
+        global_impact,
+        search_sections,
+        target_dash,
+        dashboard_data,
+        strong_theme,
+        chart_data,
+        industry_trend,
+        industry_source_trend,
+    )
     share_html_content = build_shareable_html(html_content)
     OUTPUT_FILE.write_text(html_content, encoding="utf-8")
     SHARE_OUTPUT_FILE.write_text(share_html_content, encoding="utf-8")

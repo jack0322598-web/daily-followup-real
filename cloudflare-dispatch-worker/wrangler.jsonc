@@ -1,0 +1,18 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "jack0322598-news-scraper-dispatcher",
+  "main": "src/index.js",
+  "compatibility_date": "2026-06-17",
+  "workers_dev": true,
+  "triggers": {
+    "crons": [
+      "0 22 * * *"
+    ]
+  },
+  "vars": {
+    "GITHUB_REPOSITORY": "jack0322598-web/daily-followup-real",
+    "GITHUB_WORKFLOW_FILE": "daily-update-v2.yml",
+    "GITHUB_REF": "main",
+    "TIMEZONE": "Asia/Seoul"
+  }
+}

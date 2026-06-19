@@ -1,0 +1,1379 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>오늘의 마켓 & 뉴스 브리핑</title>
+    <script src="archive_list.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+    <style>
+        :root {
+            --bg-main: #f4f0ea;
+            --bg-panel: rgba(255, 255, 255, 0.88);
+            --bg-panel-strong: #ffffff;
+            --text-main: #13181f;
+            --text-muted: #6f7683;
+            --border-strong: rgba(116, 148, 173, 0.42);
+            --border-soft: rgba(116, 148, 173, 0.22);
+            --shadow-soft: 0 18px 40px rgba(68, 92, 112, 0.09);
+            --shadow-card: 0 12px 26px rgba(68, 92, 112, 0.08);
+            --accent-teal: #0ea5b7;
+            --accent-blue: #2563eb;
+            --accent-green: #15803d;
+            --accent-amber: #b45309;
+            --accent-rose: #be185d;
+            --accent-slate: #334155;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            min-height: 100vh;
+            font-family: 'Inter', 'Noto Sans KR', sans-serif;
+            color: var(--text-main);
+            background:
+                radial-gradient(circle at top left, rgba(14, 165, 183, 0.08), transparent 28%),
+                radial-gradient(circle at top right, rgba(37, 99, 235, 0.08), transparent 24%),
+                linear-gradient(180deg, #f8f4ee 0%, var(--bg-main) 100%);
+            padding: 28px;
+        }
+
+        button {
+            font: inherit;
+        }
+
+        .page-shell {
+            max-width: 1500px;
+            margin: 0 auto;
+        }
+
+        .top-banner {
+            display: grid;
+            grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+            gap: 22px;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .brand-box {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 0;
+        }
+
+        .brand-logo {
+            display: inline-flex;
+            flex-direction: column;
+            gap: 0;
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-size: clamp(1.9rem, 3vw, 2.45rem);
+            font-weight: 800;
+            line-height: 0.88;
+            letter-spacing: -0.04em;
+        }
+
+        .brand-logo span:last-child {
+            display: inline-flex;
+            align-items: flex-end;
+            gap: 8px;
+        }
+
+        .brand-dot {
+            width: 14px;
+            height: 14px;
+            border-radius: 999px;
+            background: var(--accent-teal);
+            box-shadow: 0 0 0 4px rgba(14, 165, 183, 0.18);
+        }
+
+        .title-box {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: end;
+            gap: 18px;
+        }
+
+        .title-box h1 {
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-size: clamp(1.95rem, 4vw, 3.05rem);
+            line-height: 1.02;
+            letter-spacing: -0.04em;
+            font-weight: 700;
+        }
+
+        .title-meta {
+            color: var(--text-muted);
+            font-size: 0.88rem;
+            line-height: 1.5;
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        .calendar-box {
+            padding: 18px 18px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .sidebar-calendar {
+            background: var(--bg-panel);
+            border: 1px solid var(--border-strong);
+            border-radius: 24px;
+            box-shadow: var(--shadow-soft);
+            backdrop-filter: blur(14px);
+        }
+
+        .calendar-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .calendar-month-label {
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-size: 1.55rem;
+            font-weight: 700;
+            letter-spacing: -0.03em;
+        }
+
+        .calendar-nav {
+            display: flex;
+            gap: 8px;
+        }
+
+        .calendar-nav button {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border: 1px solid var(--border-soft);
+            background: #ffffff;
+            cursor: pointer;
+            color: var(--text-main);
+            transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+        }
+
+        .calendar-nav button:hover {
+            transform: translateY(-1px);
+            border-color: var(--border-strong);
+            background: #f8fbfd;
+        }
+
+        .calendar-weekdays,
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, minmax(0, 1fr));
+            gap: 8px;
+        }
+
+        .calendar-weekdays span {
+            text-align: center;
+            font-size: 0.83rem;
+            font-weight: 700;
+            color: var(--text-muted);
+        }
+
+        .calendar-day {
+            height: 42px;
+            border: 1px solid transparent;
+            border-radius: 50%;
+            background: transparent;
+            color: var(--text-main);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .calendar-day.is-muted {
+            color: #b0b7c3;
+        }
+
+        .calendar-day.is-available:hover {
+            border-color: rgba(14, 165, 183, 0.32);
+            background: rgba(14, 165, 183, 0.08);
+        }
+
+        .calendar-day.is-selected {
+            background: #0f6bd8;
+            color: #ffffff;
+            box-shadow: 0 12px 18px rgba(15, 107, 216, 0.22);
+        }
+
+        .calendar-day:disabled {
+            cursor: default;
+        }
+
+        .calendar-caption {
+            font-size: 0.82rem;
+            color: var(--text-muted);
+            line-height: 1.45;
+        }
+
+        .workspace {
+            display: grid;
+            grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+            gap: 22px;
+            align-items: start;
+        }
+
+        .sidebar {
+            position: sticky;
+            top: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .sidebar-tab {
+            border: 1px solid var(--border-strong);
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.78);
+            min-height: 64px;
+            padding: 14px 20px;
+            text-align: center;
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-size: 1.25rem;
+            font-weight: 700;
+            letter-spacing: -0.03em;
+            cursor: pointer;
+            transition: transform 0.22s ease, background 0.22s ease, color 0.22s ease, box-shadow 0.22s ease;
+        }
+
+        .sidebar-tab:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 22px rgba(22, 30, 37, 0.08);
+        }
+
+        .sidebar-tab.active {
+            background: linear-gradient(135deg, #2da9b8 0%, #6e8ef7 100%);
+            color: #ffffff;
+            border-color: transparent;
+            box-shadow: 0 14px 26px rgba(75, 122, 161, 0.22);
+        }
+
+        .main-stage {
+            min-width: 0;
+        }
+
+        .content-section {
+            display: none;
+            animation: fadeIn 0.35s ease;
+        }
+
+        .content-section.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(8px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .panel-shell {
+            background: var(--bg-panel);
+            border: 1px solid var(--border-strong);
+            border-radius: 30px;
+            padding: 24px;
+            box-shadow: var(--shadow-soft);
+            backdrop-filter: blur(14px);
+        }
+
+        .panel-header {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 16px;
+            padding-bottom: 18px;
+            margin-bottom: 18px;
+            border-bottom: 1px solid var(--border-soft);
+        }
+
+        .panel-kicker {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.16em;
+            margin-bottom: 6px;
+        }
+
+        .panel-header h2 {
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-size: clamp(1.8rem, 3vw, 2.55rem);
+            letter-spacing: -0.04em;
+            line-height: 1.04;
+        }
+
+        .panel-count {
+            border: 1px solid var(--border-soft);
+            background: rgba(255, 255, 255, 0.76);
+            border-radius: 999px;
+            padding: 8px 14px;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .indicators-board {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 18px;
+        }
+
+        .indicator-card {
+            background: var(--bg-panel-strong);
+            border: 1px solid var(--border-soft);
+            border-radius: 24px;
+            padding: 20px;
+            min-height: 360px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            box-shadow: var(--shadow-card);
+        }
+
+        .indicator-summary {
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            align-items: flex-start;
+            gap: 6px;
+        }
+
+        .indicator-card.tone-blue {
+            box-shadow: inset 4px 0 0 var(--accent-blue), var(--shadow-card);
+        }
+
+        .indicator-card.tone-green {
+            box-shadow: inset 4px 0 0 var(--accent-green), var(--shadow-card);
+        }
+
+        .indicator-card.tone-amber {
+            box-shadow: inset 4px 0 0 #d97706, var(--shadow-card);
+        }
+
+        .indicator-card.tone-slate {
+            box-shadow: inset 4px 0 0 var(--accent-slate), var(--shadow-card);
+        }
+
+        .metric-label {
+            font-size: 0.98rem;
+            color: var(--text-muted);
+            font-weight: 700;
+        }
+
+        .metric-value {
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-size: clamp(1.1rem, 1.7vw, 1.45rem);
+            font-weight: 700;
+            letter-spacing: -0.04em;
+        }
+
+        .metric-detail {
+            font-size: 0.82rem;
+            color: #425264;
+            line-height: 1.55;
+        }
+
+        .flow-value {
+            font-weight: 800;
+        }
+
+        .flow-value.up {
+            color: #d84c34;
+        }
+
+        .flow-value.down {
+            color: #1763d6;
+        }
+
+        .flow-value.neutral {
+            color: var(--text-main);
+        }
+
+        .chart-panel {
+            min-height: 292px;
+            background: transparent;
+            border: none;
+            border-radius: 0;
+            padding: 0;
+            flex: 1;
+        }
+
+        .chart-canvas {
+            min-height: 292px;
+            height: 100%;
+        }
+
+        .impact-source-strip {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 14px;
+            margin-bottom: 18px;
+        }
+
+        .impact-source-card {
+            min-height: 128px;
+            padding: 18px 16px;
+            border-radius: 22px;
+            border: 1px solid var(--border-soft);
+            background: var(--bg-panel-strong);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: flex-start;
+            cursor: pointer;
+            text-align: left;
+            transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
+        }
+
+        .impact-source-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 20px rgba(68, 92, 112, 0.08);
+            border-color: rgba(23, 48, 66, 0.24);
+        }
+
+        .impact-source-card.active {
+            border-color: rgba(45, 169, 184, 0.35);
+            box-shadow: 0 16px 24px rgba(68, 92, 112, 0.12);
+        }
+
+        .impact-source-logo {
+            width: 100%;
+            min-height: 34px;
+            display: flex;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .impact-source-logo img {
+            max-width: 148px;
+            max-height: 34px;
+            object-fit: contain;
+            object-position: left center;
+        }
+
+        .impact-source-logo.panel-logo {
+            min-height: 30px;
+            margin-bottom: 0;
+            width: auto;
+        }
+
+        .impact-source-logo.panel-logo img {
+            max-width: 170px;
+            max-height: 34px;
+        }
+
+        .fallback-logo {
+            font-size: 0.86rem;
+            color: var(--text-muted);
+            font-weight: 800;
+        }
+
+        .impact-source-card strong {
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-size: 1.04rem;
+            line-height: 1.2;
+            letter-spacing: -0.03em;
+        }
+
+        .impact-source-count {
+            font-size: 0.82rem;
+            color: var(--text-muted);
+            font-weight: 700;
+        }
+
+        .impact-brand-impacton { box-shadow: inset 0 4px 0 #111827; }
+        .impact-brand-social { box-shadow: inset 0 4px 0 #2563eb; }
+        .impact-brand-eroun { box-shadow: inset 0 4px 0 #0f766e; }
+        .impact-brand-trellis { box-shadow: inset 0 4px 0 #15803d; }
+        .impact-brand-bloomberg { box-shadow: inset 0 4px 0 #65a30d; }
+        .impact-brand-ctvc { box-shadow: inset 0 4px 0 #7c3aed; }
+        .impact-brand-impactalpha { box-shadow: inset 0 4px 0 #ec4899; }
+        .impact-brand-powerstack { box-shadow: inset 0 4px 0 #ea580c; }
+        .impact-brand-causeartist { box-shadow: inset 0 4px 0 #0f766e; }
+        .impact-brand-unicorn { box-shadow: inset 0 4px 0 #111827; }
+        .impact-brand-recipe { box-shadow: inset 0 4px 0 #f59e0b; }
+        .impact-brand-platum { box-shadow: inset 0 4px 0 #2563eb; }
+        .impact-brand-venturesquare { box-shadow: inset 0 4px 0 #10b981; }
+        .impact-brand-ai-news { box-shadow: inset 0 4px 0 #2563eb; }
+        .impact-brand-aitimes { box-shadow: inset 0 4px 0 #111827; }
+        .impact-brand-marketingtech { box-shadow: inset 0 4px 0 #ec4899; }
+        .impact-brand-batch { box-shadow: inset 0 4px 0 #0f766e; }
+        .impact-brand-batch-weekly { box-shadow: inset 0 4px 0 #f59e0b; }
+
+        .impact-news-stage {
+            background: var(--bg-panel-strong);
+            border: 1px solid var(--border-soft);
+            border-radius: 26px;
+            padding: 22px;
+            min-height: 560px;
+        }
+
+        .impact-news-panel {
+            display: none;
+        }
+
+        .impact-news-panel.active {
+            display: block;
+        }
+
+        .impact-panel-head {
+            margin-bottom: 14px;
+            padding-bottom: 14px;
+            border-bottom: 1px solid var(--border-soft);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .impact-panel-head h3 {
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-size: 1.35rem;
+            letter-spacing: -0.03em;
+        }
+
+        .story-board {
+            display: grid;
+            gap: 18px;
+        }
+
+        .story-group {
+            display: grid;
+            gap: 14px;
+        }
+
+        .theme-news-group {
+            margin-top: 28px;
+        }
+
+        .story-group-title {
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-size: 1.08rem;
+            font-weight: 700;
+            letter-spacing: -0.03em;
+            color: var(--text-main);
+        }
+
+        .story-card {
+            background: var(--bg-panel-strong);
+            border: 1px solid var(--border-soft);
+            border-radius: 22px;
+            padding: 20px;
+        }
+
+        .story-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.8rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--text-muted);
+            margin-bottom: 14px;
+        }
+
+        .news-card {
+            background: #ffffff;
+            border: 1px solid rgba(15, 23, 42, 0.08);
+            border-radius: 18px;
+            padding: 18px;
+            box-shadow: 0 10px 16px rgba(68, 92, 112, 0.05);
+        }
+
+        .news-card + .news-card {
+            margin-top: 12px;
+        }
+
+        .news-title {
+            font-size: 1.02rem;
+            line-height: 1.5;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            margin-bottom: 6px;
+        }
+
+        .news-title a {
+            color: var(--text-main);
+            text-decoration: none;
+        }
+
+        .news-title a:hover {
+            color: var(--accent-teal);
+        }
+
+        .news-date {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-bottom: 10px;
+        }
+
+        .news-summary {
+            padding-left: 18px;
+            font-size: 0.9rem;
+            color: #3d4a5b;
+            line-height: 1.68;
+        }
+
+        .news-summary li + li {
+            margin-top: 4px;
+        }
+
+        .news-actions {
+            margin-top: 14px;
+        }
+
+        .news-action-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 999px;
+            padding: 9px 14px;
+            background: rgba(15, 107, 216, 0.09);
+            color: #0f5fc2;
+            font-size: 0.84rem;
+            font-weight: 800;
+            text-decoration: none;
+            transition: transform 0.2s ease, background 0.2s ease;
+        }
+
+        .news-action-link:hover {
+            transform: translateY(-1px);
+            background: rgba(15, 107, 216, 0.16);
+        }
+
+        .industry-card {
+            background: #ffffff;
+            border: 1px solid var(--border-soft);
+            border-radius: 26px;
+            padding: 24px;
+            box-shadow: var(--shadow-card);
+            display: grid;
+            gap: 18px;
+        }
+
+        .industry-meta {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            color: var(--text-muted);
+            font-size: 0.82rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .industry-card h3 {
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-size: clamp(1.55rem, 2.5vw, 2.25rem);
+            line-height: 1.14;
+            letter-spacing: -0.04em;
+        }
+
+        .industry-description {
+            font-size: 0.98rem;
+            line-height: 1.78;
+            color: #334155;
+            max-width: 980px;
+        }
+
+        .industry-chart-image {
+            background: linear-gradient(135deg, #f8fbfd 0%, #eef7f8 100%);
+            border: 1px solid rgba(15, 23, 42, 0.08);
+            border-radius: 24px;
+            padding: 18px;
+            display: flex;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .industry-chart-image img {
+            width: min(100%, 980px);
+            height: auto;
+            display: block;
+        }
+
+        .industry-source-note {
+            color: var(--text-muted);
+            font-size: 0.82rem;
+            font-weight: 700;
+        }
+
+        .industry-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .industry-report-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: fit-content;
+            border-radius: 999px;
+            padding: 10px 14px;
+            background: #0f6bd8;
+            color: #ffffff;
+            text-decoration: none;
+            font-size: 0.86rem;
+            font-weight: 800;
+        }
+
+        .industry-report-link.secondary {
+            background: #e9f3f6;
+            color: #0f5261;
+        }
+
+        .empty-state {
+            border: 1px dashed rgba(23, 48, 66, 0.22);
+            border-radius: 18px;
+            padding: 18px;
+            background: #f8fafc;
+            color: var(--text-muted);
+            font-size: 0.92rem;
+        }
+
+        .theme-hero {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 18px;
+            background: linear-gradient(135deg, rgba(14, 165, 183, 0.08), rgba(37, 99, 235, 0.07));
+            border: 1px solid rgba(14, 165, 183, 0.18);
+            border-radius: 24px;
+            padding: 22px;
+            margin-bottom: 18px;
+        }
+
+        .theme-title-wrap {
+            display: grid;
+            gap: 10px;
+        }
+
+        .theme-badge {
+            display: inline-flex;
+            width: fit-content;
+            font-size: 0.76rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.16em;
+            color: #0f6b7a;
+            background: rgba(255, 255, 255, 0.78);
+            border: 1px solid rgba(14, 165, 183, 0.22);
+            border-radius: 999px;
+            padding: 6px 10px;
+        }
+
+        .theme-title-wrap h3 {
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-size: clamp(1.45rem, 2.7vw, 2.2rem);
+            letter-spacing: -0.04em;
+            line-height: 1.12;
+        }
+
+        .theme-rate {
+            padding: 10px 16px;
+            border-radius: 999px;
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-size: 1.15rem;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .theme-rate-up {
+            background: #fee2e2;
+            color: #dc2626;
+        }
+
+        .theme-rate-down {
+            background: #dbeafe;
+            color: #2563eb;
+        }
+
+        .theme-rate-neutral {
+            background: #e2e8f0;
+            color: var(--text-main);
+        }
+
+        .theme-summary-box {
+            background: #ffffff;
+            border: 1px solid var(--border-soft);
+            border-left: 4px solid var(--accent-teal);
+            border-radius: 18px;
+            padding: 18px 20px;
+            margin-bottom: 18px;
+            line-height: 1.72;
+            color: #334155;
+        }
+
+        .stocks-table-wrapper {
+            overflow-x: auto;
+            border: 1px solid var(--border-soft);
+            border-radius: 18px;
+            background: #ffffff;
+        }
+
+        .stocks-table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 620px;
+        }
+
+        .stocks-table th,
+        .stocks-table td {
+            padding: 14px 16px;
+            text-align: left;
+            border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+        }
+
+        .stocks-table th {
+            background: #f8fafc;
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--text-muted);
+        }
+
+        .stocks-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .stock-name-cell a {
+            color: var(--text-main);
+            text-decoration: none;
+            font-weight: 700;
+        }
+
+        .stock-name-cell a:hover {
+            color: var(--accent-teal);
+        }
+
+        .stock-price-cell {
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            font-weight: 700;
+        }
+
+        .stock-rate-cell span {
+            display: inline-flex;
+            border-radius: 999px;
+            padding: 5px 10px;
+            font-size: 0.82rem;
+            font-weight: 800;
+        }
+
+        .stock-rate-cell span.up {
+            background: #fee2e2;
+            color: #dc2626;
+        }
+
+        .stock-rate-cell span.down {
+            background: #dbeafe;
+            color: #2563eb;
+        }
+
+        .stock-rate-cell span.neutral {
+            background: #e2e8f0;
+            color: var(--text-main);
+        }
+
+        .stock-reason-cell {
+            color: #475569;
+            line-height: 1.65;
+            font-size: 0.9rem;
+        }
+
+        .empty-table {
+            text-align: center;
+            color: var(--text-muted);
+            padding: 22px;
+        }
+
+        @media (max-width: 1200px) {
+            .workspace {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                position: static;
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+
+            .sidebar-calendar {
+                grid-column: 1 / -1;
+            }
+
+            .top-banner {
+                grid-template-columns: 1fr;
+                gap: 6px;
+            }
+
+            .title-box {
+                grid-template-columns: 1fr;
+                align-items: flex-start;
+                gap: 6px;
+            }
+
+            .title-meta {
+                text-align: left;
+                white-space: normal;
+            }
+
+            .indicators-board {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 780px) {
+            body {
+                padding: 18px;
+            }
+
+            .sidebar {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .impact-source-strip {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .panel-shell,
+            .sidebar-calendar {
+                border-radius: 24px;
+            }
+
+            .indicator-card {
+                min-height: 320px;
+            }
+        }
+
+        @media (max-width: 560px) {
+            .sidebar {
+                grid-template-columns: 1fr;
+            }
+
+            .impact-source-strip {
+                grid-template-columns: 1fr;
+            }
+
+            .theme-hero,
+            .panel-header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .calendar-day {
+                height: 36px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="page-shell">
+        <header class="top-banner">
+            <section class="brand-box">
+                <div class="brand-logo">
+                    <span>IMPACT</span>
+                    <span>SQUARE<div class="brand-dot"></div></span>
+                </div>
+            </section>
+            <section class="title-box">
+                <h1>오늘의 마켓 & 뉴스 브리핑</h1>
+                <div class="title-meta">기사 기준일: 2026.06.16<br>최종 갱신: 2026.06.17 10:32 KST</div>
+            </section>
+        </header>
+
+        <div class="workspace">
+            <aside class="sidebar">
+                
+            <section class="sidebar-calendar">
+                <div class="calendar-box">
+                    <div class="calendar-top">
+                        <div class="calendar-month-label" id="calendar-month-label"></div>
+                        <div class="calendar-nav">
+                            <button id="calendar-prev" type="button" aria-label="이전 달">&#9664;</button>
+                            <button id="calendar-next" type="button" aria-label="다음 달">&#9654;</button>
+                        </div>
+                    </div>
+                    <div class="calendar-weekdays">
+                        <span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span>
+                    </div>
+                    <div class="calendar-grid" id="calendar-grid"></div>
+                    <div class="calendar-caption">날짜를 누르면 해당 일자의 브리핑으로 이동합니다.</div>
+                </div>
+            </section>
+    
+                <button class="sidebar-tab active" data-target="section-indicators">주요 지표</button><button class="sidebar-tab" data-target="section-impact">임팩트</button><button class="sidebar-tab" data-target="section-vcac">VC/AC</button><button class="sidebar-tab" data-target="section-ai">AI</button><button class="sidebar-tab" data-target="section-macro">거시경제</button><button class="sidebar-tab" data-target="section-industry">산업 트랜드</button><button class="sidebar-tab" data-target="section-theme">강세 테마</button>
+            </aside>
+            <main class="main-stage">
+                
+        <section id="section-indicators" class="content-section active">
+            <div class="panel-shell">
+                <div class="panel-header">
+                    <div>
+                        <div class="panel-kicker">Market Snapshot</div>
+                        <h2>주요 지표</h2>
+                    </div>
+                    <div class="panel-count">2026.06.17 기준</div>
+                </div>
+                <div class="indicators-board">
+                    <article class="indicator-card tone-blue"><div class="indicator-summary"><div class="metric-label">미국 10년물 국채 금리</div><div class="metric-value">4.428%</div></div><div class="chart-panel"><div class="chart-canvas" id="chart-us-10y"></div></div></article>
+                    <article class="indicator-card tone-green"><div class="indicator-summary"><div class="metric-label">원/달러 환율</div><div class="metric-value">종가: 1,512.78원</div></div><div class="chart-panel"><div class="chart-canvas" id="chart-fx"></div></div></article>
+                    <article class="indicator-card tone-amber"><div class="indicator-summary"><div class="metric-label">코스피 지수</div><div class="metric-value">8,716.26</div><div class="metric-detail">개인 <span class="flow-value up">+12,149</span> / 외국인 <span class="flow-value down">-9,795</span> / 기관 <span class="flow-value down">-2,419</span></div></div><div class="chart-panel"><div class="chart-canvas" id="chart-kospi"></div></div></article>
+                    <article class="indicator-card tone-slate"><div class="indicator-summary"><div class="metric-label">코스닥 지수</div><div class="metric-value">1,024.78</div><div class="metric-detail">개인 <span class="flow-value up">+1,229</span> / 외국인 <span class="flow-value down">-1,238</span> / 기관 <span class="flow-value down">-33</span></div></div><div class="chart-panel"><div class="chart-canvas" id="chart-kosdaq"></div></div></article>
+                </div>
+            </div>
+        </section>
+    
+                
+        <section id="section-impact" class="content-section source-tab-section">
+            <div class="panel-shell">
+                <div class="panel-header">
+                    <div>
+                        <div class="panel-kicker">Impact Briefing</div>
+                        <h2>임팩트</h2>
+                    </div>
+                    <div class="panel-count">28건</div>
+                </div>
+                <div class="impact-source-strip">
+                    <button class="impact-source-card impact-brand-impacton active" data-source-target="impact-임팩트온"><span class="impact-source-logo"><img src="https://cdn.impacton.net/image/logo/toplogo_20230907040739.png" alt="임팩트온 로고" loading="lazy"></span><strong>임팩트온</strong><span class="impact-source-count">5건</span></button><button class="impact-source-card impact-brand-social" data-source-target="impact-소셜임팩트뉴스"><span class="impact-source-logo"><img src="https://cdn.socialimpactnews.net/image/logo/toplogo_20240401103136.png" alt="소셜임팩트뉴스 로고" loading="lazy"></span><strong>소셜임팩트뉴스</strong><span class="impact-source-count">9건</span></button><button class="impact-source-card impact-brand-eroun" data-source-target="impact-이로운넷"><span class="impact-source-logo"><img src="https://cdn.eroun.net/image/logo/toplogo_20250902112732.png" alt="이로운넷 로고" loading="lazy"></span><strong>이로운넷</strong><span class="impact-source-count">10건</span></button><button class="impact-source-card impact-brand-trellis" data-source-target="impact-trellis"><span class="impact-source-logo"><img src="https://trellis.net/wp-content/themes/greenbiz/static/logo-trellis.svg" alt="Trellis 로고" loading="lazy"></span><strong>Trellis</strong><span class="impact-source-count">1건</span></button><button class="impact-source-card impact-brand-bloomberg" data-source-target="impact-bloomberg-green"><span class="impact-source-logo"><img src="https://www.bloomberg.com/favicon.ico" alt="Bloomberg Green 로고" loading="lazy"></span><strong>Bloomberg Green</strong><span class="impact-source-count">1건</span></button><button class="impact-source-card impact-brand-ctvc" data-source-target="impact-ctvc"><span class="impact-source-logo"><img src="https://www.ctvc.co/assets/img/logo.svg?v=af7ed10043" alt="CTVC 로고" loading="lazy"></span><strong>CTVC</strong><span class="impact-source-count">2건</span></button>
+                </div>
+                <div class="impact-news-stage">
+                    <div class="impact-news-panel active" data-source-panel="impact-임팩트온"><div class="impact-panel-head"><span class="impact-source-logo panel-logo"><img src="https://cdn.impacton.net/image/logo/toplogo_20230907040739.png" alt="임팩트온 로고" loading="lazy"></span><h3>임팩트온</h3></div><article class="news-card"><div class="news-title"><a href="https://www.impacton.net/news/articleView.html?idxno=19256" target="_blank" rel="noopener noreferrer">현대차·기아, 전기차 전환 &#x27;후발주자&#x27; 졸업…ICCT 평가서 &#x27;전환기업&#x27; 승급</a></div><div class="news-date">출처: 임팩트온 | 발행일: 2026.06.16</div><ul class="news-summary"><li>현대차·기아가 국제청정교통위원회(ICCT)의 글로벌 전기차 전환 평가에서 처음으로 &#x27;후발주자&#x27; 등급을 벗어나 &#x27;전환기업&#x27;으로 상향 조정되었습니다.</li><li>이는 한국과 유럽 시장에서 전기차 모델 적용 범위를 확대하고, 임원 보상 체계에 전동화 목표를 연계한 점 등이 긍정적으로 평가된 결과입니다.</li><li>하지만 테슬라, BYD 등 선도 업체들과의 격차는 여전히 크며, 중국 업체들의 약진과 미국·일본 업체의 전략 변화도 주목됩니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.impacton.net/news/articleView.html?idxno=19248" target="_blank" rel="noopener noreferrer">백기 든 트럼프 행정부…&#x27;해상풍력 중단&#x27; 항소 취하</a></div><div class="news-date">출처: 임팩트온 | 발행일: 2026.06.16</div><ul class="news-summary"><li>미국 트럼프 행정부가 해상풍력 프로젝트 신규 승인을 동결하려던 법정 다툼에서 결국 물러나 항소를 취하했습니다.</li><li>이는 18개 주 법무장관들이 제기한 소송에서 하급심이 트럼프 행정부의 조치를 위법하다고 판단한 판결을 확정하는 결과로 이어졌습니다.</li><li>하지만 트럼프 행정부는 신규 임대 경매를 진행하지 않겠다는 기조를 유지하고 있으며, 개별 프로젝트에 대한 압박도 계속되고 있습니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.impacton.net/news/articleView.html?idxno=19242" target="_blank" rel="noopener noreferrer">【데일리 ESG정책 브리핑】기후테크 오픈이노베이션 확대, 바이오가스 발전기 국산화 착수</a></div><div class="news-date">출처: 임팩트온 | 발행일: 2026.06.16</div><ul class="news-summary"><li>중소벤처기업부가 기후테크 스타트업과 대기업 간의 오픈이노베이션 프로그램 참여 기업을 모집하며, 총 82개의 현장 과제를 발굴했습니다.</li><li>기후에너지환경부와 한국환경산업기술원은 바이오가스 발전기 국산화 기술개발을 위해 2029년까지 총 366억원을 투입할 계획입니다.</li><li>이는 현재 수입에 의존하는 바이오가스 발전용 전용 발전기의 핵심 부품과 제어기술을 국산화하고 한국형 발전시스템 상용화를 추진하기 위함입니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.impacton.net/news/articleView.html?idxno=19257" target="_blank" rel="noopener noreferrer">탄소발자국, 기존연료의 4분의 1…옥수수 에탄올, 해양연료 시장 진출 &#x27;청신호&#x27;</a></div><div class="news-date">출처: 임팩트온 | 발행일: 2026.06.16</div><ul class="news-summary"><li>국제해사기구(IMO)가 브라질산 옥수수 에탄올의 낮은 탄소발자국을 인정하면서, 해양연료 시장 진출에 청신호가 켜졌습니다.</li><li>브라질산 옥수수 에탄올의 탄소집약도는 기존 해운업계 평균의 4분의 1 수준으로, 해운업계 탈탄소 규제 난항 속 현실적인 돌파구로 주목받고 있습니다.</li><li>에탄올은 공급망, 인프라, 기술 측면에서 단기 도입이 용이하며 메탄올과 유사한 특성으로 기존 엔진 시스템 개조가 용이하여 해양연료 시장 성장이 기대됩니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.impacton.net/news/articleView.html?idxno=19252" target="_blank" rel="noopener noreferrer">EU 회원국, 무상배출권 확대안 승인…바스프·아르셀로미탈은 ETS 재검토 요구</a></div><div class="news-date">출처: 임팩트온 | 발행일: 2026.06.16</div><ul class="news-summary"><li>유럽연합(EU)이 산업계의 탄소비용 부담 완화를 위해 2026년부터 2030년까지 적용될 EU 배출권거래제도(ETS)의 무상배출권 확대안을 승인했습니다.</li><li>이번 개정안은 벤치마크 계산에 간접배출을 반영하여 약 40억 유로 규모의 무상배출권이 추가 배정될 예정입니다.</li><li>그러나 바스프, 아르셀로미탈 등 유럽 제조 대기업들은 여전히 높은 에너지 가격과 탄소비용 상승으로 경쟁국 대비 불리하다며 ETS 재검토를 요구하고 있습니다.</li></ul></article></div><div class="impact-news-panel" data-source-panel="impact-소셜임팩트뉴스"><div class="impact-panel-head"><span class="impact-source-logo panel-logo"><img src="https://cdn.socialimpactnews.net/image/logo/toplogo_20240401103136.png" alt="소셜임팩트뉴스 로고" loading="lazy"></span><h3>소셜임팩트뉴스</h3></div><article class="news-card"><div class="news-title"><a href="https://www.socialimpactnews.net/news/articleView.html?idxno=6486" target="_blank" rel="noopener noreferrer">사단법인 러블리페이퍼, 의정부 자원재생활동가 안전경량손수레 지원</a></div><div class="news-date">출처: 소셜임팩트뉴스 | 발행일: 2026.06.16</div><ul class="news-summary"><li>사단법인 러블리페이퍼는 의정부시니어클럽 소속 자원재생활동가 9명에게 안전경량손수레와 안전물품 키트를 지원했습니다.</li><li>이번 지원은 한국씨티은행의 후원으로 이루어졌으며, 손수레 제작 과정에 임직원들이 직접 참여하여 의미를 더했습니다.</li><li>러블리페이퍼는 앞으로도 기업 및 지역 기관과의 협력을 통해 전국 자원재생활동가들에게 안전한 활동 환경을 제공할 계획입니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.socialimpactnews.net/news/articleView.html?idxno=6485" target="_blank" rel="noopener noreferrer">사단법인 온기, 전남자립지원전담기관과 협약 체결…자립준비청년 위한 온기우편함 설치</a></div><div class="news-date">출처: 소셜임팩트뉴스 | 발행일: 2026.06.16</div><ul class="news-summary"><li>사단법인 온기가 전남자립지원전담기관과 협약을 맺고 자립준비청년을 위한 온기우편함을 설치했습니다.</li><li>온기우편함은 익명으로 고민을 작성하면 자원봉사자가 손편지로 답장하는 정서돌봄 사업으로, 온라인으로도 이용 가능합니다.</li><li>이번 사업은 자립준비청년들의 정서적 자립을 지원하고 전국으로 확대하여 사회적 연결과 회복력을 높이는 것을 목표로 합니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.socialimpactnews.net/news/articleView.html?idxno=6471" target="_blank" rel="noopener noreferrer">사용한 커피 캡슐이 차량용 방향제로…테라사이클·동서식품·도로공사 업무협약 체결</a></div><div class="news-date">출처: 소셜임팩트뉴스 | 발행일: 2026.06.16</div><ul class="news-summary"><li>테라사이클, 동서식품, 한국도로공사 충북본부가 사용한 커피 캡슐을 차량용 방향제로 재활용하는 업무협약을 체결했습니다.</li><li>이번 협약은 환경의 달을 맞아 알루미늄 커피 캡슐을 수거하여 업사이클링 제품을 제작하고, 자원순환과 교통안전 메시지를 전달하는 것을 목표로 합니다.</li><li>테라사이클은 원료화 및 제품 제작을, 동서식품은 사업 지원을, 한국도로공사는 캠페인 운영을 담당하며 오는 9월 제품을 출시할 예정입니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.socialimpactnews.net/news/articleView.html?idxno=6480" target="_blank" rel="noopener noreferrer">[현장] 혁신은 마을 속에 있는데, 법은 건물에 갇혔다</a></div><div class="news-date">출처: 소셜임팩트뉴스 | 발행일: 2026.06.16</div><ul class="news-summary"><li>혁신적인 마을호텔 사업은 빈집을 객실로, 노포를 식당으로 활용하는 등 마을 전체를 하나의 플랫폼으로 운영하는 비즈니스 모델입니다.</li><li>하지만 마을호텔은 실거주 의무, 외국인 대상 숙박업 등록, 법정 주차장 확보 등 현행법상의 규제 장벽에 부딪혀 운영에 어려움을 겪고 있습니다.</li><li>이에 따라 개별 건물이 아닌 마을 전체를 하나의 숙박 시설로 인정하는 제도적 지원과 &#x27;마을호텔 특례법&#x27; 마련이 필요하다는 주장이 제기되고 있습니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.socialimpactnews.net/news/articleView.html?idxno=6481" target="_blank" rel="noopener noreferrer">사랑의열매 ‘2026 희망여름 착!착!착! 나눔캠페인’ 출범</a></div><div class="news-date">출처: 소셜임팩트뉴스 | 발행일: 2026.06.16</div><ul class="news-summary"><li>사랑의열매 사회복지공동모금회가 연중 모금 캠페인 &#x27;2026 희망여름 착!착!착! 나눔캠페인&#x27;을 시작했습니다.</li><li>이번 캠페인은 7월 15일까지 31일간 전국 17개 시·도에서 진행되며, 취약계층의 건강한 여름나기를 지원하기 위해 63억 원 규모의 배분금과 5만여 개의 여름나기 키트가 지원될 예정입니다.</li><li>출범식에서는 자원봉사자들이 여름나기 키트 포장 봉사활동에 참여했으며, IBK기업은행은 쪽방 주민 지원을 위해 2억 5000만 원을 기부했습니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.socialimpactnews.net/news/articleView.html?idxno=6482" target="_blank" rel="noopener noreferrer">지구의 온도(G9ONDO), 롯데백화점 대구점 론칭…오프라인 채널 확장</a></div><div class="news-date">출처: 소셜임팩트뉴스 | 발행일: 2026.06.16</div><ul class="news-summary"><li>프리미엄 비건 뷰티 브랜드 &#x27;지구의 온도(G9ONDO)&#x27;가 롯데백화점 대구점에 입점하며 오프라인 채널을 확장했습니다.</li><li>이 브랜드는 &#x27;우리의 제품이 사람들의 삶에 특별한 순간을 선물하고, 그 변화가 지구에도 긍정적인 영향을 준다&#x27;는 철학을 바탕으로 비건 뷰티와 라이프스타일을 결합한 경험을 제공합니다.</li><li>이번 롯데백화점 대구점 론칭은 특급호텔, 인천국제공항 면세점 등 글로벌 유통 채널 경험을 백화점 오프라인 채널로 넓히는 계기가 되었습니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.socialimpactnews.net/news/articleView.html?idxno=6483" target="_blank" rel="noopener noreferrer">‘가족다움’은 어디에서 오는가…헬로우뮤지움, 최은주 개인전 개최</a></div><div class="news-date">출처: 소셜임팩트뉴스 | 발행일: 2026.06.16</div><ul class="news-summary"><li>헬로우뮤지움은 가족사진 속 인물들의 실제 관계를 알지 못해도 가족으로 인식하게 되는 이유와 가족을 둘러싼 사회적 규범을 탐구하는 최은주 개인전 &#x27;가족은 어떻게 만들어지는가?&#x27;를 개최합니다.</li><li>이번 전시는 우리가 당연하게 받아들여 온 &#x27;가족의 이미지&#x27;에 질문을 던지며, 서로 알지 못하는 사람들이 가족이 되거나 타인이 가족의 자리를 대신하는 작품들을 선보입니다.</li><li>이 전시는 3년간 가족의 의미를 다층적으로 살펴보는 &#x27;예스키즈(Yeskids)&#x27; 프로젝트의 일환으로, 변화하는 가족의 모습과 다양한 삶의 관계망을 예술 작품으로 보여줄 예정입니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.socialimpactnews.net/news/articleView.html?idxno=6484" target="_blank" rel="noopener noreferrer">[현장] 누구나 연구할 수 있다면…현장에서 시작된 세 편의 사회문제 연구 결과 공개</a></div><div class="news-date">출처: 소셜임팩트뉴스 | 발행일: 2026.06.16</div><ul class="news-summary"><li>나이오트는 대학이나 연구기관이 아닌 현장에서 출발한 세 편의 사회문제 연구 결과를 공개했으며, 누구나 연구할 수 있다면 외면받던 문제들도 다룰 수 있다는 가설을 검증했습니다.</li><li>연구 결과로는 기후위기 의제 해결을 위한 &#x27;경기도 시민의회 도입 및 상설 운영&#x27; 방안, 고교학점제 하에서 학교별 교육 격차를 줄이기 위한 교사 지원 방안, 그리고 가나의 노후 중고차 문제로 인한 시민들의 건강권 보장을 위한 국제 협력 모델이 제시되었습니다.</li><li>이번 연구는 실제 연구 수행 단계를 포함했으며, AI 발전으로 연구의 진입 장벽이 낮아져 학술 연구자 외에도 현장의 진심을 가진 누구에게나 지식이 열릴 수 있다는 전망을 보여주었습니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.socialimpactnews.net/news/articleView.html?idxno=6416" target="_blank" rel="noopener noreferrer">케이뱅크 계좌에 돈이 찍히는 순간, 모두가 숨을 멈췄다</a></div><div class="news-date">출처: 소셜임팩트뉴스 | 발행일: 2026.06.16</div><ul class="news-summary"><li>월드비전은 국내 비영리법인 최초로 기부받은 가상자산을 공식적으로 현금화하여 10억 4천만 원을 마련했으며, 이 금액은 취약계층 아동·청소년 2000여 명의 학용품과 교복 지원에 사용되었습니다.</li><li>지난 4년간 월드비전은 가상자산 기부의 통로를 만들기 위해 법인 지갑 개설, 블록체인 기반 기부 투명성 모델, NFT 캠페인 등을 시도하며 기술보다 신뢰 구축에 집중했으며, 금융위원회 로드맵 발표 후 본격적인 현금화에 성공했습니다.</li><li>월드비전은 실험 단계를 넘어 자산기금팀을 출범시키고 스테이블코인 기반 기부 모델, 주식기부 표준 프로세스 등을 준비하며, 선의를 더 멀리 전달하기 위한 실험을 계속하고 있습니다.</li></ul></article></div><div class="impact-news-panel" data-source-panel="impact-이로운넷"><div class="impact-panel-head"><span class="impact-source-logo panel-logo"><img src="https://cdn.eroun.net/image/logo/toplogo_20250902112732.png" alt="이로운넷 로고" loading="lazy"></span><h3>이로운넷</h3></div><article class="news-card"><div class="news-title"><a href="https://www.eroun.net/news/articleView.html?idxno=83256" target="_blank" rel="noopener noreferrer">한국해양노동자지회, 제4차 노조탄압 분쇄 결의대회 개최</a></div><div class="news-date">출처: 이로운넷 | 발행일: 2026.06.16</div><ul class="news-summary"><li>한국해양노동자지회는 16일 인천지방해양수산청 앞에서 약 200여 명이 참석한 가운데 제4차 노조탄압 분쇄 결의대회를 개최했습니다.</li><li>참가자들은 ㈜흥해의 인사권 남용과 임금체불 문제에 대한 진상 규명 및 합동 특별근로감독 실시를 촉구했으며, 회사의 부당해고 및 강등 조치에 대한 노동위원회 구제 절차가 진행 중임을 밝혔습니다.</li><li>해양지회는 관계 기관의 철저한 조사와 실효성 있는 감독을 통해 노동자의 권리를 지켜나가겠다고 강조했습니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.eroun.net/news/articleView.html?idxno=83254" target="_blank" rel="noopener noreferrer">우상호 강원도지사･구자열 원주시장 당선인, 서원주 의료AI 앵커 연구산업단지 조성 등 현안 집중 논의</a></div><div class="news-date">출처: 이로운넷 | 발행일: 2026.06.16</div><ul class="news-summary"><li>우상호 강원도지사 당선인과 구자열 원주시장 당선인이 원주 발전을 위한 핵심 현안을 논의했습니다.</li><li>주요 논의 사항으로는 서원주 의료AI 앵커 연구산업단지 조성, 종축장 부지 문화･창의산업 거점화, 원주권 국방 드론 클러스터화 등이 있습니다.</li><li>양 당선인은 중앙정부, 강원도, 원주시를 연결하여 원주에 예산과 정책, 국가사업을 유치하겠다는 공감대를 형성했습니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.eroun.net/news/articleView.html?idxno=83244" target="_blank" rel="noopener noreferrer">경북도, 단순 인력 충원 넘는다...10년 뒤 내다본 ‘이민정책 청사진’ 만든다</a></div><div class="news-date">출처: 이로운넷 | 발행일: 2026.06.16</div><ul class="news-summary"><li>경상북도가 지방 소멸과 인구 절벽 위기에 대응하기 위해 단순 인력 수급을 넘어 공존과 정착 중심의 중장기 이민정책 수립에 나섰습니다.</li><li>이를 위해 국내외 이민정책 흐름을 짚고 지역 맞춤형 전략을 모색하는 &#x27;2030 경상북도 이민정책 포럼&#x27;을 개최했으며, 전문가들은 저숙련 노동자 유치 패러다임 전환과 사회통합기금 조성 등을 제안했습니다.</li><li>경상북도는 포럼에서 나온 제안들을 종합하여 외국인 주민들이 지역민과 상생하며 안정적으로 정착할 수 있는 독창적이고 지속 가능한 이민정책을 마련할 방침입니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.eroun.net/news/articleView.html?idxno=83242" target="_blank" rel="noopener noreferrer">‘불에 안 타는 슈퍼섬유’ 구미서 쏟아진다…도레이첨단소재 2호기 가동 들어가</a></div><div class="news-date">출처: 이로운넷 | 발행일: 2026.06.16</div><ul class="news-summary"><li>경상북도 구미에 위치한 도레이첨단소재에서 불에 타지 않는 슈퍼섬유인 메타 아라미드 섬유 2호기 생산 라인 가동을 시작했습니다.</li><li>새롭게 가동되는 2호기 라인은 연간 3000톤의 메타 아라미드를 생산하며, 기존 라인과 합쳐 총 5400톤의 연간 생산 능력을 갖추게 되었습니다.</li><li>메타 아라미드는 뛰어난 내열성과 난연성, 절연성을 갖춰 AI 데이터센터, 방위산업, 미래형 모빌리티 등 다양한 첨단 산업 분야에서 수요가 증가하고 있습니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.eroun.net/news/articleView.html?idxno=83252" target="_blank" rel="noopener noreferrer">병원 멀던 어촌마을에 ‘행복병원’ 떴다… 포항 이가리·청진리 어르신 의료봉사</a></div><div class="news-date">출처: 이로운넷 | 발행일: 2026.06.16</div><ul class="news-summary"><li>경북 포항 이가리항권역 어촌신활력증진사업단과 포항북구보건소가 협력하여 의료 인프라가 부족한 청하면 이가리와 청진리 주민들을 위한 의료봉사를 진행했습니다.</li><li>포항의료원의 &#x27;찾아가는 행복병원&#x27; 의료진은 혈액검사, X-ray 촬영 등 정밀 기초검진과 맞춤형 약 처방, 치매 조기검진 프로그램을 제공하며 어르신들의 건강을 살폈습니다.</li><li>이번 의료봉사는 어촌마을의 의료 사각지대 문제를 해결하기 위해 정례적으로 이어져 왔으며, 민·관 협력을 통해 어촌 주민들의 삶에 건강한 활력을 불어넣고 있습니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.eroun.net/news/articleView.html?idxno=83253" target="_blank" rel="noopener noreferrer">영월 하송어린이집 ‘&#x27;제27회 강원 119소방동요 경연대회&#x27; 유치부 대상 수상</a></div><div class="news-date">출처: 이로운넷 | 발행일: 2026.06.16</div><ul class="news-summary"><li>영월 하송어린이집이 &#x27;제27회 강원 119소방동요 경연대회&#x27; 유치부에서 대상을 수상했습니다.</li><li>하송어린이집은 작년에 이어 2년 연속 대상을 수상하는 쾌거를 이루었습니다.</li><li>이번 대회는 강원특별자치도 소방본부가 주최했으며, 하송어린이집은 &#x27;우리친구 소방차&#x27;라는 곡으로 무대를 선보였습니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.eroun.net/news/articleView.html?idxno=83236" target="_blank" rel="noopener noreferrer">‘평민 의병장’ 신돌석, 118년 만에 다시 깨어난 &#x27;호국의 울림&#x27;</a></div><div class="news-date">출처: 이로운넷 | 발행일: 2026.06.16</div><ul class="news-summary"><li>년 전 순국한 평민 출신 의병장 신돌석 장군의 숭고한 애국정신이 다시 조명되었습니다.</li><li>영덕군과 신돌석 장군 숭모위원회는 순국 118주기 숭모제향을 봉행하며 장군의 나라 사랑 정신과 의병 정신을 기렸습니다.</li><li>신돌석 장군은 신분을 초월해 나라를 지키기 위해 싸웠으며, 그의 삶은 오늘날 공동체 정신과 국가관을 일깨우는 정신적 유산으로 평가받고 있습니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.eroun.net/news/articleView.html?idxno=83227" target="_blank" rel="noopener noreferrer">별빛 품은 영덕의 밤…1200명 발길 모으며 야간관광 가능성 밝혔다</a></div><div class="news-date">출처: 이로운넷 | 발행일: 2026.06.16</div><ul class="news-summary"><li>영덕군과 영덕문화관광재단이 개최한 &#x27;별빛 따라 걷는 영덕의 밤&#x27; 행사에 1200여 명이 참여하며 야간관광의 가능성을 보여주었습니다.</li><li>이번 행사는 산불 피해 지역의 회복과 희망을 상징하며, 참가자들은 진달래 묘목을 심고 다양한 체험 프로그램과 음악회를 즐겼습니다.</li><li>영덕군은 별파랑공원을 야간관광 자원으로 육성하고, 앞으로도 다양한 야간관광 콘텐츠를 지속적으로 선보일 계획입니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.eroun.net/news/articleView.html?idxno=83222" target="_blank" rel="noopener noreferrer">동해의 윤슬이 관광이 되다…울진 요트학교, 경북 웰니스 관광지 선정</a></div><div class="news-date">출처: 이로운넷 | 발행일: 2026.06.16</div><ul class="news-summary"><li>울진군 요트학교가 경상북도가 선정한 &#x27;2024년 웰니스 관광지&#x27;에 이름을 올리며 해양 치유 관광의 성장 동력을 확보했습니다.</li><li>이번 선정은 동해의 아름다운 자연과 해양 레포츠, 감성 치유를 결합한 &#x27;윤슬 요트투어&#x27;와 &#x27;노을 요트투어&#x27; 등 특색 있는 콘텐츠가 높은 평가를 받은 결과입니다.</li><li>울진군은 이번 선정을 계기로 관광 상품 개발, 홍보, 수용 환경 개선 등 다양한 지원을 받아 해양 관광 브랜드 가치를 높이고 지역 경제 활성화에 기여할 것으로 기대하고 있습니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.eroun.net/news/articleView.html?idxno=83229" target="_blank" rel="noopener noreferrer">교복 입고 전장으로…경북교육청, 75년 만에 돌아온 ‘경주중학교 뱃지’ 전격 공개</a></div><div class="news-date">출처: 이로운넷 | 발행일: 2026.06.16</div><ul class="news-summary"><li>년 전 6.25 전쟁에 참전했던 경주중학교 학도병들이 착용했던 교복과 뱃지가 경상북도교육청의 기록물 수집 사업을 통해 공개되었습니다.</li><li>이번에 공개된 유물들은 전쟁터에서 발굴된 것으로, 어린 학생들이 학업을 중단하고 구국 전선에 나섰던 역사적 사실을 보여주는 중요한 증거입니다.</li><li>경북교육청은 이번 전시를 통해 학도병들의 희생을 기리고, 수집된 자료를 미래 세대를 위한 호국·평화 교육 콘텐츠로 활용할 계획입니다.</li></ul></article></div><div class="impact-news-panel" data-source-panel="impact-trellis"><div class="impact-panel-head"><span class="impact-source-logo panel-logo"><img src="https://trellis.net/wp-content/themes/greenbiz/static/logo-trellis.svg" alt="Trellis 로고" loading="lazy"></span><h3>Trellis</h3></div><article class="news-card"><div class="news-title"><a href="https://trellis.net/article/employee-retirement-plans-next-frontier-corporate-decarbonization/" target="_blank" rel="noopener noreferrer">Employee retirement plans are the next frontier for corporate decarbonization</a></div><div class="news-date">출처: Trellis | 발행일: 2026.06.16</div><ul class="news-summary"><li>기업의 탄소 감축 노력은 이제 직원들의 은퇴 계획까지 확장되어야 합니다.</li><li>직원들의 은퇴 자산이 화석 연료 확장에 투자되어 기업의 넷제로 약속을 약화시키고 있으며, 이는 직원들의 가장 큰 개인 탄소 발자국으로 인식되고 있습니다.</li><li>기술 분야의 직원들은 이러한 추세를 되돌리기 위한 옹호 활동의 청사진을 제공하고 있으며, 이는 기업의 재정적 책임과 윤리적 의무를 동시에 강조합니다.</li></ul></article></div><div class="impact-news-panel" data-source-panel="impact-bloomberg-green"><div class="impact-panel-head"><span class="impact-source-logo panel-logo"><img src="https://www.bloomberg.com/favicon.ico" alt="Bloomberg Green 로고" loading="lazy"></span><h3>Bloomberg Green</h3></div><article class="news-card"><div class="news-title"><a href="https://links.message.bloomberg.com/a/sc/Fx1ZaVWRT8HgqG-62s-9JhBy3J8i3UzcJ6URnRlHPmGj34sZ_G64sCHixLcK6aMjQteyjaPTn1uDQ7spsWR-b_dXM1fUAYghorqPRfq1b5ZS1x0GOM_baJp5zypkLg6ylb8s-pzk59p46ZcyFAjx6qqUmWF85U4DpfcEqnYEnwE3GxJL4hHnc7eaFVL02rPgkRJluyfzhk8EcFFpnlSeVCFIs1rP0z3ytu6ybyYQSiWfIR9wPWVL4cS94YTqZxCv9CbrC92k3V5TislUDgQXgDBBPKpY8u6qRj_X_96LO5pGMBp7aui_jOGHqphUd3UkhTdeotBf37wQAtBlAs7cT2oEpEZufxlmjUlX6deuejCbl50pqqGqB4BTSYpSdcJRu7WKEFxNX0XiZzki1tm5olhc9K7HQWgj4Ic4WtEc8dlWB4s_xb3ATP6r3UOa9QjQONaIskTTsUSbkjn8jPs7r8NVwYyhOMWj_D06lou3Aa5A9rGS8iKlDHR8W0o29K3ir6CpWscUa2Abe4BQr-yRMzWmzqbVZSUPdwtqfq8OfgwoCM9d/HXBV7NsvVn6fZUGEmH_VzEGbi-3iy8HK/21" target="_blank" rel="noopener noreferrer">US home solar stalls</a></div><div class="news-date">출처: Bloomberg Green | 발행일: 2026.06.16</div><ul class="news-summary"><li>미국 주택 태양광 설치량이 5년 만에 최저치를 기록할 것으로 예상되며, 이는 주요 세금 공제 혜택 종료의 영향입니다.</li><li>전국적인 태양광 설치 감소는 주택용 배터리 설치에도 영향을 미치고 있으나, 태양광과 배터리를 함께 설치하는 비율은 증가하고 있습니다.</li><li>캘리포니아와 플로리다주는 새로운 친태양광 정책으로 인해 이러한 하락세 속에서도 성장을 보이고 있습니다.</li></ul></article></div><div class="impact-news-panel" data-source-panel="impact-ctvc"><div class="impact-panel-head"><span class="impact-source-logo panel-logo"><img src="https://www.ctvc.co/assets/img/logo.svg?v=af7ed10043" alt="CTVC 로고" loading="lazy"></span><h3>CTVC</h3></div><article class="news-card"><div class="news-title"><a href="https://www.ctvc.co/r/d3cc5e20?m=ac7c90f6-456f-4dfb-b7c2-65eb2bb39828" target="_blank" rel="noopener noreferrer">🌎 From Sightline Climate to Currence</a></div><div class="news-date">출처: CTVC | 발행일: 2026.06.16</div><ul class="news-summary"><li>Sightline Climate가 Currence로 사명을 변경하며 AI 시대에 필요한 시장 정보 제공을 강화합니다.</li><li>Currence는 AI와 에너지의 융합이 가져올 급격한 변화에 맞춰, 기존 시장 조사 방식의 한계를 극복하는 솔루션을 제공합니다.</li><li>새로운 제품인 &#x27;Data Centers &amp; Power&#x27;는 AI 구축의 병목 현상인 전력 문제를 해결하기 위한 정보 계층을 제공합니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.ctvc.co/r/2d745933?m=ac7c90f6-456f-4dfb-b7c2-65eb2bb39828" target="_blank" rel="noopener noreferrer">🌎 The IPO boom is back, baby! #300</a></div><div class="news-date">출처: CTVC | 발행일: 2026.06.16</div><ul class="news-summary"><li>기후 기술 분야의 IPO가 다시 활기를 띠고 있으며, 이는 2024년 중반 18건에서 2026년 5월 35건으로 83% 증가한 수치입니다.</li><li>이번 IPO 붐은 주로 에너지 분야에 집중되어 있으며, 과거 운송 분야 중심이었던 2021년과 달리 차이가 있습니다.</li><li>단기 상업적 플레이와 장기 인프라 투자 간의 구분이 중요해지고 있으며, AI 붐으로 인한 전력 수요 증가가 IPO 시장에 영향을 미칠 수 있습니다.</li></ul></article></div>
+                </div>
+            </div>
+        </section>
+        
+                
+        <section id="section-vcac" class="content-section source-tab-section">
+            <div class="panel-shell">
+                <div class="panel-header">
+                    <div>
+                        <div class="panel-kicker">Startup &amp; Capital</div>
+                        <h2>VC/AC</h2>
+                    </div>
+                    <div class="panel-count">9건</div>
+                </div>
+                <div class="impact-source-strip">
+                    <button class="impact-source-card impact-brand-unicorn active" data-source-target="vcac-유니콘팩토리"><span class="impact-source-logo"><img src="https://menu.mt.co.kr/ucfactory/images/meta_unicornfactory.png" alt="유니콘팩토리 로고" loading="lazy"></span><strong>유니콘팩토리</strong><span class="impact-source-count">0건</span></button><button class="impact-source-card impact-brand-recipe" data-source-target="vcac-스타트업레시피"><span class="impact-source-logo"><img src="https://startuprecipe.co.kr/wp-content/uploads/2025/05/StartupRecipe_logo-removebg-preview.png" alt="스타트업레시피 로고" loading="lazy"></span><strong>스타트업레시피</strong><span class="impact-source-count">1건</span></button><button class="impact-source-card impact-brand-platum" data-source-target="vcac-플래텀"><span class="impact-source-logo"><img src="https://cdn.platum.kr/wp-content/uploads/2024/11/Platum-logo.svg" alt="플래텀 로고" loading="lazy"></span><strong>플래텀</strong><span class="impact-source-count">0건</span></button><button class="impact-source-card impact-brand-venturesquare" data-source-target="vcac-벤처스퀘어"><span class="impact-source-logo"><img src="https://www.venturesquare.net/wp-content/uploads/2026/04/cropped-vs-symbol-color-192x192.png" alt="벤처스퀘어 로고" loading="lazy"></span><strong>벤처스퀘어</strong><span class="impact-source-count">8건</span></button>
+                </div>
+                <div class="impact-news-stage">
+                    <div class="impact-news-panel active" data-source-panel="vcac-유니콘팩토리"><div class="impact-panel-head"><span class="impact-source-logo panel-logo"><img src="https://menu.mt.co.kr/ucfactory/images/meta_unicornfactory.png" alt="유니콘팩토리 로고" loading="lazy"></span><h3>유니콘팩토리</h3></div><div class="empty-state">수집된 VC/AC 뉴스가 없습니다.</div></div><div class="impact-news-panel" data-source-panel="vcac-스타트업레시피"><div class="impact-panel-head"><span class="impact-source-logo panel-logo"><img src="https://startuprecipe.co.kr/wp-content/uploads/2025/05/StartupRecipe_logo-removebg-preview.png" alt="스타트업레시피 로고" loading="lazy"></span><h3>스타트업레시피</h3></div><article class="news-card"><div class="news-title"><a href="https://startuprecipe.co.kr/archives/invest-newsletter/5821487" target="_blank" rel="noopener noreferrer">[DailyRecipe] 벤처 3단체 “코스닥 살릴 5대 정책 과제는 이것”</a></div><div class="news-date">출처: 스타트업레시피 | 발행일: 2026.06.16</div><ul class="news-summary"><li>벤처 업계 3개 단체가 하반기 자본 시장 개편에 대비하여 금융 당국에 코스닥 세그먼트 방향 시행 유예, 중복 상장 금지 예외 적용 등 5대 정책 과제를 제안했습니다.</li><li>한편, 4대 유망 소비재 수출액은 전년 동기 대비 16.4% 증가한 95.8억 달러를 기록했으며, 특히 K-뷰티 수출이 성장을 견인했습니다.</li><li>이 외에도 중소벤처기업부가 기후테크 스타트업을 대상으로 사업화 자금 지원을 위한 모집을 진행하며, 다양한 스타트업의 투자 유치 및 지원 소식이 전해졌습니다.</li></ul></article></div><div class="impact-news-panel" data-source-panel="vcac-플래텀"><div class="impact-panel-head"><span class="impact-source-logo panel-logo"><img src="https://cdn.platum.kr/wp-content/uploads/2024/11/Platum-logo.svg" alt="플래텀 로고" loading="lazy"></span><h3>플래텀</h3></div><div class="empty-state">수집된 VC/AC 뉴스가 없습니다.</div></div><div class="impact-news-panel" data-source-panel="vcac-벤처스퀘어"><div class="impact-panel-head"><span class="impact-source-logo panel-logo"><img src="https://www.venturesquare.net/wp-content/uploads/2026/04/cropped-vs-symbol-color-192x192.png" alt="벤처스퀘어 로고" loading="lazy"></span><h3>벤처스퀘어</h3></div><article class="news-card"><div class="news-title"><a href="https://www.venturesquare.net/1091520/" target="_blank" rel="noopener noreferrer">몽골 정부가 직접 찾은 한국 스타트업 기술…부산서 열린 오픈이노베이션 현장</a></div><div class="news-date">출처: 벤처스퀘어 | 발행일: 2026.06.16</div><ul class="news-summary"><li>부산창경·한국도로교통공단, 몽골 오픈이노베이션 밋업데이 개최 도로·교통 분야 스타트업 5개사 참여입니다.</li><li>현지 실증·수출 가능성 논의 몽골 정부 관계자들과 국내 스타트업이 한자리에 모여 기술 협력과 현지 사업화 가능성을 논의하는 자리가 부산에서 열렸다고 정리됩니다.</li><li>부산창조경제혁신센터는 한국도로교통공단과 함께 지난 15일 부산창경에서 ‘몽골 오픈이노베이션 밋업데이’를 개최했다고 밝혔습니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.venturesquare.net/1091403/" target="_blank" rel="noopener noreferrer">&quot;13억 시장 향해 간다&quot;…코스포, 인도 경제단체와 손잡고 K-스타트업 진출 교두보 구축</a></div><div class="news-date">출처: 벤처스퀘어 | 발행일: 2026.06.16</div><ul class="news-summary"><li>인도상공회의소연합(FICCI)·유니콘인큐베이터와 업무협약 체결 글로벌 K-파운더 네트워크 첫 공식 행사 개최입니다.</li><li>인도 진출 사례 공유 인도가 글로벌 스타트업 시장의 새로운 격전지로 떠오르는 가운데 국내 스타트업들의 현지 진출을 지원하기 위한 민간 네트워크 구축이 본격화되고 있습니다.</li><li>코리아스타트업포럼(코스포)은 인도 최대 민간 경제단체인 인도상공회의소연합(FICCI, Federation of Indian Chambers of Commerce and Industry)과 현지 창업지원기관 유니콘인큐베이터(Unicorn India Ventur입니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.venturesquare.net/1091396/" target="_blank" rel="noopener noreferrer">전북 딥테크 키운다…기보·전북창경, 스타트업 투자 성장사다리 구축</a></div><div class="news-date">출처: 벤처스퀘어 | 발행일: 2026.06.16</div><ul class="news-summary"><li>기술보증기금과 전북창조경제혁신센터가 전북 지역 유망 스타트업 육성과 투자 지원을 위한 업무협약을 체결했습니다.</li><li>이번 협약을 통해 전북창조경제혁신센터는 유망 스타트업을 발굴해 기술보증기금에 추천하고, 기술보증기금은 기술보증, 투자, 경영컨설팅 등 금융·비금융 서비스를 제공합니다.</li><li>양 기관은 특히 농생명·바이오, 탄소, 수소 분야를 중심으로 투자 및 기업지원 프로그램을 연계하여 성장 지원 체계를 구축할 계획입니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.venturesquare.net/1091392/" target="_blank" rel="noopener noreferrer">“PoC는 성공했는데 매출은 없었다”…스타트업 해외 진출의 마지막 퍼즐 찾는다</a></div><div class="news-date">출처: 벤처스퀘어 | 발행일: 2026.06.16</div><ul class="news-summary"><li>인천창조경제혁신센터는 한국무역협회, 한국인공지능소프트웨어산업협회와 함께 스타트업의 해외 진출 후 사업화 전략을 논의하는 &#x27;2026 글로벌 스타트업 서밋&#x27;을 개최했습니다.</li><li>이번 서밋에서는 기술 검증(PoC) 이후 실제 계약 체결 및 매출 창출로 이어지는 실행 전략과 싱가포르 및 아세안 시장 진출 방안이 공유되었습니다.</li><li>행사 후에는 참가 스타트업과 글로벌 기업 간의 비즈니스 미팅을 통해 실질적인 사업 협력 가능성을 모색하는 협력 플랫폼으로 운영되었습니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.venturesquare.net/1091374/" target="_blank" rel="noopener noreferrer">AI 반도체 수혜 기대감 통했다…져스텍, 공모가 상단 확정</a></div><div class="news-date">출처: 벤처스퀘어 | 발행일: 2026.06.16</div><ul class="news-summary"><li>기관 수요예측 경쟁률 1295대 1입니다.</li><li>참여기관 99.92% 상단 이상 제시 18~19일 일반청약 진행입니다.</li><li>일 코스닥 상장 예정 AI 반도체와 HBM(고대역폭메모리) 시장 확대에 대한 기대감이 IPO 시장에도 반영되고 있습니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.venturesquare.net/1091367/" target="_blank" rel="noopener noreferrer">카카오가 찾는 기술은 무엇일까…26개 딥테크 스타트업, PoC 협업 기회 잡았다</a></div><div class="news-date">출처: 벤처스퀘어 | 발행일: 2026.06.16</div><ul class="news-summary"><li>제주창조경제혁신센터, 카카오 통합 오픈이노베이션 비즈니스 밋업 개최 AI·모빌리티·콘텐츠·친환경 분야 26개 스타트업 참여입니다.</li><li>최대 1억 원 지원 대기업과 스타트업이 함께 신사업을 발굴하는 오픈이노베이션이 실증(PoC) 중심으로 진화하고 있습니다.</li><li>단순 네트워킹을 넘어 실제 사업 검증과 투자 연계, 후속 사업화까지 연결하는 방식이 확대되면서 딥테크 스타트업의 성장 기회도 늘어나는 모습입니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.venturesquare.net/1091339/" target="_blank" rel="noopener noreferrer">6만3천 명 몰린 &#x27;모두의 창업&#x27; 출항…전국 5천 명 창업 레이스 시작</a></div><div class="news-date">출처: 벤처스퀘어 | 발행일: 2026.06.16</div><ul class="news-summary"><li>전국 17개 시·도서 &#x27;모두의 창업 1기&#x27; 동시 출범 6만3천 명 지원, 경쟁률 12.6대 1 기록입니다.</li><li>천 명 선발 “아이디어만 있으면 누구나 창업할 수 있다.” 중소벤처기업부가 추진하는 대국민 창업 프로젝트 ‘모두의 창업’이 본격적인 항해를 시작했습니다.</li><li>전국에서 6만3천여 명이 지원한 가운데 5천 명의 예비 창업자가 선발되며 국민 창업 시대의 막이 올랐다고 정리됩니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.venturesquare.net/1091298/" target="_blank" rel="noopener noreferrer">“AI 모델만으로는 부족하다”…업스테이지, ‘다음·타임리’ 품고 AI 생태계 확장 선언</a></div><div class="news-date">출처: 벤처스퀘어 | 발행일: 2026.06.16</div><ul class="news-summary"><li>AI 모델·에이전트·포털 결합한 통합 AI 전략 공개 상반기 신규 계약 규모 지난해 전체 실적 돌파입니다.</li><li>누적 투자 7,300억원 유치 차세대 AI 포털 ‘다음’과 범용 에이전트 플랫폼 ‘타임리’ 앞세워 ‘모두를 위한 AI’ 비전 제시 업스테이지가 AI 모델 개발 기업을 넘어 AI 에이전트와 플랫폼을 아우르는 종합 AI 기업으로의 전환을 선언했습니다.</li><li>업스테이지는 16일 서울 여의도 콘래드 호텔에서 열린 미디어데이에서 ‘업스테이지 컴퍼니(Upstage Company)’ 출범을 공식 발표하고, 자체 AI 모델과 에이전트 플랫폼, 포털 서비스를 연결하는 새로운 성장 전략을 공개했습니다.</li></ul></article></div>
+                </div>
+            </div>
+        </section>
+        
+                
+        <section id="section-ai" class="content-section source-tab-section">
+            <div class="panel-shell">
+                <div class="panel-header">
+                    <div>
+                        <div class="panel-kicker">AI Briefing</div>
+                        <h2>AI</h2>
+                    </div>
+                    <div class="panel-count">12건</div>
+                </div>
+                <div class="impact-source-strip">
+                    <button class="impact-source-card impact-brand-ai-news active" data-source-target="ai-ai-news"><span class="impact-source-logo"><img src="https://www.artificialintelligence-news.com/wp-content/uploads/2024/02/AINews-logo-300x75.png" alt="AI News 로고" loading="lazy"></span><strong>AI News</strong><span class="impact-source-count">2건</span></button><button class="impact-source-card impact-brand-aitimes" data-source-target="ai-ai-times"><span class="impact-source-logo"><img src="https://cdn.aitimes.com/image/logo/translogo_20250624031234.png" alt="AI TIMES 로고" loading="lazy"></span><strong>AI TIMES</strong><span class="impact-source-count">8건</span></button><button class="impact-source-card impact-brand-marketingtech" data-source-target="ai-marketingtech"><span class="impact-source-logo"><img src="https://www.marketingtechnews.net/wp-content/uploads/2020/09/marketing-icon.png" alt="MarketingTech 로고" loading="lazy"></span><strong>MarketingTech</strong><span class="impact-source-count">1건</span></button><button class="impact-source-card impact-brand-batch" data-source-target="ai-the-batch-data-points"><span class="impact-source-logo"><img src="https://www.deeplearning.ai/_next/image?url=%2F_next%2Fstatic%2Fmedia%2Fthe-batch-logo.0b7c10a2.png&amp;w=1080&amp;q=75" alt="The Batch Data Points 로고" loading="lazy"></span><strong>The Batch Data Points</strong><span class="impact-source-count">0건</span></button><button class="impact-source-card impact-brand-batch-weekly" data-source-target="ai-the-batch-weekly-issues"><span class="impact-source-logo"><img src="https://www.deeplearning.ai/_next/image?url=%2F_next%2Fstatic%2Fmedia%2Fthe-batch-logo.0b7c10a2.png&amp;w=1080&amp;q=75" alt="The Batch Weekly Issues 로고" loading="lazy"></span><strong>The Batch Weekly Issues</strong><span class="impact-source-count">1건</span></button>
+                </div>
+                <div class="impact-news-stage">
+                    <div class="impact-news-panel active" data-source-panel="ai-ai-news"><div class="impact-panel-head"><span class="impact-source-logo panel-logo"><img src="https://www.artificialintelligence-news.com/wp-content/uploads/2024/02/AINews-logo-300x75.png" alt="AI News 로고" loading="lazy"></span><h3>AI News</h3></div><article class="news-card"><div class="news-title"><a href="https://www.artificialintelligence-news.com/news/insurers-pivot-ai-strategy-toward-core-risk-underwriting/" target="_blank" rel="noopener noreferrer">Insurers pivot AI strategy toward core risk underwriting</a></div><div class="news-date">출처: AI News | 발행일: 2026.06.16</div><ul class="news-summary"><li>AI investments by insurers are now expected to generate tangible business value beyond mere efficiency.</li><li>According to findings in the 2026 Evident AI Index, insurers are now embedding AI technologies into workflows that directly influence underwriti….</li><li>Christian Preece, Insurance Director at Evident , says: “For years, insurers have competed on AI ambition, but now the focus is shifting from wh….</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.artificialintelligence-news.com/news/ai-content-labelling-eu-code-of-practice/" target="_blank" rel="noopener noreferrer">EU publishes its AI content labelling playbook ahead of the AI Act&#x27;s August deadline</a></div><div class="news-date">출처: AI News | 발행일: 2026.06.16</div><ul class="news-summary"><li>The European Union has published its AI content labelling playbook, a voluntary Code of Practice meant to help companies meet transparency rules….</li><li>The European Commission released the final Code on 10 June, setting out practical steps for the businesses that build and use generative AI to m….</li><li>The Code itself is optional.</li></ul></article></div><div class="impact-news-panel" data-source-panel="ai-ai-times"><div class="impact-panel-head"><span class="impact-source-logo panel-logo"><img src="https://cdn.aitimes.com/image/logo/translogo_20250624031234.png" alt="AI TIMES 로고" loading="lazy"></span><h3>AI TIMES</h3></div><article class="news-card"><div class="news-title"><a href="https://www.aitimes.com/news/articleView.html?idxno=211778" target="_blank" rel="noopener noreferrer">지푸AI, 100만 토큰 컨텍스트 창 ‘GLM-5.2’ 출시...벤치마크는 미공개</a></div><div class="news-date">출처: AI TIMES | 발행일: 2026.06.16</div><ul class="news-summary"><li>지푸AI가 최대 100만 토큰 컨텍스트 창을 지원하는 차세대 대형언어모델(LLM) ‘GLM-5.2’를 출시했습니다.</li><li>이 모델은 이전 모델 대비 5배 확대된 컨텍스트 창과 강화된 장기 작업 능력을 특징으로 하며, 복잡한 코딩 작업을 효율적으로 수행할 수 있습니다.</li><li>벤치마크 결과는 공개되지 않았으나, 8개 주요 AI 코딩 도구와 호환되며 MIT 라이선스로 완전 공개될 예정입니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.aitimes.com/news/articleView.html?idxno=211771" target="_blank" rel="noopener noreferrer">“버려지는 폰으로 서버 구축”…구글·UCSD, ‘폰 클러스터 컴퓨팅’ 개발</a></div><div class="news-date">출처: AI TIMES | 발행일: 2026.06.16</div><ul class="news-summary"><li>구글과 UC샌디에이고 연구진이 사용 후 버려지는 스마트폰을 재활용하여 저비용·저탄소 데이터센터를 구축하는 ‘폰 클러스터 컴퓨팅’ 프로젝트를 개발하고 있습니다.</li><li>구형 스마트폰의 메인보드를 활용해 리눅스 기반의 클러스터 시스템을 구축하면, 최신 서버급 연산 성능을 제공하며 전자폐기물 문제 해결과 탄소 배출량 감소에 기여할 수 있습니다.</li><li>이 시스템은 예산이 제한된 대학이나 연구 기관 등에서 실용적인 대안이 될 수 있으며, 2026년 가을 정식 가동을 목표로 하고 있습니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.aitimes.com/news/articleView.html?idxno=211788" target="_blank" rel="noopener noreferrer">엔비디아, AI &#x27;추론&#x27; 시장서도 점유율 확대...1년 간 66%→74% 성장</a></div><div class="news-date">출처: AI TIMES | 발행일: 2026.06.16</div><ul class="news-summary"><li>AI 산업이 학습(Training) 중심 단계에서 실제 서비스 운영을 위한 추론(Inference) 중심 단계로 빠르게 이동하고 있는 가운데, 엔비디아가 이 시장에서도 지배력을 강화한 것으로 나타났습니다.</li><li>일(현지시간) 디 인포메이션의 분석에 따르면, 엔비디아의 AI 추론용 칩 시장 점유율은 지난 1년 동안 약 66%에서 74%로 상승했습니다.</li><li>추론은 이미 학습된 AI 모델을 실제 서비스에 적용해 사용자의 질문에 답하거나 콘텐츠를 생성하는 과정으로, AI 서비스의 수익 창출과 직결되는 영역입니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.aitimes.com/news/articleView.html?idxno=211790" target="_blank" rel="noopener noreferrer">사카나 AI, &#x27;가상 CSO&#x27; 에이전트 출시…8시간 조사로 100페이지 보고서 작성</a></div><div class="news-date">출처: AI TIMES | 발행일: 2026.06.16</div><ul class="news-summary"><li>사카나 AI가 기업의 최고 전략책임자(CSO)와 팀이 몇 주에 걸쳐 수행해야 할 정도의 방대한 전략 조사 업무를 대신 수행하도록 설계된 자율형 AI 에이전트를 공개했습니다.</li><li>사카나 AI는 15일(현지시간) 기업용 자율 연구 에이전트인 ‘사카나 마린(Sakana Marlin)’을 출시했습니다.</li><li>이를 단순한 챗봇이 아닌 ‘가상 최고 전략책임자(Virtual CSO)’로 포지셔닝하며, 기업의 전략 수립과 시장 조사, 경쟁 분석을 자동화하는 B2B 플랫폼이라고 설명했습니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.aitimes.com/news/articleView.html?idxno=211782" target="_blank" rel="noopener noreferrer">퀄컴, 짐 켈러의 텐스토렌트 인수 추진…모바일 넘어 데이터센터로 확장</a></div><div class="news-date">출처: AI TIMES | 발행일: 2026.06.16</div><ul class="news-summary"><li>퀄컴이 AI 칩 스타트업 텐스토렌트 인수를 추진하는 것으로 알려졌습니다.</li><li>거래 규모는 80억~100억달러(약 12조~15조원)에 이를 것으로 예상되며, 성사되면 퀄컴의 AI와 데이터센터 칩 사업 확대 전략에 중요한 전환점이 될 전망입니다.</li><li>일(현지시간) 디 인포메이션에 따르면, 퀄컴과 텐스토렌트는 최근 인수 협상을 진행해 왔습니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.aitimes.com/news/articleView.html?idxno=211795" target="_blank" rel="noopener noreferrer">업스테이지 &quot;모델 넘어 서비스로&quot;...&#x27;다음&#x27; 안고 에이전트 진화</a></div><div class="news-date">출처: AI TIMES | 발행일: 2026.06.16</div><ul class="news-summary"><li>업스테이지(대표 김성훈)가 자체 AI 모델을 중심으로 기업과 일반 사용자, 에이전트까지 아우르는 사업 확장을 예고했습니다.</li><li>업스테이지는 16일 서울 여의도 콘래드 호텔에서 미디어 데이를 열고 ‘업스테이지 컴퍼니’ 출범을 선언했습니다.</li><li>여기에는 최근 인수를 마친 포털 ‘다음’의 운영사 AXZ와 범용 AI 에이전트 플랫폼 ‘타임리’가 포함합니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.aitimes.com/news/articleView.html?idxno=211792" target="_blank" rel="noopener noreferrer">메타, 페이스북에 &#x27;뮤즈 스파크&#x27; 기반 AI 기능 출시…&quot;검색·편집 대폭 강화&quot;</a></div><div class="news-date">출처: AI TIMES | 발행일: 2026.06.16</div><ul class="news-summary"><li>이는 얼마전 출시한 자체 모델 &#x27;뮤즈 스파크&#x27;로 가능해진 것입니다.</li><li>AI 모드는 검색창에서 기존의 &#x27;사람(People)&#x27;, &#x27;마켓플레이스(Marketplace)&#x27; 등과 함께 제공됩니다.</li><li>이를 통해 실제 사용자들의 경험담과 추천, 후기 등을 종합한 결과를 제공하는 것이 특징입니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.aitimes.com/news/articleView.html?idxno=211752" target="_blank" rel="noopener noreferrer">앤트로픽, &#x27;클로드 맥스&#x27; 허위 광고 집단소송 직면...&quot;토큰 용량 못 미쳐&quot;</a></div><div class="news-date">출처: AI TIMES | 발행일: 2026.06.16</div><ul class="news-summary"><li>원고 측은 앤트로픽이 프리미엄 요금제 가입자들에게 약속한 수준의 사용량을 실제로 제공하지 못하면서도 이를 충분히 설명하지 않았다고 주장하고 있습니다.</li><li>월스트리트저널(WSJ)에 따르면, 이번 소송은 15일(현지시간) 워싱턴 D.C입니다.</li><li>거주자인 칼 칸이 제기했으며, 미국 캘리포니아 북부 연방법원에 제출됐습니다.</li></ul></article></div><div class="impact-news-panel" data-source-panel="ai-marketingtech"><div class="impact-panel-head"><span class="impact-source-logo panel-logo"><img src="https://www.marketingtechnews.net/wp-content/uploads/2020/09/marketing-icon.png" alt="MarketingTech 로고" loading="lazy"></span><h3>MarketingTech</h3></div><article class="news-card"><div class="news-title"><a href="https://www.marketingtechnews.net/news/ai-referrals-ecommerce-traffic-conversions/" target="_blank" rel="noopener noreferrer">AI referrals drive higher ecommerce traffic and conversions</a></div><div class="news-date">출처: MarketingTech | 발행일: 2026.06.16</div><ul class="news-summary"><li>US retailers are seeing stronger website performance from shoppers referred by large language models, according to May 2026 data from Adobe Anal….</li><li>Retail traffic from AI sources rose 138% year on year in May, according to Adobe.</li><li>It was the highest share of total retail visits from AI referrals since the company began tracking the category in October 2024.</li></ul></article></div><div class="impact-news-panel" data-source-panel="ai-the-batch-data-points"><div class="impact-panel-head"><span class="impact-source-logo panel-logo"><img src="https://www.deeplearning.ai/_next/image?url=%2F_next%2Fstatic%2Fmedia%2Fthe-batch-logo.0b7c10a2.png&amp;w=1080&amp;q=75" alt="The Batch Data Points 로고" loading="lazy"></span><h3>The Batch Data Points</h3></div><div class="empty-state">수집된 AI 뉴스가 없습니다.</div></div><div class="impact-news-panel" data-source-panel="ai-the-batch-weekly-issues"><div class="impact-panel-head"><span class="impact-source-logo panel-logo"><img src="https://www.deeplearning.ai/_next/image?url=%2F_next%2Fstatic%2Fmedia%2Fthe-batch-logo.0b7c10a2.png&amp;w=1080&amp;q=75" alt="The Batch Weekly Issues 로고" loading="lazy"></span><h3>The Batch Weekly Issues</h3></div><article class="news-card"><div class="news-title"><a href="https://www.deeplearning.ai/the-batch/issue-357" target="_blank" rel="noopener noreferrer">Mythos Begets Fable, Cursor&#x27;s Composer 2.5, Agents Building Agents</a></div><div class="news-date">출처: The Batch Weekly Issues | 발행일: 2026.06.12</div><ul class="news-summary"><li>If you haven’t already, I encourage you to experiment with using AI agents not just to chat but to actually do work for you on your desktop.</li><li>Desktop agents not only chat with you but also read and edit local files, read.</li><li>send messages, and provide scheduled deliverables like a daily news summary.</li></ul><div class="news-actions"><a class="news-action-link" href="https://www.deeplearning.ai/the-batch/issue-357" target="_blank" rel="noopener noreferrer">원문 링크</a></div></article></div>
+                </div>
+            </div>
+        </section>
+        
+                <section id="section-macro" class="content-section"><div class="panel-shell"><div class="panel-header"><div><div class="panel-kicker">거시경제</div><h2>거시경제 브리핑</h2></div><div class="panel-count">10건</div></div><div class="story-board"><div class="story-group"><div class="story-group-title">미국</div><article class="story-card"><div class="story-label">경제지표</div><article class="news-card"><div class="news-title"><a href="https://stock.mk.co.kr/news/view/1105423" target="_blank" rel="noopener noreferrer">日, 31년 만에 기준금리 1%대로…&quot;물가 상승률 2% 넘을 우려&quot;(종합2보)</a></div><div class="news-date">출처: 매일경제 | 발행일: 2026.06.16</div><ul class="news-summary"><li>개월 만에 인상 결정, 향후 인상 기조 유지 표명입니다.</li><li>우에다 총재는 회의 불참 &quot;실질금리 중·단기적으로 마이너스입니다.</li><li>엔저 영향 고려 금융정책 결정&quot; (도쿄=연합뉴스) 이도연 조성미 특파원 = 일본 중앙은행인 일본은행이 16일 금융정책결정회의에서 6개월 만에 기준금리를 인상했습니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://stock.mk.co.kr/news/view/1104902?type=theme" target="_blank" rel="noopener noreferrer">반도체 수요 증가에 5월 수출물가지수 11개월째 상승</a></div><div class="news-date">출처: 매일경제 | 발행일: 2026.06.16</div><ul class="news-summary"><li>컴퓨터 등 지수 15년 10개월 만에 최고 수입물가지수, 국제유가 하락에 0.3%↓입니다.</li><li>개월 연속 하락 인공지능(AI) 투자 확대에 따른 메모리 반도체와 비철금속 등 수요가 증가하면서 수출물가가 11개월 연속 올랐다고 정리됩니다.</li><li>반면 수입물가는 국제유가 하락 등의 영향으로 두 달 연속 내렸다고 정리됩니다.</li></ul></article></article><article class="story-card"><div class="story-label">관세</div><article class="news-card"><div class="news-title"><a href="https://www.yna.co.kr/amp/view/AKR20260616054300003" target="_blank" rel="noopener noreferrer">정부, 미국 무역법 301조 관세 예고에 범부처 대책회의</a></div><div class="news-date">출처: 연합뉴스 | 발행일: 2026.06.16</div><ul class="news-summary"><li>도널드 트럼프 미국 행정부가 글로벌 관세 만료를 앞두고 무역법 301조를 근거로 관세 부과를 위한 우회 방안을 마련 중인 가운데 정부가 16일 범부처 회의를 열고 대응 방안을 논의했습니다.</li><li>산업통상부는 여한구 통상교섭본부장 주재로 이날 서울 대한상공회의소에서 제57차 통상추진위원회 회의를 열고 미국 무역법 301조 조사 현황 및 대응 계획 등을 논의했다고 밝혔습니다.</li><li>이날 회의에는 통상 주무 부처인 산업부 외에도 재정경제부, 외교부, 국무조정실, 농림축산식품부, 국토교통부, 과학기술정보통신부, 고용노동부, 기후환경에너지부, 보건복지부, 중소기업벤처부, 법무부, 관세청, 식품의약품안전처, 금융위원회, 공정거래위원회 등 정부입니다.</li></ul></article></article><article class="story-card"><div class="story-label">통화정책</div><article class="news-card"><div class="news-title"><a href="https://www.mk.co.kr/news/economy/12075516" target="_blank" rel="noopener noreferrer">“이번 FOMC서 금리인하 언급 사라질 것 … 연내 인상 가능성 커져”</a></div><div class="news-date">출처: 매일경제 | 발행일: 2026.06.16</div><ul class="news-summary"><li>이번주는 글로벌 통화정책 ‘빅 위크’다고 정리됩니다.</li><li>일본 중앙은행은 16일 기준금리를 0.25%포인트 올렸다고 정리됩니다.</li><li>미국 연방준비제도는 19일 기준금리 인상 여부를 결정합니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://stock.mk.co.kr/news/view/1105369" target="_blank" rel="noopener noreferrer">일본, 31년 만에 기준금리 1%…한국도 &#x27;7월 인상론&#x27; 무게</a></div><div class="news-date">출처: 매일경제 | 발행일: 2026.06.16</div><ul class="news-summary"><li>글로벌 통화정책 방향이 금리 인상 쪽으로 기울고 있습니다.</li><li>일본은행은 오늘(16일) 기준금리를 31년 만에 최고 수준인 1%로 인상했는데요입니다.</li><li>중동 전쟁 여파로 물가 압력이 커지면서 한국은행의 금리 인상 가능성에도 관심이 쏠리고 있습니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.yna.co.kr/amp/view/AKR20260616029400009" target="_blank" rel="noopener noreferrer">&#x27;무거운 입&#x27; 강조한 워시…연준 20년 소통 관행 끝나나</a></div><div class="news-date">출처: 연합뉴스 | 발행일: 2026.06.16</div><ul class="news-summary"><li>말은 너무 많이 하지 말고 생각을 많이 하라&#x27; 미국 연방준비제도(Fed·연준) 케빈 워시 신임 의장이 지난해 한 연설에서 연준에 대해 조언한 말입니다.</li><li>역대 최대 기업공개(IPO)인 스페이스X 상장이 마무리되고, 미국과 이란이 종전 양해각서(MOU)에 합의하면서 이제 시장의 관심은 연준의 통화정책 방향에 쏠리고 있습니다.</li><li>연준은 16~17일(현지시간) 연방공개시장위원회(FOMC)를 열어 금리정책을 결정한다, 회의 직후 워시 의장은 기자회견에 나설 예정입니다.</li></ul></article></article><article class="story-card"><div class="story-label">외교</div><article class="news-card"><div class="news-title"><a href="https://www.mk.co.kr/news/world/12075047" target="_blank" rel="noopener noreferrer">“호르무즈 통행료 없다”는 트럼프, 이란 제재 완화 질문에 한 말</a></div><div class="news-date">출처: 매일경제 | 발행일: 2026.06.16</div><ul class="news-summary"><li>도널드 트럼프 미국 대통령은 15일(현지시간) 이란과 합의한 종전 양해각서(MOU) 내용과 관련, 호르무즈 해협 통행료는 부과되지 않을 것이며 대이란 제재 완화는 그들의 행동에 상응해 이뤄질 것이라고 밝혔습니다.</li><li>트럼프 대통령은 이날 프랑스 휴양지 에비앙레뱅에서 열린 주요 7개국(G7) 정상회의 계기에 열린 에마뉘엘 마크롱 프랑스 대통령과 양자 회담에서 모두발언과 기자들과의 질의응답에서 이처럼 밝혔습니다.</li><li>이번 종전 합의의 성과에 대해 “가장 중요한 것은 이란이 핵무기를 갖지 못하게 되리라는 것”이라며 “그들은 강력한 감시 권한을 전제로 이에 전적으로 동의했고 핵무기를 갖지 않을 것”이라고 말했습니다.</li></ul></article></article></div><div class="story-group"><div class="story-group-title">한국</div><article class="story-card"><div class="story-label">경제지표</div><article class="news-card"><div class="news-title"><a href="https://www.mk.co.kr/news/editorial/12075607" target="_blank" rel="noopener noreferrer">청년고용 최저인데 …&#x27;정년연장 즉각 법제화&#x27; 요구한 양대 노총 [사설]</a></div><div class="news-date">출처: 매일경제 | 발행일: 2026.06.16</div><ul class="news-summary"><li>민주노총과 한국노총은 청년층의 고용률 급락이 보이지도 않는가입니다.</li><li>올해 5월 청년(15~29세) 고용률은 43.8%로 1년 전보다 2.4%포인트 추락했습니다.</li><li>년 1월 이후 가장 큰 하락폭입니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.mk.co.kr/news/society/12075725" target="_blank" rel="noopener noreferrer">[인사] 예산군 / 고용노동부 / 더피알</a></div><div class="news-date">출처: 매일경제 | 발행일: 2026.06.16</div><ul class="news-summary"><li>개편 늦추다간 증세 내몰릴수도 3년간 안 올렸는데도 티가 안 난다고 정리됩니다.</li><li>국민 37% “전기료 비싸” “읽지도 못할 동의서 누르고 또 누르고”입니다.</li><li>년만에 손 본다는데 국가핵심기술, 해외 자회사로 수출 쉬워진다 총저축률·투자율 역대급 괴리입니다.</li></ul></article><article class="news-card"><div class="news-title"><a href="https://www.mk.co.kr/news/economy/12075622" target="_blank" rel="noopener noreferrer">국가핵심기술, 해외 자회사로 수출 쉬워진다</a></div><div class="news-date">출처: 매일경제 | 발행일: 2026.06.16</div><ul class="news-summary"><li>정부가 국가 연구개발(R&amp;D) 예산이 투입된 &#x27;국가핵심기술&#x27; 수출에 대한 과도한 규제 문턱을 낮춘다고 정리됩니다.</li><li>이미 승인받은 수출 건의 단순 변경이나 100% 자회사로의 기술 이전 등 유출 우려가 낮은 5가지 유형에 대해 심사 절차를 대폭 간소화하기로 했습니다.</li><li>일 산업통상부는 이 같은 내용을 담은 &#x27;산업기술보호지침 일부개정안&#x27;을 행정예고했습니다.</li></ul></article></article><article class="story-card"><div class="story-label">통화정책</div><div class="empty-state">수집된 뉴스가 없습니다.</div></article></div><div class="story-group"><div class="story-group-title">유럽</div><article class="story-card"><div class="story-label">통화정책</div><div class="empty-state">수집된 뉴스가 없습니다.</div></article></div><div class="story-group"><div class="story-group-title">중국</div><article class="story-card"><div class="story-label">통화정책</div><div class="empty-state">수집된 뉴스가 없습니다.</div></article></div></div></div></section>
+                
+        <section id="section-industry" class="content-section">
+            <div class="panel-shell">
+                <div class="panel-header">
+                    <div>
+                        <div class="panel-kicker">Industry Trend</div>
+                        <h2>산업 트랜드</h2>
+                    </div>
+                    <div class="panel-count">1건</div>
+                </div>
+                
+                <article class="industry-card">
+                    <div class="industry-meta">
+                        <span>McKinsey · The Week in Charts</span>
+                        <span>2026.06.16</span>
+                    </div>
+                    <h3>The $2 trillion fintech future</h3>
+                    <p class="industry-description">McKinsey The Week in Charts 최신 기사입니다. 원문 링크에서 전체 차트와 설명을 확인하세요.</p>
+                    
+                    <div class="industry-source-note">Source: McKinsey</div>
+                    <div class="industry-actions">
+                        <a class="industry-report-link secondary" href="https://www.mckinsey.com/featured-insights/week-in-charts/the-2-trillion-dollar-fintech-future" target="_blank" rel="noopener noreferrer">Week in Charts 원문 보기</a>
+                        
+                    </div>
+                </article>
+            
+            </div>
+        </section>
+        
+                
+        <section id="section-theme" class="content-section">
+            <div class="panel-shell">
+                <div class="panel-header">
+                    <div>
+                        <div class="panel-kicker">Hot Theme</div>
+                        <h2>강세 테마</h2>
+                    </div>
+                    <div class="panel-count">+8.37%</div>
+                </div>
+                <div class="theme-hero">
+                    <div class="theme-title-wrap">
+                        <span class="theme-badge">HOT THEME</span>
+                        <h3>강관업체(Steel pipe)</h3>
+                    </div>
+                    <div class="theme-rate theme-rate-up">+8.37%</div>
+                </div>
+                <div class="theme-summary-box">강관업체(Steel pipe) 강관업(Steel pipe 강철로 만든 파이프)은 산업중간재로 건설, 석유화학, 화학, 섬유, 제지, 조립금속, 자동차, 조선 등 거의 전 산업에 걸쳐 수요처가 분포되어 있음. 특히, 건설경기 및 SOC투자 등에 많은 영향을 받고 있으며, 광역상수도망, 가스관, 농수로 공사, 항만건설 및 보수공사, 노후 가스관 및 수도관 교체 등에서 수요가 발생함. 강관업은 다른 철강업보다 원재료의 의존도가 높아 주 원재료인 열연강판 가격에 따라 수익이 변동되는 경향이 있음.</div>
+                <div class="story-group">
+                    <div class="story-group-title">주요 대장 종목</div>
+                    <div class="stocks-table-wrapper">
+                        <table class="stocks-table">
+                            <thead>
+                                <tr>
+                                    <th style="width: 20%;">종목명</th>
+                                    <th style="width: 16%;">현재가</th>
+                                    <th style="width: 14%;">등락률</th>
+                                    <th>기업 해설</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td class="stock-name-cell"><a href="https://finance.naver.com/item/main.naver?code=071090" target="_blank" rel="noopener noreferrer">하이스틸</a></td><td class="stock-price-cell">4,225원</td><td class="stock-rate-cell"><span class="up">+30.00%</span></td><td class="stock-reason-cell">테마 편입 사유 하이스틸 자동차, 선박기계, 건설, 배관, 보일러 및 구조물 등에 사용되는 강관을 주요제품으로 생산하는 강관 전문 제조, 판매 업체.</td></tr><tr><td class="stock-name-cell"><a href="https://finance.naver.com/item/main.naver?code=146060" target="_blank" rel="noopener noreferrer">율촌</a></td><td class="stock-price-cell">1,225원</td><td class="stock-rate-cell"><span class="up">+29.90%</span></td><td class="stock-reason-cell">테마 편입 사유 율촌 철강 제품 중 ERW강관의 조관 및 정밀 인발가공 전문업체. 광산채굴용, 중장비, 산업용 기계, 가구, 보일러, 오토바이 등의 부품에 투입되는 파이프류 소재 제품을 제조 및 공급중. 자동차 부품용 매출이 대부분을 차지.</td></tr><tr><td class="stock-name-cell"><a href="https://finance.naver.com/item/main.naver?code=008970" target="_blank" rel="noopener noreferrer">KBI동양철관</a></td><td class="stock-price-cell">1,725원</td><td class="stock-rate-cell"><span class="up">+20.63%</span></td><td class="stock-reason-cell">테마 편입 사유 KBI동양철관 강관 전문 생산업체. 후판(Plate)과 코일(Coil)을 원재료로 가스관, 일반배관, 강관말뚝, 나관, 이형관 등을 제조, 판매.</td></tr><tr><td class="stock-name-cell"><a href="https://finance.naver.com/item/main.naver?code=092790" target="_blank" rel="noopener noreferrer">넥스틸</a></td><td class="stock-price-cell">16,315원</td><td class="stock-rate-cell"><span class="up">+9.94%</span></td><td class="stock-reason-cell">테마 편입 사유 넥스틸 강관 전문 업체. 유정 굴착 및 채유에 사용되는 유정관(OCTG Pipe), 석유 및 천연가스 산업에서 용수, 가스 및 석유 수송에 사용되는 송유관(Line Pipe), 증기, 물, 가스 등의 배관에 사용되는 배관용 강관, 토목, 건축 등의 구조물에 사용되는 구조용 강관 등을 생산 및 판매. 미국석유협회인증(API) 유정관(OCTG Pipe), 송유관(Line Pipe)을 제조하여 미국 등 전 세계에 수출·판매.</td></tr><tr><td class="stock-name-cell"><a href="https://finance.naver.com/item/main.naver?code=005010" target="_blank" rel="noopener noreferrer">휴스틸</a></td><td class="stock-price-cell">5,010원</td><td class="stock-rate-cell"><span class="up">+5.36%</span></td><td class="stock-reason-cell">테마 편입 사유 휴스틸 신안그룹 계열의 강관 제조/판매업체. 주요제품으로는 증기, 물, 가스 등의 배관에 사용되는 배관용 강관, 유정 굴착 및 채유에 사용되는 OCTG(Oil Country Tubular Goods), 토목, 건축 등의 구조물에 사용되는 구조용 강관, 전선관 등이 있음. 강관의 주원재료는 HRC(Hot Rolled Coil), STS(Stainless Steel) 및 H.R PLATE(Hot Rolled Steel Plate)이며, 포스코 등에서 구매.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="story-group theme-news-group">
+                    <div class="story-group-title">테마 관련 최신 뉴스</div>
+                    <div class="empty-state">관련 뉴스를 찾을 수 없습니다.</div>
+                </div>
+            </div>
+        </section>
+    
+            </main>
+        </div>
+    </div>
+
+    <script>
+        const chartData = {"us_10y": {"dates": ["05/06", "05/07", "05/08", "05/11", "05/12", "05/13", "05/14", "05/15", "05/18", "05/19", "05/20", "05/21", "05/22", "05/25", "05/26", "05/27", "05/28", "05/29", "06/01", "06/02", "06/03", "06/04", "06/05", "06/08", "06/09", "06/10", "06/11", "06/12", "06/15", "06/16"], "values": [4.356, 4.392, 4.364, 4.41, 4.463, 4.481, 4.461, 4.595, 4.623, 4.667, 4.572, 4.586, 4.558, 4.558, 4.493, 4.481, 4.455, 4.453, 4.475, 4.455, 4.491, 4.477, 4.536, 4.552, 4.528, 4.542, 4.463, 4.487, 4.487, 4.428]}, "fx": {"dates": ["05/08", "05/11", "05/12", "05/13", "05/14", "05/15", "05/18", "05/19", "05/20", "05/21", "05/22", "05/25", "05/26", "05/27", "05/28", "05/29", "06/01", "06/02", "06/03", "06/04", "06/05", "06/08", "06/09", "06/10", "06/11", "06/12", "06/15", "06/16", "06/17", "06/17"], "values": [1454.79, 1460.55, 1474.45, 1492.99, 1489.84, 1493.34, 1497.15, 1492.32, 1507.85, 1499.77, 1504.4, 1512.83, 1514.79, 1505.44, 1503.11, 1495.29, 1506.84, 1511.27, 1516.6, 1530.11, 1533.07, 1554.48, 1528.88, 1525.81, 1525.05, 1517.38, 1509.5, 1513.31, 1513.31, 1512.78]}, "kospi": {"dates": ["05/04", "05/06", "05/07", "05/08", "05/11", "05/12", "05/13", "05/14", "05/15", "05/18", "05/19", "05/20", "05/21", "05/22", "05/26", "05/27", "05/28", "05/29", "06/01", "06/02", "06/04", "06/05", "06/08", "06/09", "06/10", "06/11", "06/12", "06/15", "06/16", "06/17"], "values": [6936.99, 7384.56, 7490.05, 7498.0, 7822.24, 7643.15, 7844.01, 7981.41, 7493.18, 7516.04, 7271.66, 7208.95, 7815.59, 7847.71, 8047.51, 8228.7, 8185.29, 8476.15, 8788.38, 8801.49, 8639.41, 8160.59, 7484.41, 8096.93, 7730.82, 7763.95, 8123.62, 8545.98, 8726.6, 8669.35]}, "kosdaq": {"dates": ["05/04", "05/06", "05/07", "05/08", "05/11", "05/12", "05/13", "05/14", "05/15", "05/18", "05/19", "05/20", "05/21", "05/22", "05/26", "05/27", "05/28", "05/29", "06/01", "06/02", "06/04", "06/05", "06/08", "06/09", "06/10", "06/11", "06/12", "06/15", "06/16", "06/17"], "values": [1213.74, 1210.17, 1199.18, 1207.72, 1207.34, 1179.29, 1176.93, 1191.09, 1129.82, 1111.09, 1084.36, 1056.07, 1105.97, 1161.13, 1172.52, 1133.13, 1104.36, 1074.8, 1050.03, 1026.03, 1049.73, 1002.44, 911.39, 967.81, 951.63, 996.93, 1029.05, 1034.03, 1034.03, 1019.15]}};
+        const selectedDate = "2026-06-16";
+        const hasArchiveManifest = typeof archiveDates !== "undefined" && Array.isArray(archiveDates) && archiveDates.length > 0;
+        const availableDates = hasArchiveManifest
+            ? Array.from(new Set([...archiveDates, selectedDate])).sort()
+            : [selectedDate];
+
+        const sidebarTabs = document.querySelectorAll(".sidebar-tab");
+        const sections = document.querySelectorAll(".content-section");
+
+        function activateSection(sectionId) {
+            sidebarTabs.forEach((tab) => tab.classList.toggle("active", tab.dataset.target === sectionId));
+            sections.forEach((section) => section.classList.toggle("active", section.id === sectionId));
+        }
+
+        sidebarTabs.forEach((tab) => {
+            tab.addEventListener("click", () => activateSection(tab.dataset.target));
+        });
+
+        document.querySelectorAll(".source-tab-section").forEach((sourceSection) => {
+            const sourceCards = sourceSection.querySelectorAll("[data-source-target]");
+            const sourcePanels = sourceSection.querySelectorAll("[data-source-panel]");
+
+            function activateSource(targetKey) {
+                sourceCards.forEach((card) => card.classList.toggle("active", card.dataset.sourceTarget === targetKey));
+                sourcePanels.forEach((panel) => panel.classList.toggle("active", panel.dataset.sourcePanel === targetKey));
+            }
+
+            sourceCards.forEach((card) => {
+                card.addEventListener("click", () => activateSource(card.dataset.sourceTarget));
+            });
+        });
+
+        function archiveHref(dateStr) {
+            if (!hasArchiveManifest) {
+                return "#";
+            }
+            return dateStr === archiveDates[0] ? "index.html" : `archive_${dateStr}.html`;
+        }
+
+        const calendarGrid = document.getElementById("calendar-grid");
+        const calendarMonthLabel = document.getElementById("calendar-month-label");
+        const calendarPrev = document.getElementById("calendar-prev");
+        const calendarNext = document.getElementById("calendar-next");
+        let calendarView = new Date(`${selectedDate}T00:00:00`);
+
+        function renderCalendar() {
+            const year = calendarView.getFullYear();
+            const month = calendarView.getMonth();
+            calendarMonthLabel.textContent = `${year}년 ${month + 1}월`;
+            calendarGrid.innerHTML = "";
+
+            const firstDay = new Date(year, month, 1);
+            const firstDate = new Date(firstDay);
+            firstDate.setDate(firstDate.getDate() - firstDay.getDay());
+
+            for (let i = 0; i < 42; i += 1) {
+                const current = new Date(firstDate);
+                current.setDate(firstDate.getDate() + i);
+                const dateStr = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, "0")}-${String(current.getDate()).padStart(2, "0")}`;
+                const isCurrentMonth = current.getMonth() === month;
+                const isSelected = dateStr === selectedDate;
+                const isAvailable = availableDates.includes(dateStr);
+                const button = document.createElement("button");
+                button.type = "button";
+                button.className = "calendar-day";
+                if (!isCurrentMonth) button.classList.add("is-muted");
+                if (isAvailable) button.classList.add("is-available");
+                if (isSelected) button.classList.add("is-selected");
+                button.textContent = String(current.getDate());
+
+                if (!isAvailable) {
+                    button.disabled = true;
+                } else {
+                    button.addEventListener("click", () => {
+                        const href = archiveHref(dateStr);
+                        if (href && href !== "#") {
+                            window.location.href = href;
+                        }
+                    });
+                }
+                calendarGrid.appendChild(button);
+            }
+        }
+
+        calendarPrev.addEventListener("click", () => {
+            calendarView = new Date(calendarView.getFullYear(), calendarView.getMonth() - 1, 1);
+            renderCalendar();
+        });
+
+        calendarNext.addEventListener("click", () => {
+            calendarView = new Date(calendarView.getFullYear(), calendarView.getMonth() + 1, 1);
+            renderCalendar();
+        });
+
+        renderCalendar();
+
+        document.addEventListener("DOMContentLoaded", () => {
+            if (!window.ApexCharts) {
+                return;
+            }
+
+            const colors = {
+                us10y: "#0f6bd8",
+                fx: "#14875e",
+                kospi: "#d97706",
+                kosdaq: "#334155",
+            };
+
+            const formatValue = (value, suffix = "") => {
+                const numericValue = Number(value);
+                if (!Number.isFinite(numericValue)) {
+                    return value;
+                }
+                const maximumFractionDigits = Math.abs(numericValue) >= 100 ? 1 : 3;
+                return numericValue.toLocaleString("ko-KR", { maximumFractionDigits }) + suffix;
+            };
+
+            const chartOptions = (title, dates, values, color, suffix = "") => ({
+                series: [{ name: title, data: values }],
+                chart: {
+                    type: "area",
+                    height: 292,
+                    toolbar: { show: false },
+                    zoom: { enabled: false },
+                    fontFamily: "Inter, Noto Sans KR, sans-serif",
+                },
+                colors: [color],
+                dataLabels: { enabled: false },
+                stroke: { curve: "smooth", width: 3 },
+                fill: {
+                    type: "gradient",
+                    gradient: {
+                        shadeIntensity: 1,
+                        opacityFrom: 0.34,
+                        opacityTo: 0.04,
+                        stops: [0, 95, 100],
+                    },
+                },
+                grid: {
+                    borderColor: "rgba(148, 163, 184, 0.22)",
+                    strokeDashArray: 4,
+                },
+                xaxis: {
+                    categories: dates,
+                    labels: {
+                        style: {
+                            colors: "#94a3b8",
+                            fontSize: "10px",
+                        },
+                    },
+                    axisBorder: { show: false },
+                    axisTicks: { show: false },
+                },
+                yaxis: {
+                    labels: {
+                        style: {
+                            colors: "#94a3b8",
+                            fontSize: "10px",
+                        },
+                        formatter: (value) => formatValue(value, suffix),
+                    },
+                },
+                tooltip: {
+                    x: { show: true },
+                    y: {
+                        formatter: (value) => formatValue(value, suffix),
+                    },
+                },
+            });
+
+            if (chartData.us_10y && chartData.us_10y.values.length) {
+                new ApexCharts(
+                    document.querySelector("#chart-us-10y"),
+                    chartOptions("금리", chartData.us_10y.dates, chartData.us_10y.values, colors.us10y, "%")
+                ).render();
+            }
+
+            if (chartData.fx && chartData.fx.values.length) {
+                new ApexCharts(
+                    document.querySelector("#chart-fx"),
+                    chartOptions("환율", chartData.fx.dates, chartData.fx.values, colors.fx, "원")
+                ).render();
+            }
+
+            if (chartData.kospi && chartData.kospi.values.length) {
+                new ApexCharts(
+                    document.querySelector("#chart-kospi"),
+                    chartOptions("코스피", chartData.kospi.dates, chartData.kospi.values, colors.kospi)
+                ).render();
+            }
+
+            if (chartData.kosdaq && chartData.kosdaq.values.length) {
+                new ApexCharts(
+                    document.querySelector("#chart-kosdaq"),
+                    chartOptions("코스닥", chartData.kosdaq.dates, chartData.kosdaq.values, colors.kosdaq)
+                ).render();
+            }
+        });
+    </script>
+</body>
+</html>

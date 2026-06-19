@@ -22,11 +22,11 @@ DEFAULT_OUTPUT_DIR = BASE_DIR / "pipeline_data" / "agent_b"
 KST = scraper.KST
 SUMMARY_INPUT_MAX_CHARS = 9000
 DEFAULT_BATCH_SIZE = 2
-DEFAULT_RETRY_ATTEMPTS = 4
+DEFAULT_RETRY_ATTEMPTS = 2
 DEFAULT_RETRY_BASE_DELAY = 20.0
 DEFAULT_INTER_BATCH_DELAY = 12.0
 DEFAULT_PRIMARY_MODEL = "gemini-2.5-flash-lite"
-DEFAULT_FALLBACK_MODELS = "gemini-2.5-flash-lite"
+DEFAULT_FALLBACK_MODELS = "none"
 DEFAULT_OPENAI_MODEL = "gpt-5-mini"
 
 SUMMARY_COLUMNS = [
@@ -71,7 +71,7 @@ class AgentBOptions:
     inter_batch_delay: float = DEFAULT_INTER_BATCH_DELAY
     fallback_models: str = DEFAULT_FALLBACK_MODELS
     openai_model: str = DEFAULT_OPENAI_MODEL
-    disable_openai_fallback: bool = False
+    disable_openai_fallback: bool = True
 
 
 def parse_args():
@@ -90,9 +90,9 @@ def parse_args():
     parser.add_argument("--retry-attempts", type=int, default=DEFAULT_RETRY_ATTEMPTS, help="Gemini retry attempts per batch for rate limits/transient errors.")
     parser.add_argument("--retry-base-delay", type=float, default=DEFAULT_RETRY_BASE_DELAY, help="Initial retry delay in seconds. Exponential backoff is applied.")
     parser.add_argument("--inter-batch-delay", type=float, default=DEFAULT_INTER_BATCH_DELAY, help="Seconds to wait between successful Gemini batches.")
-    parser.add_argument("--fallback-models", default=DEFAULT_FALLBACK_MODELS, help="Comma-separated Gemini models to try only for articles that failed the primary model. Use 'none' to disable.")
+    parser.add_argument("--fallback-models", default=DEFAULT_FALLBACK_MODELS, help="Deprecated compatibility option. Agent B uses one Gemini model pass.")
     parser.add_argument("--openai-model", default="", help=f"OpenAI model for Gemini-failed articles. Defaults to OPENAI_SUMMARY_MODEL/{DEFAULT_OPENAI_MODEL}.")
-    parser.add_argument("--disable-openai-fallback", action="store_true", help="Do not retry Gemini-failed articles with OpenAI before extractive fallback.")
+    parser.add_argument("--enable-openai-fallback", action="store_false", dest="disable_openai_fallback", default=True, help="Explicitly enable OpenAI fallback. Disabled by default.")
     return parser.parse_args()
 
 
@@ -432,6 +432,12 @@ def is_retryable_gemini_error(exc):
     return any(code in error_text for code in ["429", "500", "502", "503", "504"])
 
 
+def is_gemini_rate_limit_error(exc):
+    if isinstance(exc, urllib.error.HTTPError):
+        return exc.code == 429
+    return "429" in str(exc) or "RESOURCE_EXHAUSTED" in str(exc).upper()
+
+
 def retry_delay_seconds(exc, attempt, base_delay):
     retry_after = ""
     if isinstance(exc, urllib.error.HTTPError):
@@ -480,7 +486,15 @@ def summarize_with_gemini(rows, env, model, batch_size, retry_attempts, retry_ba
                     time.sleep(inter_batch_delay)
                 break
             except Exception as exc:
-                error_text = str(exc)
+                error_text = format_exception_message(exc)
+                if is_gemini_rate_limit_error(exc):
+                    for row in rows[start:]:
+                        errors[row["article_id"]] = error_text
+                    print(
+                        f"  - Gemini 429 circuit breaker: rows {start + 1}-{len(rows)} "
+                        "즉시 규칙 기반 요약으로 전환"
+                    )
+                    return results, errors
                 should_retry = is_retryable_gemini_error(exc) and attempt < max(1, retry_attempts) - 1
                 if should_retry:
                     delay = retry_delay_seconds(exc, attempt, retry_base_delay)
@@ -697,14 +711,12 @@ def summarize_rows(rows, options):
             if len(clean_text_for_summary(row.get("original_text", ""))) >= 80
         ]
         remaining_rows = ai_candidate_rows
-        for candidate_model in gemini_model_candidates(env, model, options.fallback_models):
-            if not remaining_rows:
-                break
-            print(f"[Agent B] Gemini pass: {candidate_model} ({len(remaining_rows)} articles)")
+        if remaining_rows:
+            print(f"[Agent B] Gemini single pass: {model} ({len(remaining_rows)} articles)")
             model_results, model_errors = summarize_with_gemini(
                 remaining_rows,
                 env,
-                candidate_model,
+                model,
                 max(1, options.batch_size),
                 max(1, options.retry_attempts),
                 max(1.0, options.retry_base_delay),
@@ -712,19 +724,18 @@ def summarize_rows(rows, options):
             )
             if isinstance(model_errors, str):
                 shared_error = model_errors
-                break
-            gemini_results.update(model_results)
-            for row in remaining_rows:
-                article_id = row.get("article_id", "")
-                if article_id in model_results:
-                    gemini_errors.pop(article_id, None)
-                else:
-                    gemini_errors[article_id] = model_errors.get(article_id, f"missing summary from {candidate_model}")
-            remaining_rows = [
-                row
-                for row in remaining_rows
-                if row.get("article_id", "") not in gemini_results
-            ]
+            else:
+                gemini_results.update(model_results)
+                for row in remaining_rows:
+                    article_id = row.get("article_id", "")
+                    if article_id in model_results:
+                        gemini_errors.pop(article_id, None)
+                    else:
+                        gemini_errors[article_id] = model_errors.get(article_id, f"missing summary from {model}")
+        remaining_rows = [
+            row for row in remaining_rows
+            if row.get("article_id", "") not in gemini_results
+        ]
         if remaining_rows and not options.disable_openai_fallback:
             print(f"[Agent B] OpenAI fallback pass: {openai_model} ({len(remaining_rows)} articles)")
             model_results, model_errors = summarize_with_openai(

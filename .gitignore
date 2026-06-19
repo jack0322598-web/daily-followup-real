@@ -5,10 +5,17 @@
 
 
 .env
+.dev.vars
+.wrangler/
+.manual-trigger-secret.txt
+node_modules/
 summary_cache.json
 __pycache__/
+*.py[cod]
 logs/
 pipeline_data/
 run_update_*.log
+temp_*.log
+tmp_*
 .update.lock
 _disabled_local_bs4_shadow_*/

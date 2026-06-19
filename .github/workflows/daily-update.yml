@@ -2,7 +2,9 @@ name: Daily News Update
 
 on:
   schedule:
-    - cron: "20 20-23 * * *"
+    # GitHub scheduled workflows run from the default branch.
+    # Run once per day at 07:00 KST (22:00 UTC on the previous day).
+    - cron: "0 22 * * *"
   workflow_dispatch:
     inputs:
       news_date:
@@ -15,16 +17,18 @@ permissions:
 
 concurrency:
   group: daily-news-update
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   update:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     env:
       TZ: Asia/Seoul
       PYTHONIOENCODING: utf-8
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      AI_ISSUE_RANKING_ENABLED: "0"
       GMAIL_USER: ${{ secrets.GMAIL_USER }}
       GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -82,11 +86,32 @@ jobs:
 
           while [[ "$current" < "$end" || "$current" == "$end" ]]; do
             echo "Generating briefing for $current"
-            python agent_a.py --date "$current"
-            python agent_b.py --date "$current"
-            python main.py --date "$current"
+            AI_SUMMARY_ENABLED=0 python -u main.py --date "$current"
+            python -u agent_a.py --date "$current" --selection-archive "archive_${current}.html"
+            python -u agent_b.py --date "$current" --fallback-models none --retry-attempts 2
+            python -u main.py --date "$current"
             current="$(TZ=Asia/Seoul date -d "$current + 1 day" +%F)"
           done
+
+      - name: Validate generated output
+        if: steps.dates.outputs.should_run == 'true'
+        shell: bash
+        run: |
+          latest="${{ steps.dates.outputs.end_date }}"
+          archive_file="archive_${latest}.html"
+
+          if [[ ! -f "$archive_file" ]]; then
+            echo "Expected archive was not created: $archive_file"
+            exit 1
+          fi
+
+          news_count="$(grep -o 'class="news-card' "$archive_file" | wc -l | tr -d ' ')"
+          echo "News cards found in $archive_file: $news_count"
+
+          if [[ "$news_count" -lt 3 ]]; then
+            echo "Generated page has too few news cards."
+            exit 1
+          fi
 
       - name: Commit updated files
         id: commit
@@ -131,11 +156,11 @@ jobs:
           if [ "$START_DATE" = "$END_DATE" ]; then
             update_label="$END_DATE"
             page_url="${site_url}archive_${END_DATE}.html"
-            archive_label="오늘 브리핑 보기"
+            archive_label="View today's briefing"
           else
             update_label="${START_DATE} ~ ${END_DATE}"
             page_url="${site_url}"
-            archive_label="브리핑 메인 보기"
+            archive_label="View briefing home"
           fi
 
           export SITE_URL="$site_url"
@@ -150,13 +175,13 @@ jobs:
           import os
 
           payload = {
-              "text": f"뉴스 브리핑 업데이트 완료: {os.environ['UPDATE_LABEL']}",
+              "text": f"Daily news briefing updated: {os.environ['UPDATE_LABEL']}",
               "blocks": [
                   {
                       "type": "header",
                       "text": {
                           "type": "plain_text",
-                          "text": "뉴스 브리핑 업데이트 완료",
+                          "text": "Daily news briefing updated",
                       },
                   },
                   {
@@ -164,9 +189,9 @@ jobs:
                       "text": {
                           "type": "mrkdwn",
                           "text": (
-                              f"*업데이트 대상*: `{os.environ['UPDATE_LABEL']}`\n"
-                              f"<{os.environ['PAGE_URL']}|{os.environ['ARCHIVE_LABEL']}> · "
-                              f"<{os.environ['COMMIT_URL']}|커밋 보기>"
+                              f"*Updated target*: `{os.environ['UPDATE_LABEL']}`\n"
+                              f"<{os.environ['PAGE_URL']}|{os.environ['ARCHIVE_LABEL']}> | "
+                              f"<{os.environ['COMMIT_URL']}|View commit>"
                           ),
                       },
                   },

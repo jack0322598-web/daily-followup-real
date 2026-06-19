@@ -45,6 +45,7 @@ class AgentAOptions:
     include_theme: bool = True
     include_newsletters: bool = True
     write_xlsx: bool = True
+    selection_archive: Path | None = None
 
 
 def parse_args():
@@ -56,6 +57,7 @@ def parse_args():
     parser.add_argument("--skip-theme", action="store_true", help="Skip the strong-theme news block.")
     parser.add_argument("--skip-newsletters", action="store_true", help="Skip Gmail newsletter collection.")
     parser.add_argument("--no-xlsx", action="store_true", help="Write JSONL/CSV only.")
+    parser.add_argument("--selection-archive", help="Read the final selected news cards from an existing archive HTML, then fetch bodies only for those links.")
     return parser.parse_args()
 
 
@@ -213,6 +215,65 @@ def append_news_rows(rows, news_list, target_date, section_id, section_label, gr
             rows.append(row)
 
 
+def collect_selected_archive_articles(options):
+    archive_path = options.selection_archive
+    if not archive_path or not archive_path.exists():
+        raise FileNotFoundError(f"Selection archive not found: {archive_path}")
+
+    soup = BeautifulSoup(archive_path.read_text(encoding="utf-8", errors="ignore"), "html.parser")
+    rows = []
+    seen_links = set()
+    for card in soup.select("article.news-card"):
+        anchor = card.select_one(".news-title a[href]")
+        if not anchor:
+            continue
+        title = normalize_text(anchor.get_text(" ", strip=True))
+        link = normalize_text(anchor.get("href", ""))
+        if not title or not link or link in seen_links:
+            continue
+
+        date_text = normalize_text((card.select_one(".news-date") or card).get_text(" ", strip=True))
+        source_match = re.search(r"출처:\s*([^|]+)", date_text)
+        source = normalize_text(source_match.group(1)) if source_match else source_domain(link)
+        section = card.find_parent("section", id=re.compile(r"^section-"))
+        section_id = (section.get("id", "") if section else "").replace("section-", "")
+        heading = section.select_one("h2") if section else None
+        section_label = normalize_text(heading.get_text(" ", strip=True) if heading else section_id).replace(" 브리핑", "")
+        story_card = card.find_parent("article", class_="story-card")
+        story_label = story_card.select_one(".story-label") if story_card else None
+        category = normalize_text(story_label.get_text(" ", strip=True) if story_label else source)
+        story_group = card.find_parent(class_="story-group")
+        group_label = story_group.select_one(".story-group-title") if story_group else None
+        group = normalize_text(group_label.get_text(" ", strip=True) if group_label else source)
+
+        body = scraper.fetch_article_body_text(link)
+        if len(body) < 160:
+            body = normalize_text(" ".join(item.get_text(" ", strip=True) for item in card.select(".news-summary li")))
+        news = {
+            "title": title,
+            "link": link,
+            "source": source,
+            "date": options.target_date.strftime("%Y.%m.%d"),
+            "summary": [body] if body else [],
+            "_summary_source": body,
+            "_summary_context": f"{section_label} {group} {category} 주요 뉴스입니다.",
+        }
+        row = news_to_row(
+            news,
+            options.target_date,
+            len(rows) + 1,
+            section_id,
+            section_label,
+            group,
+            category,
+        )
+        if should_keep_row(row):
+            rows.append(row)
+            seen_links.add(link)
+    print(f"[Agent A] 최종 선택 아카이브에서 본문 추출: {len(rows)}건")
+    return rows
+
+
 def fetch_impacton_news(target_date, seen_links, seen_titles):
     target_dot = target_date.strftime("%Y.%m.%d")
     impact_news = []
@@ -259,26 +320,20 @@ def fetch_impacton_news(target_date, seen_links, seen_titles):
 
 
 def collect_raw_articles(options):
+    if options.selection_archive:
+        return collect_selected_archive_articles(options)
+
     env = scraper.load_env()
     env["AI_SUMMARY_ENABLED"] = "0"
     scraper.configure_summary_generator(env)
-    trend_keywords = scraper.load_trend_keywords()
 
     rows = []
     seen_links, seen_titles = set(), []
     target_date = options.target_date
 
+    strong_theme = {"name": "강세 테마", "news": []}
     if options.include_theme:
         strong_theme = scraper.fetch_strong_theme()
-        append_news_rows(
-            rows,
-            strong_theme.get("news", []),
-            target_date,
-            "theme",
-            "강세 테마",
-            strong_theme.get("name", "강세 테마"),
-            "테마 관련 최신 뉴스",
-        )
 
     global_impact = scraper.fetch_global_impact(target_date, seen_links, seen_titles)
     trellis_news = scraper.fetch_trellis_news(target_date, seen_links, seen_titles)
@@ -313,11 +368,28 @@ def collect_raw_articles(options):
 
     impacton_news = fetch_impacton_news(target_date, seen_links, seen_titles)
     all_impact = impacton_news + global_impact + trellis_news + causeartist_news + socialimpact_news + eroun_news + newsletter_news
+    all_impact = scraper.rank_news_by_source(
+        all_impact,
+        scraper.load_recent_briefing_titles(target_date),
+    )
+
+    search_sections = scraper.fetch_search_sections(target_date, seen_links, seen_titles)
+    selected_count = scraper.count_selected_news(strong_theme, all_impact, search_sections)
+    print(f"[Agent A] 최종 선별 기사: {selected_count}건")
+
+    append_news_rows(
+        rows,
+        strong_theme.get("news", []),
+        target_date,
+        "theme",
+        "강세 테마",
+        strong_theme.get("name", "강세 테마"),
+        "테마 관련 최신 뉴스",
+    )
     for news in all_impact:
         group = "국내" if scraper.is_domestic_news(news.get("title", ""), news.get("summary", []), news.get("source", "")) else "글로벌"
         append_news_rows(rows, [news], target_date, "impact", "임팩트", group, news.get("source", ""))
 
-    search_sections = scraper.fetch_search_sections(target_date, seen_links, seen_titles, trend_keywords)
     for section in search_sections:
         for group in section.get("groups", []):
             for category in group.get("categories", []):
@@ -518,6 +590,7 @@ def main():
         include_theme=not args.skip_theme,
         include_newsletters=not args.skip_newsletters,
         write_xlsx=not args.no_xlsx,
+        selection_archive=Path(args.selection_archive).resolve() if args.selection_archive else None,
     )
     rows = collect_raw_articles(options)
     output_paths = write_outputs(rows, options)
