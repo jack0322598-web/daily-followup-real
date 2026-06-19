@@ -1,150 +1,66 @@
 {
-  "date": "2026.06.18",
+  "date": "2026.06.19",
   "items": [
     {
       "source": "BCG",
-      "title": "A Real-World Game Plan for AI in Renewable Energy",
-      "date": "2026.06.18",
-      "source_url": "https://www.bcg.com/publications/2026/a-real-world-game-plan-for-ai-in-renewable-energy",
-      "description_en": "By following a structured approach grounded in operational realities, renewables players can create substantial value from AI. Lessons distilled from BCG’s work with clients can help companies make the most of the technology. Players are struggling to generate value from AI. Pilots are often not scaled effectively, la…",
+      "title": "Agentic AI Turns Every Team into Its Own Transformation Engine",
+      "date": "2026.06.19",
+      "source_url": "https://www.bcg.com/publications/2026/agentic-ai-turns-every-team-into-its-own-transformation-engine",
+      "description_en": "As organisations adopt agentic AI, transformation shifts from centralised programs to team-led workflow redesign, becoming less a rollout and an evolution in how teams work.",
       "description_ko": "",
       "summary": [
-        "Players are struggling to generate value from AI.",
-        "AI can increase worker productivity by 15% to 25% and energy yield by one to three percentage points.",
-        "With 10 to 15 use cases, companies typically achieve 60% to 70% of the value potential."
+        "As organisations adopt agentic AI, transformation shifts from centralised programs to team-led workflow redesign",
+        "BCG가 짚은 핵심 쟁점과 영향 포인트를 함께 확인할 수 있습니다.",
+        "Agentic AI Turns Every Team into Its Own Transformation Engine 관련 핵심 내용을 정리한 자료입니다."
       ],
-      "_summary_source": "By following a structured approach grounded in operational realities, renewables players can create substantial value from AI. Lessons distilled from BCG’s work with clients can help companies make the most of the technology. Players are struggling to generate value from AI. Pilots are often not scaled effectively, lack measurable impact, or fail to deal with front-line issues. AI can increase worker productivity by 15% to 25% and energy yield by one to three percentage points. With 10 to 15 use cases, companies typically achieve 60% to 70% of the value potential. Recommendations include focusing on value creation from the outset, solving operational constraints, moving fast but with disciplined governance, and having the right processes and people in place to succeed.",
+      "_summary_source": "As organisations adopt agentic AI, transformation shifts from centralised programs to team-led workflow redesign, becoming less a rollout and an evolution in how teams work.",
       "_summary_context": "BCG가 발행한 경영·산업 인사이트입니다.",
-      "chart_image_url": "",
-      "chart_image_alt": "A Real-World Game Plan for AI in Renewable Energy",
+      "chart_image_url": "https://web-assets.bcg.com/dims4/default/d2d0aee/2147483647/strip/true/crop/1214x1620+778+0/resize/287x383!/format/webp/quality/90/?url=http%3A%2F%2Fboston-consulting-group-brightspot.s3.amazonaws.com%2F9b%2F17%2Fa483ad7d4a47ac212e52d394f0c6%2Fadobestock-1555812029-edit.jpg",
+      "chart_image_alt": "Agentic AI Turns Every Team into Its Own Transformation Engine",
       "report_title": "",
       "report_url": "",
-      "updated_at": "2026-06-19T15:28:02+0900"
-    },
-    {
-      "source": "BCG",
-      "title": "Beyond AI: How Tech Is Transforming Commodity Trading",
-      "date": "2026.06.18",
-      "source_url": "https://www.bcg.com/publications/2026/beyond-ai-how-tech-is-transforming-commodity-trading",
-      "description_en": "The performance of commodity traders increasingly depends on how quickly a company can process unstructured data, allocate risk, and trade across interconnected markets. These new will allow traders to compete against hedge funds and tech-first firms. Tech-savvy trading firms often allocate 20% to 25% or more of their…",
-      "description_ko": "",
-      "summary": [
-        "Tech-savvy trading firms often allocate 20% to 25% or more of their cost base to technology and reinvest 10% or more of gross margin into…",
-        "The performance of commodity traders increasingly depends on how quickly a company can process unstructured data, allocate risk",
-        "BCG가 짚은 핵심 쟁점과 영향 포인트를 함께 확인할 수 있습니다."
-      ],
-      "_summary_source": "The performance of commodity traders increasingly depends on how quickly a company can process unstructured data, allocate risk, and trade across interconnected markets. These new will allow traders to compete against hedge funds and tech-first firms. Tech-savvy trading firms often allocate 20% to 25% or more of their cost base to technology and reinvest 10% or more of gross margin into platforms and people .",
-      "_summary_context": "BCG가 발행한 경영·산업 인사이트입니다.",
-      "chart_image_url": "",
-      "chart_image_alt": "Beyond AI: How Tech Is Transforming Commodity Trading",
-      "report_title": "",
-      "report_url": "",
-      "updated_at": "2026-06-19T15:27:58+0900"
-    },
-    {
-      "source": "BCG",
-      "title": "How AI-First Banks Are Rewriting the Rules of Retail Banking",
-      "date": "2026.06.18",
-      "source_url": "https://www.bcg.com/publications/2026/how-ai-first-banks-are-rewriting-the-rules-of-retail-banking",
-      "description_en": "AI can fundamentally transform how retail banks operate, but only if they fundamentally rewire how work is done. AI-first banks are taking a strategic approach by prioritizing three or four business functions for end-to-end transformation. They are realizing significant benefits from GenAI by reorganizing work so that…",
-      "description_ko": "",
-      "summary": [
-        "AI can fundamentally transform how retail banks operate, but only if they fundamentally rewire how work is done.",
-        "They are realizing significant benefits from GenAI by reorganizing work so that AI performs 70% to 80% of the toil or repetitive tasks and 30%…",
-        "BCG가 짚은 핵심 쟁점과 영향 포인트를 함께 확인할 수 있습니다."
-      ],
-      "_summary_source": "AI can fundamentally transform how retail banks operate, but only if they fundamentally rewire how work is done. AI-first banks are taking a strategic approach by prioritizing three or four business functions for end-to-end transformation. They are realizing significant benefits from GenAI by reorganizing work so that AI performs 70% to 80% of the toil or repetitive tasks and 30% to 50% of the reasoning tasks.",
-      "_summary_context": "BCG가 발행한 경영·산업 인사이트입니다.",
-      "chart_image_url": "",
-      "chart_image_alt": "How AI-First Banks Are Rewriting the Rules of Retail Banking",
-      "report_title": "",
-      "report_url": "",
-      "updated_at": "2026-06-19T15:28:17+0900"
-    },
-    {
-      "source": "BCG",
-      "title": "Patients Are Sending Digital Signals. Are Companies Listening?",
-      "date": "2026.06.18",
-      "source_url": "https://www.bcg.com/publications/2026/listening-to-patients-in-the-digital-age",
-      "description_en": "Great marketing tools are meaningless without the right data and technology to personalize patient interactions. Legacy direct-to-patient programs often don’t meet prospective patient expectations for accessibility and ease of use, and they follow predetermined steps regardless of what the patient is doing. AI tools t…",
-      "description_ko": "",
-      "summary": [
-        "Great marketing tools are meaningless without the right data and technology to personalize patient interactions.",
-        "Legacy direct-to-patient programs often don’t meet prospective patient expectations for accessibility and ease of use",
-        "BCG가 짚은 핵심 쟁점과 영향 포인트를 함께 확인할 수 있습니다."
-      ],
-      "_summary_source": "Great marketing tools are meaningless without the right data and technology to personalize patient interactions. Legacy direct-to-patient programs often don’t meet prospective patient expectations for accessibility and ease of use, and they follow predetermined steps regardless of what the patient is doing. AI tools that connect prospective patients’ fragmented information across the health care organization can identify what people need in real time and, crucially, incorporate patient outcomes into the system so that it continuously improves. Health care organizations can take straightforward steps to improve direct-to-patient conversion by evaluating current patient pathways and unifying around the most successful ones, then deploying an agentic engine to orchestrate and continuously improve the system.",
-      "_summary_context": "BCG가 발행한 경영·산업 인사이트입니다.",
-      "chart_image_url": "",
-      "chart_image_alt": "Patients Are Sending Digital Signals. Are Companies Listening?",
-      "report_title": "",
-      "report_url": "",
-      "updated_at": "2026-06-19T15:27:59+0900"
+      "updated_at": "2026-06-19T16:40:02+0900"
     },
     {
       "source": "Bain & Company",
-      "title": "Beyond Sales Lift: How Rewards Build Valuable Customers",
-      "date": "2026.06.18",
-      "source_url": "https://www.bain.com/insights/beyond-sales-lift-how-rewards-build-valuable-customers/",
-      "description_en": "New research shows how rewards affect customer value creation for consumer-focused brands.",
+      "title": "Raising the Odds on a Deal: How Likelihood to Buy Rewires B2B Growth",
+      "date": "2026.06.19",
+      "source_url": "https://www.bain.com/insights/raising-the-odds-on-a-deal-how-likelihood-to-buy-rewires-b2b-growth/",
+      "description_en": "A new metric predicts win rates based on whether a vendor makes the “Day 1 list” and how well it addresses the varied needs of both target and hidden buyers.",
       "description_ko": "",
       "summary": [
-        "New research shows how rewards affect customer value creation for consumer-focused brands.",
+        "A new metric predicts win rates based on whether a vendor makes the “Day 1 list” and how well it addresses the varied needs of both target and…",
         "Bain & Company가 짚은 핵심 쟁점과 영향 포인트를 함께 확인할 수 있습니다.",
-        "Beyond Sales Lift: How Rewards Build Valuable Customers 관련 핵심 내용을 정리한 자료입니다."
+        "Raising the Odds on a Deal: How Likelihood to Buy Rewires B2B Growth 관련 핵심 내용을 정리한 자료입니다."
       ],
-      "_summary_source": "New research shows how rewards affect customer value creation for consumer-focused brands.",
+      "_summary_source": "A new metric predicts win rates based on whether a vendor makes the “Day 1 list” and how well it addresses the varied needs of both target and hidden buyers.",
       "_summary_context": "Bain & Company가 발행한 경영·산업 인사이트입니다.",
-      "chart_image_url": "https://www.bain.com/contentassets/c1b9b56edd7f41f7aabfa3e96313698b/45512_beyond-lift_1440x810-16_9.jpg?width=768&height=432&rmode=crop&rsampler=bicubic&compand=true",
-      "chart_image_alt": "Beyond Sales Lift: How Rewards Build Valuable Customers",
+      "chart_image_url": "https://www.bain.com/contentassets/4af2158fbd0841ca92eb8142c14934c1/44876-raising-odds_1440x810-16_9.jpg?width=768&height=432&rmode=crop&rsampler=bicubic&compand=true",
+      "chart_image_alt": "Raising the Odds on a Deal: How Likelihood to Buy Rewires B2B Growth",
       "report_title": "",
       "report_url": "",
-      "updated_at": "2026-06-19T15:27:37+0900"
+      "updated_at": "2026-06-19T16:40:01+0900"
     },
     {
       "source": "Bain & Company",
-      "title": "US Consumer Health Update",
-      "date": "2026.06.18",
-      "source_url": "https://www.bain.com/insights/us-consumer-health-indexes/",
-      "description_en": "The consumer is still under pressure, but trends vary across income groups.",
+      "title": "The Road Forward to Value Creation in Consumer Products",
+      "date": "2026.06.19",
+      "source_url": "https://www.bain.com/insights/the-road-forward-to-value-creation-in-consumer-products/",
+      "description_en": "Six strategic questions to help CPGs navigate the future.",
       "description_ko": "",
       "summary": [
-        "The consumer is still under pressure, but trends vary across income groups.",
+        "Six strategic questions to help CPGs navigate the future.",
         "Bain & Company가 짚은 핵심 쟁점과 영향 포인트를 함께 확인할 수 있습니다.",
-        "US Consumer Health Update 관련 핵심 내용을 정리한 자료입니다."
+        "The Road Forward to Value Creation in Consumer Products 관련 핵심 내용을 정리한 자료입니다."
       ],
-      "_summary_source": "The consumer is still under pressure, but trends vary across income groups.",
+      "_summary_source": "Six strategic questions to help CPGs navigate the future.",
       "_summary_context": "Bain & Company가 발행한 경영·산업 인사이트입니다.",
-      "chart_image_url": "https://www.bain.com/contentassets/a9715821dae344698fa9e3e3a1da8132/34750_usconsmerhealthupdate_nov_snap_16.9_promo.png?width=768&height=432&rmode=crop&rsampler=bicubic&compand=true",
-      "chart_image_alt": "US Consumer Health Update",
+      "chart_image_url": "https://www.bain.com/contentassets/123d7326830c4285b7afee9f1c7096c9/45136-future-of-cp_1440x810-16_9.jpg?width=768&height=432&rmode=crop&rsampler=bicubic&compand=true",
+      "chart_image_alt": "The Road Forward to Value Creation in Consumer Products",
       "report_title": "",
       "report_url": "",
-      "updated_at": "2026-06-19T15:27:37+0900"
-    },
-    {
-      "source": "McKinsey",
-      "title": "Trauma’s toll on the workforce",
-      "date": "2026.06.18",
-      "source_url": "https://www.mckinsey.com/featured-insights/week-in-charts/traumas-toll-on-the-workforce",
-      "description_en": "Employees who report experiencing trauma show lower levels of adaptability, learning, engagement, and other work outcomes.",
-      "description_ko": "트라우마를 경험했다고 응답한 직원들은 적응력·학습·몰입 등 주요 업무 지표와 직무 만족도가 전반적으로 더 낮게 나타났습니다.",
-      "chart_image_url": "https://www.mckinsey.com/~/media/mckinsey/business%20functions/people%20and%20organizational%20performance/our%20insights/how%20leaders%20can%20help%20their%20organizations%20metabolize%20strain/leadersstrain-ex1.svgz?cpy=Center&cq=50",
-      "chart_image_alt": "Employees who report experiencing trauma describe lower levels of work performance and satisfaction as measured in six important areas.",
-      "image_description": "Employees who report experiencing trauma describe lower levels of work performance and satisfaction as measured in six important areas.",
-      "chart_headers": [],
-      "chart_rows": [],
-      "report_title": "How leaders can help their organizations metabolize strain",
-      "report_url": "https://www.mckinsey.com/capabilities/people-and-organizational-performance/our-insights/how-leaders-can-help-their-organizations-metabolize-strain",
-      "updated_at": "2026-06-19T15:27:37+0900",
-      "fetch_mode": "metadata-fallback",
-      "summary": [
-        "몰입 등 주요 업무 지표와 직무 만족도가 전반적으로 더 낮게 나타났습니다. 트라우마를 경험했다고 응답한 직원들은 적응력.",
-        "몰입 등 주요 업무 지표와 직무 만족도가 전반적으로 더 낮게 나타났습니다.",
-        "트라우마를 경험했다고 응답한 직원들은 적응력."
-      ],
-      "_summary_source": "트라우마를 경험했다고 응답한 직원들은 적응력·학습·몰입 등 주요 업무 지표와 직무 만족도가 전반적으로 더 낮게 나타났습니다.",
-      "_summary_context": "McKinsey의 The Week in Charts 인사이트입니다."
+      "updated_at": "2026-06-19T16:40:01+0900"
     }
   ],
-  "updated_at": "2026-06-19T15:28:37+0900"
+  "updated_at": "2026-06-19T16:40:12+0900"
 }
