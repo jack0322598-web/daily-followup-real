@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the daily briefing pipeline safely on PythonAnywhere."""
+"""Run the daily briefing pipeline safely in a scheduled CI job."""
 
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import urllib.request
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -21,29 +20,16 @@ ROOT = Path(__file__).resolve().parents[1]
 KST = timezone(timedelta(hours=9))
 LOCK_FILE = ROOT / ".update.lock"
 LOG_DIR = ROOT / "logs"
+RESULT_FILE = ROOT / "deploy_result.json"
 ARCHIVE_PATTERN = re.compile(r"archive_(\d{4}-\d{2}-\d{2})\.html$")
 MIN_NEWS_CARDS = 3
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Generate and publish the daily news briefing.")
+    parser = argparse.ArgumentParser(description="Generate the daily news briefing.")
     parser.add_argument("--date", help="Generate one date only (YYYY-MM-DD).")
     parser.add_argument("--dry-run", action="store_true", help="Show pending dates without running the pipeline.")
-    parser.add_argument("--notify-test", action="store_true", help="Send a Slack connection test and exit.")
     return parser.parse_args()
-
-
-def load_env_file(path: Path) -> None:
-    if not path.exists():
-        return
-    for raw_line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        key = key.strip()
-        if key:
-            os.environ.setdefault(key, value.strip().strip('"').strip("'"))
 
 
 def parse_iso_date(value: str) -> date:
@@ -82,7 +68,7 @@ def pending_dates(requested: str | None = None) -> list[date]:
     max_days = max(1, int(os.environ.get("MAX_BACKFILL_DAYS", "7")))
     if len(dates) > max_days:
         raise RuntimeError(
-            f"{len(dates)} dates are pending, which exceeds MAX_BACKFILL_DAYS={max_days}. "
+            f"{len(dates)} dates are pending, exceeding MAX_BACKFILL_DAYS={max_days}. "
             "Run older dates manually before resuming the schedule."
         )
     return dates
@@ -191,78 +177,45 @@ def run_pipeline(target: date, log_handle) -> Path:
         return validate_archive(target)
 
 
-def slack_url() -> str:
-    return os.environ.get("SLACK_WEBHOOK_URL", "").strip().strip('"').strip("'")
-
-
-def site_url() -> str:
-    return os.environ.get("SITE_URL", "").strip().rstrip("/") + "/"
-
-
-def send_slack(title: str, message: str, color: str = "#2EB67D") -> None:
-    webhook = slack_url()
-    if not webhook:
-        raise RuntimeError("SLACK_WEBHOOK_URL is not configured")
+def write_result(status: str, dates: list[date], error: str = "") -> None:
+    archives = archive_dates()
     payload = {
-        "text": f"{title}: {message}",
-        "attachments": [{"color": color, "blocks": [{"type": "section", "text": {"type": "mrkdwn", "text": f"*{title}*\n{message}"}}]}],
+        "status": status,
+        "dates": [value.isoformat() for value in dates],
+        "latest_archive": archives[-1].isoformat() if archives else "",
+        "generated_at": datetime.now(KST).isoformat(),
+        "error": error,
     }
-    request = urllib.request.Request(
-        webhook,
-        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        headers={"Content-Type": "application/json; charset=utf-8"},
-        method="POST",
-    )
-    with urllib.request.urlopen(request, timeout=20) as response:
-        body = response.read().decode("utf-8", errors="replace").strip()
-        if response.status != 200 or body.lower() != "ok":
-            raise RuntimeError(f"Slack returned HTTP {response.status}: {body[:200]}")
-
-
-def success_message(dates: list[date]) -> str:
-    first, last = dates[0].isoformat(), dates[-1].isoformat()
-    label = first if first == last else f"{first} ~ {last}"
-    base = site_url()
-    page = f"{base}archive_{last}.html" if base else ""
-    link = f"\n<{page}|브리핑 바로 보기>" if page else ""
-    return f"업데이트 날짜: `{label}`{link}"
+    RESULT_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def main() -> int:
     args = parse_args()
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    load_env_file(ROOT / ".env")
-
-    if args.notify_test:
-        send_slack("뉴스 브리핑 연결 테스트", "PythonAnywhere 자동화의 Slack 연결이 정상입니다.")
-        print("Slack test sent successfully.")
-        return 0
-
+    dates: list[date] = []
     try:
         dates = pending_dates(args.date)
         if args.dry_run:
             print("Pending dates:", ", ".join(value.isoformat() for value in dates) or "none")
             return 0
         if not dates:
-            print("No pending dates.")
+            write_result("no_changes", [])
+            print("No pending dates; the existing site will still be deployed.")
             return 0
 
         stamp = datetime.now(KST).strftime("%Y-%m-%d_%H%M%S")
-        log_path = LOG_DIR / f"pythonanywhere_update_{stamp}.log"
+        log_path = LOG_DIR / f"scheduled_update_{stamp}.log"
         with update_lock(), log_path.open("a", encoding="utf-8") as log_handle:
             for target in dates:
                 print(f"Starting {target.isoformat()}", file=log_handle, flush=True)
                 run_pipeline(target, log_handle)
-        send_slack("✅ 뉴스 브리핑 업데이트 완료", success_message(dates))
+        write_result("updated", dates)
         print(f"Update completed. Log: {log_path}")
         return 0
     except Exception as exc:
-        error_message = f"`{type(exc).__name__}: {exc}`"
-        try:
-            send_slack("❌ 뉴스 브리핑 업데이트 실패", error_message, "#E01E5A")
-        except Exception as slack_exc:
-            print(f"Slack failure notification also failed: {slack_exc}", file=sys.stderr)
-        print(error_message, file=sys.stderr)
+        error = f"{type(exc).__name__}: {exc}"
+        write_result("failed", dates, error)
+        print(error, file=sys.stderr)
         return 1
 
 
