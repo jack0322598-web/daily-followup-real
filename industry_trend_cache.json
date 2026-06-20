@@ -2,20 +2,6 @@
   "date": "2026.06.19",
   "items": [
     {
-      "source": "McKinsey",
-      "title": "Trauma's toll on the workforce",
-      "date": "2026.06.18",
-      "source_url": "https://www.mckinsey.com/featured-insights/week-in-charts/traumas-toll-on-the-workforce",
-      "description_ko": "트라우마를 경험했다고 응답한 직원들은 적응력·학습·몰입 등 주요 업무 지표와 직무 만족도가 전반적으로 더 낮게 나타났습니다.",
-      "description_en": "",
-      "summary": [],
-      "chart_image_url": "https://www.mckinsey.com/~/media/mckinsey/business%20functions/people%20and%20organizational%20performance/our%20insights/how%20leaders%20can%20help%20their%20organizations%20metabolize%20strain/leadersstrain-ex1.svgz?cpy=Center&cq=50",
-      "chart_image_alt": "Employees who report experiencing trauma describe lower levels of work performance and satisfaction as measured in six important areas.",
-      "report_title": "How leaders can help their organizations metabolize strain",
-      "report_url": "https://www.mckinsey.com/capabilities/people-and-organizational-performance/our-insights/how-leaders-can-help-their-organizations-metabolize-strain",
-      "updated_at": "2026-06-18T00:00:00+0900"
-    },
-    {
       "source": "BCG",
       "title": "Agentic AI Turns Every Team into Its Own Transformation Engine",
       "date": "2026.06.19",
@@ -33,7 +19,7 @@
       "chart_image_alt": "Agentic AI Turns Every Team into Its Own Transformation Engine",
       "report_title": "",
       "report_url": "",
-      "updated_at": "2026-06-20T11:55:14+0900"
+      "updated_at": "2026-06-20T14:06:44+0900"
     },
     {
       "source": "Bain & Company",
@@ -53,7 +39,7 @@
       "chart_image_alt": "Raising the Odds on a Deal: How Likelihood to Buy Rewires B2B Growth",
       "report_title": "",
       "report_url": "",
-      "updated_at": "2026-06-20T11:55:14+0900"
+      "updated_at": "2026-06-20T14:06:43+0900"
     },
     {
       "source": "Bain & Company",
@@ -73,8 +59,9 @@
       "chart_image_alt": "The Road Forward to Value Creation in Consumer Products",
       "report_title": "",
       "report_url": "",
-      "updated_at": "2026-06-20T11:55:14+0900"
+      "updated_at": "2026-06-20T14:06:43+0900"
     }
   ],
-  "updated_at": "2026-06-20T11:55:23+0900"
+  "mckinsey_last_known": [],
+  "updated_at": "2026-06-20T14:07:07+0900"
 }
