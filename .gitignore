@@ -5,6 +5,7 @@
 
 
 .env
+.pythonanywhere-user
 .dev.vars
 .wrangler/
 .manual-trigger-secret.txt
