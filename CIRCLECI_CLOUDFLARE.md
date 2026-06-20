@@ -1,6 +1,6 @@
 # Free deployment: CircleCI + Cloudflare Pages
 
-GitHub stores the source and generated archives. CircleCI runs the pipeline each morning, uploads the public-only output to Cloudflare Pages, pushes generated archives back to GitHub, and reports success or failure to Slack.
+GitHub stores the source. CircleCI restores the prior deployed archives, runs the pipeline each morning, uploads the public-only output to Cloudflare Pages, and reports success or failure to Slack.
 
 ## CircleCI schedule
 
@@ -24,7 +24,6 @@ Configure these in a CircleCI context or the project environment variables:
 - `CLOUDFLARE_API_TOKEN`
 - `CLOUDFLARE_ACCOUNT_ID`
 - `CLOUDFLARE_PAGES_PROJECT`
-- `GH_PUSH_TOKEN` (fine-grained GitHub token with Contents read/write for this repository)
 - `SITE_URL` (for example `https://daily-followup.pages.dev`)
 - `MAX_BACKFILL_DAYS=7`
 
@@ -38,5 +37,5 @@ Trigger a CircleCI pipeline with `run_daily=true`. A successful run must satisfy
 
 1. CircleCI job is green.
 2. Cloudflare Pages production deployment is active.
-3. Generated archives are committed back to `main` when new content exists.
+3. The next run can restore generated archives and caches from the deployed site.
 4. Slack receives the success message and site link.

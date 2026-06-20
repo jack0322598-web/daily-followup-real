@@ -9,6 +9,7 @@ from unittest.mock import patch
 from deploy import build_public
 from deploy import daily_ci
 from deploy import slack_notify
+from deploy import sync_deployed
 
 
 class DailyCiTests(unittest.TestCase):
@@ -53,13 +54,56 @@ class BuildPublicTests(unittest.TestCase):
             (root / "archive_list.js").write_text("const dates = [];", encoding="utf-8")
             (root / "main.py").write_text("secret source", encoding="utf-8")
             (root / ".env").write_text("SECRET=value", encoding="utf-8")
+            (root / "industry_trend_cache.json").write_text("{}", encoding="utf-8")
             with patch.object(build_public, "ROOT", root), patch.object(build_public, "PUBLIC_DIR", public):
                 copied = build_public.build_public()
             self.assertTrue((public / "index.html").exists())
             self.assertTrue((public / "_headers").exists())
             self.assertFalse((public / "main.py").exists())
             self.assertFalse((public / ".env").exists())
-            self.assertEqual(len(copied), 3)
+            self.assertTrue((public / "_state" / "industry_trend_cache.json").exists())
+            self.assertEqual(len(copied), 4)
+
+
+class SyncDeployedTests(unittest.TestCase):
+    def test_sync_restores_new_archive_and_state(self):
+        responses = {
+            "https://site.example/archive_list.js": b'const archiveDates = ["2026-06-20"];',
+            "https://site.example/index.html": b"home",
+            "https://site.example/share_index.html": b"share",
+            "https://site.example/archive_2026-06-20.html": b"archive",
+            "https://site.example/_state/industry_trend_cache.json": b"{}",
+        }
+
+        class Response:
+            def __init__(self, data):
+                self.data = data
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self, _limit):
+                return self.data
+
+        def urlopen(url, timeout=30):
+            if url in responses:
+                return Response(responses[url])
+            raise __import__("urllib.error").error.HTTPError(url, 404, "not found", {}, None)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            with (
+                patch.object(sync_deployed, "ROOT", root),
+                patch.dict(os.environ, {"SITE_URL": "https://site.example"}, clear=True),
+                patch.object(sync_deployed.urllib.request, "urlopen", side_effect=urlopen),
+            ):
+                synced = sync_deployed.sync_deployed()
+            self.assertTrue((root / "archive_2026-06-20.html").exists())
+            self.assertTrue((root / "industry_trend_cache.json").exists())
+            self.assertIn("archive_2026-06-20.html", synced)
 
 
 class SlackNotifyTests(unittest.TestCase):

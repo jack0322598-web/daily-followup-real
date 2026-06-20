@@ -12,6 +12,13 @@ ROOT = Path(__file__).resolve().parents[1]
 PUBLIC_DIR = ROOT / "public"
 PUBLIC_SUFFIXES = {".html", ".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".svgz", ".webp", ".ico"}
 MAX_FILE_SIZE = 25 * 1024 * 1024
+STATE_FILES = (
+    "industry_source_cache.json",
+    "industry_trend_cache.json",
+    "weekly_keywords.json",
+    "trellis_yesterday_news.json",
+    "summary_cache.json",
+)
 
 
 def public_files() -> list[Path]:
@@ -34,6 +41,15 @@ def build_public() -> list[Path]:
         shutil.copy2(source, destination)
         copied.append(destination)
 
+    state_dir = PUBLIC_DIR / "_state"
+    state_dir.mkdir()
+    for name in STATE_FILES:
+        source = ROOT / name
+        if source.exists():
+            destination = state_dir / name
+            shutil.copy2(source, destination)
+            copied.append(destination)
+
     required = [PUBLIC_DIR / "index.html", PUBLIC_DIR / "archive_list.js"]
     missing = [path.name for path in required if not path.exists()]
     if missing:
@@ -42,7 +58,7 @@ def build_public() -> list[Path]:
         raise RuntimeError("No archive files were staged")
 
     (PUBLIC_DIR / "_headers").write_text(
-        "/*.html\n  Cache-Control: no-cache\n/archive_list.js\n  Cache-Control: no-cache\n",
+        "/*.html\n  Cache-Control: no-cache\n/archive_list.js\n  Cache-Control: no-cache\n/_state/*\n  Cache-Control: no-store\n",
         encoding="utf-8",
     )
     (PUBLIC_DIR / "deploy-metadata.json").write_text(
