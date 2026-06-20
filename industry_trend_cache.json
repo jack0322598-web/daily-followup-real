@@ -1,66 +1,75 @@
 {
-  "date": "2026.06.19",
-  "items": [
-    {
-      "source": "BCG",
-      "title": "Agentic AI Turns Every Team into Its Own Transformation Engine",
-      "date": "2026.06.19",
-      "source_url": "https://www.bcg.com/publications/2026/agentic-ai-turns-every-team-into-its-own-transformation-engine",
-      "description_en": "As organisations adopt agentic AI, transformation shifts from centralised programs to team-led workflow redesign, becoming less a rollout and an evolution in how teams work.",
-      "description_ko": "",
-      "summary": [
-        "As organisations adopt agentic AI, transformation shifts from centralised programs to team-led workflow redesign",
-        "BCG가 짚은 핵심 쟁점과 영향 포인트를 함께 확인할 수 있습니다.",
-        "Agentic AI Turns Every Team into Its Own Transformation Engine 관련 핵심 내용을 정리한 자료입니다."
-      ],
-      "_summary_source": "As organisations adopt agentic AI, transformation shifts from centralised programs to team-led workflow redesign, becoming less a rollout and an evolution in how teams work.",
-      "_summary_context": "BCG가 발행한 경영·산업 인사이트입니다.",
-      "chart_image_url": "https://web-assets.bcg.com/dims4/default/d2d0aee/2147483647/strip/true/crop/1214x1620+778+0/resize/287x383!/format/webp/quality/90/?url=http%3A%2F%2Fboston-consulting-group-brightspot.s3.amazonaws.com%2F9b%2F17%2Fa483ad7d4a47ac212e52d394f0c6%2Fadobestock-1555812029-edit.jpg",
-      "chart_image_alt": "Agentic AI Turns Every Team into Its Own Transformation Engine",
-      "report_title": "",
-      "report_url": "",
-      "updated_at": "2026-06-20T11:55:14+0900"
-    },
-    {
-      "source": "Bain & Company",
-      "title": "Raising the Odds on a Deal: How Likelihood to Buy Rewires B2B Growth",
-      "date": "2026.06.19",
-      "source_url": "https://www.bain.com/insights/raising-the-odds-on-a-deal-how-likelihood-to-buy-rewires-b2b-growth/",
-      "description_en": "A new metric predicts win rates based on whether a vendor makes the “Day 1 list” and how well it addresses the varied needs of both target and hidden buyers.",
-      "description_ko": "",
-      "summary": [
-        "A new metric predicts win rates based on whether a vendor makes the “Day 1 list” and how well it addresses the varied needs of both target and…",
-        "Bain & Company가 짚은 핵심 쟁점과 영향 포인트를 함께 확인할 수 있습니다.",
-        "Raising the Odds on a Deal: How Likelihood to Buy Rewires B2B Growth 관련 핵심 내용을 정리한 자료입니다."
-      ],
-      "_summary_source": "A new metric predicts win rates based on whether a vendor makes the “Day 1 list” and how well it addresses the varied needs of both target and hidden buyers.",
-      "_summary_context": "Bain & Company가 발행한 경영·산업 인사이트입니다.",
-      "chart_image_url": "https://www.bain.com/contentassets/4af2158fbd0841ca92eb8142c14934c1/44876-raising-odds_1440x810-16_9.jpg?width=768&height=432&rmode=crop&rsampler=bicubic&compand=true",
-      "chart_image_alt": "Raising the Odds on a Deal: How Likelihood to Buy Rewires B2B Growth",
-      "report_title": "",
-      "report_url": "",
-      "updated_at": "2026-06-20T11:55:14+0900"
-    },
-    {
-      "source": "Bain & Company",
-      "title": "The Road Forward to Value Creation in Consumer Products",
-      "date": "2026.06.19",
-      "source_url": "https://www.bain.com/insights/the-road-forward-to-value-creation-in-consumer-products/",
-      "description_en": "Six strategic questions to help CPGs navigate the future.",
-      "description_ko": "",
-      "summary": [
-        "Six strategic questions to help CPGs navigate the future.",
-        "Bain & Company가 짚은 핵심 쟁점과 영향 포인트를 함께 확인할 수 있습니다.",
-        "The Road Forward to Value Creation in Consumer Products 관련 핵심 내용을 정리한 자료입니다."
-      ],
-      "_summary_source": "Six strategic questions to help CPGs navigate the future.",
-      "_summary_context": "Bain & Company가 발행한 경영·산업 인사이트입니다.",
-      "chart_image_url": "https://www.bain.com/contentassets/123d7326830c4285b7afee9f1c7096c9/45136-future-of-cp_1440x810-16_9.jpg?width=768&height=432&rmode=crop&rsampler=bicubic&compand=true",
-      "chart_image_alt": "The Road Forward to Value Creation in Consumer Products",
-      "report_title": "",
-      "report_url": "",
-      "updated_at": "2026-06-20T11:55:14+0900"
-    }
-  ],
-  "updated_at": "2026-06-20T11:55:23+0900"
+    "date":  "2026.06.19",
+    "updated_at":  "2026-06-20T11:55:23+0900",
+    "mckinsey_last_known":  [
+                                {
+                                    "date":  "2026.06.18",
+                                    "title":  "Trauma\u0027s toll on the workforce",
+                                    "description_ko":  "트라우마를 경험했다고 응답한 직원들은 적응력·학습·몰입 등 주요 업무 지표와 직무 만족도가 전반적으로 더 낮게 나타났습니다.",
+                                    "source":  "McKinsey",
+                                    "source_url":  "https://www.mckinsey.com/featured-insights/week-in-charts/traumas-toll-on-the-workforce"
+                                }
+                            ],
+    "items":  [
+                  {
+                      "source":  "BCG",
+                      "title":  "Agentic AI Turns Every Team into Its Own Transformation Engine",
+                      "date":  "2026.06.19",
+                      "source_url":  "https://www.bcg.com/publications/2026/agentic-ai-turns-every-team-into-its-own-transformation-engine",
+                      "description_en":  "As organisations adopt agentic AI, transformation shifts from centralised programs to team-led workflow redesign, becoming less a rollout and an evolution in how teams work.",
+                      "description_ko":  "",
+                      "summary":  [
+                                      "As organisations adopt agentic AI, transformation shifts from centralised programs to team-led workflow redesign",
+                                      "BCG가 짚은 핵심 쟁점과 영향 포인트를 함께 확인할 수 있습니다.",
+                                      "Agentic AI Turns Every Team into Its Own Transformation Engine 관련 핵심 내용을 정리한 자료입니다."
+                                  ],
+                      "_summary_source":  "As organisations adopt agentic AI, transformation shifts from centralised programs to team-led workflow redesign, becoming less a rollout and an evolution in how teams work.",
+                      "_summary_context":  "BCG가 발행한 경영·산업 인사이트입니다.",
+                      "chart_image_url":  "https://web-assets.bcg.com/dims4/default/d2d0aee/2147483647/strip/true/crop/1214x1620+778+0/resize/287x383!/format/webp/quality/90/?url=http%3A%2F%2Fboston-consulting-group-brightspot.s3.amazonaws.com%2F9b%2F17%2Fa483ad7d4a47ac212e52d394f0c6%2Fadobestock-1555812029-edit.jpg",
+                      "chart_image_alt":  "Agentic AI Turns Every Team into Its Own Transformation Engine",
+                      "report_title":  "",
+                      "report_url":  "",
+                      "updated_at":  "2026-06-20T11:55:14+0900"
+                  },
+                  {
+                      "source":  "Bain \u0026 Company",
+                      "title":  "Raising the Odds on a Deal: How Likelihood to Buy Rewires B2B Growth",
+                      "date":  "2026.06.19",
+                      "source_url":  "https://www.bain.com/insights/raising-the-odds-on-a-deal-how-likelihood-to-buy-rewires-b2b-growth/",
+                      "description_en":  "A new metric predicts win rates based on whether a vendor makes the “Day 1 list” and how well it addresses the varied needs of both target and hidden buyers.",
+                      "description_ko":  "",
+                      "summary":  [
+                                      "A new metric predicts win rates based on whether a vendor makes the “Day 1 list” and how well it addresses the varied needs of both target and…",
+                                      "Bain \u0026 Company가 짚은 핵심 쟁점과 영향 포인트를 함께 확인할 수 있습니다.",
+                                      "Raising the Odds on a Deal: How Likelihood to Buy Rewires B2B Growth 관련 핵심 내용을 정리한 자료입니다."
+                                  ],
+                      "_summary_source":  "A new metric predicts win rates based on whether a vendor makes the “Day 1 list” and how well it addresses the varied needs of both target and hidden buyers.",
+                      "_summary_context":  "Bain \u0026 Company가 발행한 경영·산업 인사이트입니다.",
+                      "chart_image_url":  "https://www.bain.com/contentassets/4af2158fbd0841ca92eb8142c14934c1/44876-raising-odds_1440x810-16_9.jpg?width=768\u0026height=432\u0026rmode=crop\u0026rsampler=bicubic\u0026compand=true",
+                      "chart_image_alt":  "Raising the Odds on a Deal: How Likelihood to Buy Rewires B2B Growth",
+                      "report_title":  "",
+                      "report_url":  "",
+                      "updated_at":  "2026-06-20T11:55:14+0900"
+                  },
+                  {
+                      "source":  "Bain \u0026 Company",
+                      "title":  "The Road Forward to Value Creation in Consumer Products",
+                      "date":  "2026.06.19",
+                      "source_url":  "https://www.bain.com/insights/the-road-forward-to-value-creation-in-consumer-products/",
+                      "description_en":  "Six strategic questions to help CPGs navigate the future.",
+                      "description_ko":  "",
+                      "summary":  [
+                                      "Six strategic questions to help CPGs navigate the future.",
+                                      "Bain \u0026 Company가 짚은 핵심 쟁점과 영향 포인트를 함께 확인할 수 있습니다.",
+                                      "The Road Forward to Value Creation in Consumer Products 관련 핵심 내용을 정리한 자료입니다."
+                                  ],
+                      "_summary_source":  "Six strategic questions to help CPGs navigate the future.",
+                      "_summary_context":  "Bain \u0026 Company가 발행한 경영·산업 인사이트입니다.",
+                      "chart_image_url":  "https://www.bain.com/contentassets/123d7326830c4285b7afee9f1c7096c9/45136-future-of-cp_1440x810-16_9.jpg?width=768\u0026height=432\u0026rmode=crop\u0026rsampler=bicubic\u0026compand=true",
+                      "chart_image_alt":  "The Road Forward to Value Creation in Consumer Products",
+                      "report_title":  "",
+                      "report_url":  "",
+                      "updated_at":  "2026-06-20T11:55:14+0900"
+                  }
+              ]
 }
