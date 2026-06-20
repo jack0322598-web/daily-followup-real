@@ -1556,6 +1556,9 @@ def fetch_industry_trend(target_date):
     for item in cached_items:
         cached_by_source.setdefault(item.get("source", ""), []).append(item)
 
+    # McKinsey publishes weekly — keep last known item until a newer one appears
+    prev_mckinsey = [item for item in cache.get("items", []) if item.get("source") == "McKinsey"]
+
     items = []
     source_fetchers = (
         ("McKinsey", fetch_mckinsey_items),
@@ -1570,8 +1573,12 @@ def fetch_industry_trend(target_date):
                     item for item in source_items
                     if not should_exclude_bcg_item(item.get("title", ""), item.get("source_url", ""))
                 ]
-            items.extend(source_items)
-            print(f"  - {source} MBB insights: {len(source_items)}건")
+            if not source_items and source == "McKinsey" and prev_mckinsey:
+                items.extend(prev_mckinsey)
+                print(f"  - McKinsey MBB insights: 신규 없음, 이전 게시물 {len(prev_mckinsey)}건 유지")
+            else:
+                items.extend(source_items)
+                print(f"  - {source} MBB insights: {len(source_items)}건")
         except Exception as exc:
             fallback = cached_by_source.get(source, [])
             if source == "BCG":
