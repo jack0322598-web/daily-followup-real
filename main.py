@@ -1556,8 +1556,11 @@ def fetch_industry_trend(target_date):
     for item in cached_items:
         cached_by_source.setdefault(item.get("source", ""), []).append(item)
 
-    # McKinsey publishes weekly — persist last known item across days via dedicated cache key
-    prev_mckinsey = cache.get("mckinsey_last_known", [])
+    # McKinsey publishes weekly. Prefer the dedicated cross-day cache, while
+    # retaining compatibility with caches created before that key existed.
+    prev_mckinsey = cache.get("mckinsey_last_known") or [
+        item for item in cache.get("items", []) if item.get("source") == "McKinsey"
+    ]
 
     items = []
     source_fetchers = (
@@ -1583,6 +1586,8 @@ def fetch_industry_trend(target_date):
                 print(f"  - {source} MBB insights: {len(source_items)}건")
         except Exception as exc:
             fallback = cached_by_source.get(source, [])
+            if source == "McKinsey" and not fallback:
+                fallback = prev_mckinsey
             if source == "BCG":
                 fallback = [
                     item for item in fallback

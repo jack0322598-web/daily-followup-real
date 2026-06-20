@@ -1,5 +1,6 @@
 import unittest
 from datetime import date
+from unittest.mock import patch
 
 import main
 
@@ -348,6 +349,32 @@ Save It For Later
         )
         self.assertEqual(item["report_title"], "How leaders can help their organizations metabolize strain")
         self.assertIn("Employees who report experiencing trauma", item["chart_image_alt"])
+
+    def test_industry_trend_preserves_legacy_mckinsey_item_after_fetch_failure(self):
+        previous_item = {
+            "source": "McKinsey",
+            "title": "Previous weekly insight",
+            "date": "2026.06.18",
+            "source_url": "https://www.mckinsey.com/previous",
+        }
+        legacy_cache = {
+            "date": "2026.06.18",
+            "items": [previous_item],
+            "mckinsey_last_known": [],
+        }
+        saved_payload = {}
+
+        with (
+            patch.object(main, "load_industry_trend_cache", return_value=legacy_cache),
+            patch.object(main, "fetch_mckinsey_items", side_effect=RuntimeError("temporary failure")),
+            patch.object(main, "fetch_bain_items", return_value=[]),
+            patch.object(main, "fetch_bcg_items", return_value=[]),
+            patch.object(main, "save_industry_trend_cache", side_effect=saved_payload.update),
+        ):
+            items = main.fetch_industry_trend(date(2026, 6, 19))
+
+        self.assertIn(previous_item, items)
+        self.assertEqual(saved_payload["mckinsey_last_known"], [previous_item])
 
     def test_render_html_includes_industrytrend_section(self):
         target_date = date(2026, 6, 18)
