@@ -1,0 +1,79 @@
+version: 2.1
+
+parameters:
+  run_daily:
+    type: boolean
+    default: false
+
+jobs:
+  validate:
+    docker:
+      - image: cimg/python:3.12
+    resource_class: small
+    steps:
+      - checkout
+      - run:
+          name: Install Python dependencies
+          command: pip install --user -r requirements.txt
+      - run:
+          name: Run tests
+          command: python -m unittest discover -v
+
+  daily-update:
+    docker:
+      - image: cimg/python:3.12-node
+    resource_class: medium
+    environment:
+      TZ: Asia/Seoul
+      PYTHONIOENCODING: utf-8
+      AI_ISSUE_RANKING_ENABLED: "0"
+    steps:
+      - checkout
+      - run:
+          name: Install dependencies
+          command: pip install --user -r requirements.txt
+      - run:
+          name: Run regression tests
+          command: python -m unittest discover -v
+      - run:
+          name: Restore previous deployed archives
+          command: python deploy/sync_deployed.py
+      - run:
+          name: Generate daily briefing
+          no_output_timeout: 3h
+          command: python -u deploy/daily_ci.py
+      - run:
+          name: Prepare public site
+          command: python deploy/build_public.py
+      - run:
+          name: Deploy to Cloudflare Pages
+          command: |
+            test -n "$CLOUDFLARE_API_TOKEN"
+            test -n "$CLOUDFLARE_ACCOUNT_ID"
+            test -n "$CLOUDFLARE_PAGES_PROJECT"
+            npx --yes wrangler@4 pages deploy public --project-name "$CLOUDFLARE_PAGES_PROJECT" --branch main --commit-dirty=true
+      - run:
+          name: Notify Slack of success
+          command: python deploy/slack_notify.py success
+      - run:
+          name: Notify Slack of failure
+          when: on_fail
+          command: python deploy/slack_notify.py failure || true
+      - store_artifacts:
+          path: logs
+          destination: update-logs
+      - store_artifacts:
+          path: deploy_result.json
+          destination: deploy_result.json
+
+workflows:
+  validate-changes:
+    when:
+      not: << pipeline.parameters.run_daily >>
+    jobs:
+      - validate
+
+  scheduled-daily-update:
+    when: << pipeline.parameters.run_daily >>
+    jobs:
+      - daily-update

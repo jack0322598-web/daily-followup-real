@@ -5,6 +5,8 @@
 
 
 .env
+public/
+deploy_result.json
 .dev.vars
 .wrangler/
 .manual-trigger-secret.txt
