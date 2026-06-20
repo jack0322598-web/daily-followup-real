@@ -66,6 +66,17 @@ class BuildPublicTests(unittest.TestCase):
 
 
 class SyncDeployedTests(unittest.TestCase):
+    def test_sync_treats_unavailable_site_as_first_deployment(self):
+        with (
+            patch.dict(os.environ, {"SITE_URL": "https://new-site.example"}, clear=True),
+            patch.object(
+                sync_deployed.urllib.request,
+                "urlopen",
+                side_effect=sync_deployed.urllib.error.URLError("not deployed yet"),
+            ),
+        ):
+            self.assertEqual(sync_deployed.sync_deployed(), [])
+
     def test_sync_restores_new_archive_and_state(self):
         responses = {
             "https://site.example/archive_list.js": b'const archiveDates = ["2026-06-20"];',

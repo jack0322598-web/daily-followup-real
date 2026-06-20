@@ -48,12 +48,14 @@ def sync_deployed() -> list[str]:
     try:
         with urllib.request.urlopen(f"{base_url}/archive_list.js", timeout=30) as response:
             archive_list = response.read(MAX_DOWNLOAD_SIZE + 1).decode("utf-8", errors="ignore")
-    except urllib.error.HTTPError as exc:
-        if exc.code == 404:
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError) as exc:
+        if isinstance(exc, urllib.error.HTTPError):
             exc.close()
-            print("No previous deployment found; starting from repository files.")
-            return []
-        raise
+        print(
+            "Previous deployment is not available yet "
+            f"({type(exc).__name__}); starting from repository files."
+        )
+        return []
 
     dates = sorted(set(re.findall(r"\d{4}-\d{2}-\d{2}", archive_list)))
     synced = []
