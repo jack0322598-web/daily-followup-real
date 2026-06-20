@@ -1556,8 +1556,8 @@ def fetch_industry_trend(target_date):
     for item in cached_items:
         cached_by_source.setdefault(item.get("source", ""), []).append(item)
 
-    # McKinsey publishes weekly — keep last known item until a newer one appears
-    prev_mckinsey = [item for item in cache.get("items", []) if item.get("source") == "McKinsey"]
+    # McKinsey publishes weekly — persist last known item across days via dedicated cache key
+    prev_mckinsey = cache.get("mckinsey_last_known", [])
 
     items = []
     source_fetchers = (
@@ -1578,6 +1578,8 @@ def fetch_industry_trend(target_date):
                 print(f"  - McKinsey MBB insights: 신규 없음, 이전 게시물 {len(prev_mckinsey)}건 유지")
             else:
                 items.extend(source_items)
+                if source == "McKinsey" and source_items:
+                    prev_mckinsey = source_items
                 print(f"  - {source} MBB insights: {len(source_items)}건")
         except Exception as exc:
             fallback = cached_by_source.get(source, [])
@@ -1593,6 +1595,7 @@ def fetch_industry_trend(target_date):
     payload = {
         "date": target_dot,
         "items": items,
+        "mckinsey_last_known": prev_mckinsey,
         "updated_at": datetime.now(KST).strftime("%Y-%m-%dT%H:%M:%S%z"),
     }
     save_industry_trend_cache(payload)
