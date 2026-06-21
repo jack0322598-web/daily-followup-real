@@ -1,5 +1,5 @@
 import unittest
-from datetime import datetime
+from datetime import date, datetime
 from unittest.mock import patch
 
 import main
@@ -34,6 +34,58 @@ class DealsiteVcacTests(unittest.TestCase):
         self.assertEqual(items[0]["_article_id"], "12345")
         self.assertEqual(items[0]["_dealsite_category"], "대체투자")
         self.assertEqual(items[0]["date"].strftime("%Y-%m-%d"), "2026-06-17")
+
+    def test_listing_retries_after_timeout(self):
+        listing_html = """
+        <a href="/article/2026061900000000001">스타트업, 시리즈A 투자 유치</a>
+        """
+        with (
+            patch.object(main, "fetch_source_text", side_effect=[TimeoutError("timed out"), listing_html]) as fetch,
+            patch.object(main.time, "sleep"),
+        ):
+            items = main.collect_listing_article_links(
+                "https://www.unicornfactory.co.kr/money/investment",
+                r"/article/\d+",
+                attempts=2,
+            )
+
+        self.assertEqual(fetch.call_count, 2)
+        self.assertEqual(len(items), 1)
+
+    def test_unicornfactory_google_news_fallback(self):
+        rss = """<?xml version="1.0" encoding="UTF-8"?>
+        <rss><channel><item>
+          <title>테스트 스타트업, 30억 투자 유치 - 유니콘팩토리</title>
+          <link>https://news.google.com/rss/articles/example</link>
+          <pubDate>Fri, 19 Jun 2026 01:00:00 +0000</pubDate>
+          <source>유니콘팩토리</source>
+          <description>시리즈A 투자 소식</description>
+        </item><item>
+          <title>시민참여형 AI 해커톤 개최 - 유니콘팩토리</title>
+          <link>https://news.google.com/rss/articles/irrelevant</link>
+          <pubDate>Fri, 19 Jun 2026 02:00:00 +0000</pubDate>
+          <source>유니콘팩토리</source>
+          <description>일반 행사 소식</description>
+        </item></channel></rss>"""
+        config = {
+            "source": "유니콘팩토리",
+            "context": "투자·회수 소식",
+            "fallback_google_query": "site:unicornfactory.co.kr/article 투자",
+        }
+        expected = {"title": "테스트 스타트업, 30억 투자 유치", "source": "유니콘팩토리"}
+        with (
+            patch.object(main, "fetch_text", return_value=rss),
+            patch.object(
+                main,
+                "resolve_google_news_url",
+                return_value="https://www.unicornfactory.co.kr/article/2026061900000000001",
+            ),
+            patch.object(main, "build_vcac_news_item", return_value=expected) as build,
+        ):
+            items = main.fetch_vcac_google_news_fallback(config, date(2026, 6, 19), set(), [], [])
+
+        self.assertEqual(items, [expected])
+        self.assertEqual(build.call_args.args[0], "유니콘팩토리")
 
     def test_balanced_selection_keeps_both_categories(self):
         candidates = {

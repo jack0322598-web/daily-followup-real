@@ -220,6 +220,12 @@ VCAC_LISTING_SOURCE_CONFIGS = [
         "source": "유니콘팩토리",
         "pages": ["https://www.unicornfactory.co.kr/money/investment"],
         "link_pattern": r"/article/\d+",
+        "listing_attempts": 3,
+        "listing_timeout": 35,
+        "fallback_google_query": (
+            "site:unicornfactory.co.kr/article "
+            "(투자 OR 유치 OR 펀딩 OR 인수 OR 합병 OR M&A OR IPO OR 상장 OR 엑시트)"
+        ),
         "context": "유니콘팩토리 투자·회수 섹션의 스타트업 투자 및 회수 소식입니다.",
     },
 ]
@@ -3745,33 +3751,94 @@ def parse_rss_feed_items(feed_text):
         })
     return items
 
-def collect_listing_article_links(page_url, link_pattern, use_browser_headers=False):
-    items = []
-    seen = set()
+def collect_listing_article_links(page_url, link_pattern, use_browser_headers=False, attempts=1, timeout=20):
+    page_fetcher = fetch_text if use_browser_headers else fetch_source_text
+    last_error = None
+    for attempt in range(1, max(1, attempts) + 1):
+        try:
+            page_html = page_fetcher(page_url, timeout=timeout)
+            soup = BeautifulSoup(page_html, "html.parser")
+            items = []
+            seen = set()
+            for anchor in soup.find_all("a", href=True):
+                href = anchor.get("href", "").strip()
+                if not href or href.startswith(("javascript:", "mailto:", "#")):
+                    continue
+                link = clean_tracking_url(urllib.parse.urljoin(page_url, href))
+                if not re.search(link_pattern, urllib.parse.urlparse(link).path):
+                    continue
+                if link in seen:
+                    continue
+                title = normalize_space(anchor.get_text(" ", strip=True))
+                title = re.sub(r"^기사\s*이미지\s*", "", title)
+                title = re.sub(r"^기사이미지\s*\d*\s*", "", title)
+                title = re.sub(r"^\d+\s*", "", title)
+                if len(title) < 6:
+                    continue
+                seen.add(link)
+                items.append({"title": title, "link": link})
+            return items
+        except Exception as exc:
+            last_error = exc
+            if attempt < max(1, attempts):
+                print(f"  - VC/AC/대체투자 listing retry {attempt}/{attempts} ({page_url}): {exc}")
+                time.sleep(min(2 ** (attempt - 1), 4))
+    print(f"  - VC/AC/대체투자 listing failed ({page_url}): {last_error}")
+    return []
+
+
+def fetch_vcac_google_news_fallback(
+    config, target_date, seen_links, seen_titles, story_cache, limit=MAX_VCAC_NEWS_PER_SOURCE
+):
+    source_name = config["source"]
+    context = config["context"]
+    start_date = target_date.strftime("%Y-%m-%d")
+    end_date = (target_date + timedelta(days=1)).strftime("%Y-%m-%d")
+    target_dot = target_date.strftime("%Y.%m.%d")
+    query = urllib.parse.quote(f"{config['fallback_google_query']} after:{start_date} before:{end_date}")
+    rss_url = f"https://news.google.com/rss/search?q={query}&hl=ko&gl=KR&ceid=KR:ko"
+    news_items = []
     try:
-        page_fetcher = fetch_text if use_browser_headers else fetch_source_text
-        page_html = page_fetcher(page_url, timeout=20)
-        soup = BeautifulSoup(page_html, "html.parser")
-        for anchor in soup.find_all("a", href=True):
-            href = anchor.get("href", "").strip()
-            if not href or href.startswith(("javascript:", "mailto:", "#")):
+        root = ElementTree.fromstring(fetch_text(rss_url, timeout=25))
+        for item in root.findall(".//item"):
+            if len(news_items) >= limit:
+                break
+            try:
+                published = parsedate_to_datetime(item.findtext("pubDate", "")).astimezone(KST)
+            except Exception:
                 continue
-            link = clean_tracking_url(urllib.parse.urljoin(page_url, href))
-            if not re.search(link_pattern, urllib.parse.urlparse(link).path):
+            if published.strftime("%Y.%m.%d") != target_dot:
                 continue
-            if link in seen:
+            title, result_source = parse_google_news_item(item)
+            if not is_valid_vcac_title(title):
                 continue
-            title = normalize_space(anchor.get_text(" ", strip=True))
-            title = re.sub(r"^기사\s*이미지\s*", "", title)
-            title = re.sub(r"^기사이미지\s*\d*\s*", "", title)
-            title = re.sub(r"^\d+\s*", "", title)
-            if len(title) < 6:
-                continue
-            seen.add(link)
-            items.append({"title": title, "link": link})
-    except Exception as e:
-        print(f"  - VC/AC/대체투자 listing failed ({page_url}): {e}")
-    return items
+            google_link = normalize_space(item.findtext("link", ""))
+            article_link = resolve_google_news_url(google_link)
+            resolved_host = normalize_news_netloc(article_link)
+            if not resolved_host.endswith("unicornfactory.co.kr"):
+                if "유니콘팩토리" not in normalize_space(result_source):
+                    continue
+                article_link = google_link
+            desc_text = strip_tags(item.findtext("description", ""))
+            news_item = build_vcac_news_item(
+                source_name,
+                title,
+                article_link,
+                target_date,
+                seen_links,
+                seen_titles,
+                context,
+                desc_text=desc_text,
+                story_cache=story_cache,
+                require_article_date=False,
+            )
+            if news_item:
+                news_items.append(news_item)
+    except Exception as exc:
+        print(f"  - {source_name} Google News fallback failed: {exc}")
+    if news_items:
+        print(f"  - {source_name} Google News fallback: {len(news_items)}건")
+    return news_items
 
 def build_vcac_news_item(source_name, title, link, target_date, seen_links, seen_titles, context, desc_text="", story_cache=None, require_article_date=True):
     target_dot = target_date.strftime("%Y.%m.%d")
@@ -3876,6 +3943,8 @@ def fetch_vcac_listing_source(config, target_date, seen_links, seen_titles):
             page_url,
             config["link_pattern"],
             use_browser_headers=config.get("use_browser_headers", False),
+            attempts=config.get("listing_attempts", 1),
+            timeout=config.get("listing_timeout", 20),
         ):
             if len(news_items) >= MAX_VCAC_NEWS_PER_SOURCE:
                 break
@@ -3893,6 +3962,17 @@ def fetch_vcac_listing_source(config, target_date, seen_links, seen_titles):
             if news_item:
                 news_items.append(news_item)
             time.sleep(0.8)
+    if config.get("fallback_google_query") and len(news_items) < MAX_VCAC_NEWS_PER_SOURCE:
+        news_items.extend(
+            fetch_vcac_google_news_fallback(
+                config,
+                target_date,
+                seen_links,
+                seen_titles,
+                story_cache,
+                limit=MAX_VCAC_NEWS_PER_SOURCE - len(news_items),
+            )
+        )
     return dedupe_news_items(news_items)
 
 def fetch_dealsite_category_html(category_code, start_date, end_date):
