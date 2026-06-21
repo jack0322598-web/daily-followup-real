@@ -8,6 +8,7 @@ import json
 import os
 import re
 import time
+import warnings
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -19,7 +20,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urlparse
 from xml.etree import ElementTree
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 
 try:
     import requests
@@ -3251,14 +3252,12 @@ def fetch_global_impact(target_date, seen_links, seen_titles):
     for source_name, feed_url in GLOBAL_IMPACT_FEEDS:
         try:
             feed_text = fetch_text(feed_url)
-            soup = BeautifulSoup(feed_text, 'html.parser')
-            items = soup.find_all(["item", "entry"])
             count = 0
-            for item in items:
+            for item in parse_rss_feed_items(feed_text):
                 if count >= MAX_GLOBAL_IMPACT_NEWS_PER_SOURCE: break
-                title = extract_feed_item_title(item)
-                link = extract_feed_item_link(item)
-                date_tag = extract_feed_item_date(item)
+                title = item.get("title", "")
+                link = item.get("link", "")
+                date_tag = item.get("date")
                 
                 if not title or not link: continue
                 if date_tag and date_tag.strftime("%Y.%m.%d") != target_dot: continue
@@ -3273,8 +3272,7 @@ def fetch_global_impact(target_date, seen_links, seen_titles):
                     
                 if any(is_similar_title(title, st) for st in seen_titles) or link in seen_links: continue
                 
-                desc_tag = item.find("description") or item.find("summary") or item.find("content")
-                desc_text = strip_tags(desc_tag.text if desc_tag else "")
+                desc_text = strip_tags(item.get("description", ""))
                 article_body = fetch_article_body_text(link)
                 summary_source = article_body if len(article_body) >= 180 else desc_text
                 summary = make_three_line_summary(title, summary_source, source_name, "글로벌 기후/임팩트 최신 동향입니다.")
@@ -3686,6 +3684,38 @@ def parse_rss_feed_items(feed_text):
     try:
         root = ElementTree.fromstring(feed_text.lstrip("\ufeff"))
     except Exception:
+        # Some WordPress feeds contain malformed markup inside an item.  The
+        # HTML parser can recover, but it treats RSS <link> as an empty HTML
+        # element. Rename text-style link tags before parsing so URLs survive.
+        recoverable_feed = re.sub(r"<link\s*>", "<rss-link>", feed_text, flags=re.IGNORECASE)
+        recoverable_feed = re.sub(r"</link\s*>", "</rss-link>", recoverable_feed, flags=re.IGNORECASE)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", XMLParsedAsHTMLWarning)
+            soup = BeautifulSoup(recoverable_feed, "html.parser")
+        for node in soup.find_all(["item", "entry"]):
+            title_node = node.find("title")
+            title = normalize_space(title_node.get_text(" ", strip=True)) if title_node else ""
+            link_node = node.find("rss-link")
+            if link_node is None:
+                link_node = node.find("link")
+            link = ""
+            if link_node is not None:
+                link = link_node.get("href", "").strip() or normalize_space(link_node.get_text(" ", strip=True))
+            date_value = extract_feed_item_date(node)
+            desc_node = node.find(["description", "summary", "encoded", "content"])
+            desc_text = desc_node.get_text(" ", strip=True) if desc_node else ""
+            categories = [
+                normalize_space(category.get_text(" ", strip=True))
+                for category in node.find_all("category")
+                if category.get_text(" ", strip=True)
+            ]
+            items.append({
+                "title": title,
+                "link": link,
+                "date": date_value,
+                "description": desc_text,
+                "categories": categories,
+            })
         return items
     for node in root.iter():
         if xml_local_name(node.tag) not in {"item", "entry"}:
