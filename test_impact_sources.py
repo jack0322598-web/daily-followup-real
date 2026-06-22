@@ -34,5 +34,44 @@ class ImpactAlphaFeedTests(unittest.TestCase):
         self.assertEqual(items[0]["date"], "2026.06.19")
 
 
+class AiNewsFeedTests(unittest.TestCase):
+    def test_ai_news_rss_keeps_both_articles_on_kst_date(self):
+        feed = """<?xml version="1.0" encoding="UTF-8"?>
+        <rss><channel>
+          <item>
+            <title>SAP and Google Cloud deploy agentic commerce architecture</title>
+            <link>https://www.artificialintelligence-news.com/news/sap-google/</link>
+            <pubDate>Fri, 19 Jun 2026 14:02:20 +0000</pubDate>
+            <description>First AI article.</description>
+          </item>
+          <item>
+            <title>e2e-assure introduces an AI-driven SOC platform</title>
+            <link>https://www.artificialintelligence-news.com/news/e2e-assure/</link>
+            <pubDate>Fri, 19 Jun 2026 09:57:55 +0000</pubDate>
+            <description>Second AI article.</description>
+          </item>
+          <item>
+            <title>Older AI article</title>
+            <link>https://www.artificialintelligence-news.com/news/older/</link>
+            <pubDate>Thu, 18 Jun 2026 16:00:00 +0000</pubDate>
+            <description>Older article.</description>
+          </item>
+        </channel></rss>"""
+        config = next(item for item in main.AI_RSS_SOURCE_CONFIGS if item["source"] == "AI News")
+
+        def build_item(source_name, title, link, *_args, **_kwargs):
+            return {"source": source_name, "title": title, "link": link}
+
+        with (
+            patch.object(main, "fetch_source_text", return_value=feed),
+            patch.object(main, "build_source_news_item", side_effect=build_item),
+            patch.object(main.time, "sleep"),
+        ):
+            items = main.fetch_ai_rss_source(config, date(2026, 6, 19), set(), [])
+
+        self.assertEqual(len(items), 2)
+        self.assertTrue(all(item["source"] == "AI News" for item in items))
+
+
 if __name__ == "__main__":
     unittest.main()
