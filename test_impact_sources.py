@@ -73,5 +73,49 @@ class AiNewsFeedTests(unittest.TestCase):
         self.assertTrue(all(item["source"] == "AI News" for item in items))
 
 
+class MarketingTechFeedTests(unittest.TestCase):
+    def test_marketingtech_uses_backup_feed_and_filters_categories(self):
+        challenge_page = "<html><title>Just a moment...</title></html>"
+        backup_feed = """<?xml version="1.0" encoding="UTF-8"?>
+        <rss><channel>
+          <item>
+            <title>Yext opens platform access for AI marketing workflows</title>
+            <link>https://www.marketingtechnews.net/news/yext-ai/</link>
+            <pubDate>Fri, 19 Jun 2026 12:53:25 +0000</pubDate>
+            <category>AI &amp; Intelligent Marketing</category>
+            <description>First marketing AI article.</description>
+          </item>
+          <item>
+            <title>Warner Bros expands agentic AI use in ad buying</title>
+            <link>https://www.marketingtechnews.net/news/warner-ai/</link>
+            <pubDate>Fri, 19 Jun 2026 09:00:00 +0000</pubDate>
+            <category>AI &amp; Intelligent Marketing</category>
+            <description>Second marketing AI article.</description>
+          </item>
+          <item>
+            <title>General social media marketing article</title>
+            <link>https://www.marketingtechnews.net/news/social/</link>
+            <pubDate>Fri, 19 Jun 2026 08:00:00 +0000</pubDate>
+            <category>Social Media Marketing</category>
+            <description>Not an AI category article.</description>
+          </item>
+        </channel></rss>"""
+        config = dict(next(item for item in main.AI_RSS_SOURCE_CONFIGS if item["source"] == "MarketingTech"))
+        config["feed_attempts"] = 1
+
+        def build_item(source_name, title, link, *_args, **_kwargs):
+            return {"source": source_name, "title": title, "link": link}
+
+        with (
+            patch.object(main, "fetch_source_text", side_effect=[challenge_page, backup_feed]),
+            patch.object(main, "build_source_news_item", side_effect=build_item),
+            patch.object(main.time, "sleep"),
+        ):
+            items = main.fetch_ai_rss_source(config, date(2026, 6, 19), set(), [])
+
+        self.assertEqual(len(items), 2)
+        self.assertTrue(all(item["source"] == "MarketingTech" for item in items))
+
+
 if __name__ == "__main__":
     unittest.main()
