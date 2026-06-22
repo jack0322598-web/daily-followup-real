@@ -3332,6 +3332,17 @@ def fetch_newsletter_emails(gmail_user, gmail_password, target_date, seen_links,
             f"  - Newsletter ({mailbox}, {target_dot}): "
             f"Bloomberg Green {source_counts['Bloomberg Green']}건 / CTVC {source_counts['CTVC']}건"
         )
+    except imaplib.IMAP4.error as e:
+        error_text = str(e)
+        if any(marker in error_text.casefold() for marker in (
+            "application-specific password required",
+            "authenticationfailed",
+            "invalid credentials",
+        )):
+            raise RuntimeError(
+                "Newsletter Gmail authentication failed. Refresh GMAIL_APP_PASSWORD in CircleCI."
+            ) from e
+        print(f"  - Newsletter IMAP fetch failed: {e}")
     except Exception as e:
         print(f"  - Newsletter fetch failed: {e}")
     finally:
