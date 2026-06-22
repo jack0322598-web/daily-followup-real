@@ -5213,6 +5213,7 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
         impact_branding,
         "수집된 임팩트 소스가 없습니다.",
         "수집된 임팩트 뉴스가 없습니다.",
+        show_empty_sources=True,
     )
 
     vcac_section_html = render_source_tab_section(
