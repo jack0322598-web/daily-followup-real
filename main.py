@@ -184,6 +184,12 @@ INDUSTRY_SOURCE_BRANDING = {
 
 AI_RSS_SOURCE_CONFIGS = [
     {
+        "source": "AI News",
+        "feeds": ["https://www.artificialintelligence-news.com/feed/"],
+        "date_timezone": "UTC",
+        "context": "AI News의 글로벌 AI 산업 및 기술 뉴스입니다.",
+    },
+    {
         "source": "MarketingTech",
         "feeds": ["https://www.marketingtechnews.net/categories/ai-intelligent-marketing/feed/"],
         "context": "MarketingTech의 AI 및 지능형 마케팅 섹션 기사입니다.",
@@ -3707,6 +3713,8 @@ def parse_rss_feed_items(feed_text):
             link = ""
             if link_node is not None:
                 link = link_node.get("href", "").strip() or normalize_space(link_node.get_text(" ", strip=True))
+            date_node = node.find(["pubdate", "published", "updated", "date"])
+            date_text = date_node.get_text(" ", strip=True) if date_node else ""
             date_value = extract_feed_item_date(node)
             desc_node = node.find(["description", "summary", "encoded", "content"])
             desc_text = desc_node.get_text(" ", strip=True) if desc_node else ""
@@ -3719,6 +3727,7 @@ def parse_rss_feed_items(feed_text):
                 "title": title,
                 "link": link,
                 "date": date_value,
+                "date_text": normalize_space(date_text),
                 "description": desc_text,
                 "categories": categories,
             })
@@ -3746,6 +3755,7 @@ def parse_rss_feed_items(feed_text):
             "title": title,
             "link": link,
             "date": parse_datetime_string(date_text),
+            "date_text": date_text,
             "description": desc_text,
             "categories": categories,
         })
@@ -4333,6 +4343,14 @@ def fetch_ai_rss_source(config, target_date, seen_links, seen_titles):
                 if len(news_items) >= MAX_AI_NEWS_PER_SOURCE:
                     break
                 date_tag = item["date"]
+                if config.get("date_timezone") == "UTC" and item.get("date_text"):
+                    try:
+                        source_date = parsedate_to_datetime(item["date_text"])
+                        if source_date.tzinfo is None:
+                            source_date = source_date.replace(tzinfo=timezone.utc)
+                        date_tag = source_date.astimezone(timezone.utc)
+                    except Exception:
+                        pass
                 if date_tag and date_tag.strftime("%Y.%m.%d") != target_dot:
                     continue
                 news_item = build_source_news_item(
@@ -4400,14 +4418,6 @@ def fetch_ai_listing_items(source_name, listing_items, target_date, seen_links, 
 
 def fetch_ai_sources(target_date, seen_links, seen_titles):
     source_news = {source_name: [] for source_name in AI_SOURCE_PRIORITY}
-    source_news["AI News"] = fetch_ai_listing_items(
-        "AI News",
-        collect_ai_news_listing_items("https://www.artificialintelligence-news.com/"),
-        target_date,
-        seen_links,
-        seen_titles,
-        "AI News의 글로벌 AI 산업 및 기술 뉴스입니다.",
-    )
     source_news["AI TIMES"] = fetch_ai_listing_items(
         "AI TIMES",
         collect_aitimes_listing_items(target_date),
@@ -4418,6 +4428,15 @@ def fetch_ai_sources(target_date, seen_links, seen_titles):
     )
     for config in AI_RSS_SOURCE_CONFIGS:
         source_news[config["source"]] = fetch_ai_rss_source(config, target_date, seen_links, seen_titles)
+    if not source_news["AI News"]:
+        source_news["AI News"] = fetch_ai_listing_items(
+            "AI News",
+            collect_ai_news_listing_items("https://www.artificialintelligence-news.com/"),
+            target_date,
+            seen_links,
+            seen_titles,
+            "AI News의 글로벌 AI 산업 및 기술 뉴스입니다.",
+        )
     source_news["The Batch Data Points"] = fetch_ai_listing_items(
         "The Batch Data Points",
         collect_the_batch_listing_items("https://www.deeplearning.ai/the-batch/tag/data-points", exclude_issue_links=True),
