@@ -3,7 +3,7 @@ version: 2.1
 parameters:
   run_daily:
     type: boolean
-    default: false
+    default: true
 
 jobs:
   validate:
@@ -41,7 +41,9 @@ jobs:
       - run:
           name: Generate daily briefing
           no_output_timeout: 3h
-          command: python -u deploy/daily_ci.py
+          command: |
+            python -u deploy/daily_ci.py --date 2026-06-19
+            python -u deploy/daily_ci.py --date 2026-06-21
       - run:
           name: Prepare public site
           command: python deploy/build_public.py
