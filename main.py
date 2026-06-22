@@ -191,7 +191,13 @@ AI_RSS_SOURCE_CONFIGS = [
     },
     {
         "source": "MarketingTech",
-        "feeds": ["https://www.marketingtechnews.net/categories/ai-intelligent-marketing/feed/"],
+        "feeds": [
+            "https://www.marketingtechnews.net/categories/ai-intelligent-marketing/feed/",
+            "https://www.marketingtechnews.net/feed/",
+        ],
+        "date_timezone": "UTC",
+        "feed_attempts": 3,
+        "required_categories": ["AI & Intelligent Marketing"],
         "context": "MarketingTech의 AI 및 지능형 마케팅 섹션 기사입니다.",
     },
 ]
@@ -4337,43 +4343,62 @@ def fetch_ai_rss_source(config, target_date, seen_links, seen_titles):
     for feed_url in config["feeds"]:
         if len(news_items) >= MAX_AI_NEWS_PER_SOURCE:
             break
-        try:
-            feed_text = fetch_source_text(feed_url, timeout=20)
-            for item in parse_rss_feed_items(feed_text):
-                if len(news_items) >= MAX_AI_NEWS_PER_SOURCE:
-                    break
-                date_tag = item["date"]
-                if config.get("date_timezone") == "UTC" and item.get("date_text"):
-                    try:
-                        source_date = parsedate_to_datetime(item["date_text"])
-                        if source_date.tzinfo is None:
-                            source_date = source_date.replace(tzinfo=timezone.utc)
-                        date_tag = source_date.astimezone(timezone.utc)
-                    except Exception:
-                        pass
-                if date_tag and date_tag.strftime("%Y.%m.%d") != target_dot:
-                    continue
-                news_item = build_source_news_item(
-                    source_name,
-                    item["title"],
-                    item["link"],
-                    target_date,
-                    seen_links,
-                    seen_titles,
-                    context,
-                    desc_text=strip_tags(item.get("description", "")),
-                    story_cache=story_cache,
-                    date_tag=date_tag,
-                    require_article_date=not bool(date_tag),
-                    strict_story_dedupe=False,
-                    seen_title_threshold=0.50,
-                    cache_title_threshold=0.50,
-                )
-                if news_item:
-                    news_items.append(news_item)
-                time.sleep(0.8)
-        except Exception as e:
-            print(f"  - {source_name} RSS failed ({feed_url}): {e}")
+        feed_items = []
+        last_error = None
+        attempts = max(1, config.get("feed_attempts", 1))
+        for attempt in range(1, attempts + 1):
+            try:
+                feed_text = fetch_source_text(feed_url, timeout=25)
+                feed_items = parse_rss_feed_items(feed_text)
+                if not feed_items:
+                    raise RuntimeError("RSS response contained no article items")
+                break
+            except Exception as exc:
+                last_error = exc
+                if attempt < attempts:
+                    print(f"  - {source_name} RSS retry {attempt}/{attempts} ({feed_url}): {exc}")
+                    time.sleep(min(2 ** (attempt - 1), 4))
+        if not feed_items:
+            print(f"  - {source_name} RSS failed ({feed_url}): {last_error}")
+            continue
+
+        required_categories = {value.casefold() for value in config.get("required_categories", [])}
+        for item in feed_items:
+            if len(news_items) >= MAX_AI_NEWS_PER_SOURCE:
+                break
+            item_categories = {value.casefold() for value in item.get("categories", [])}
+            if required_categories and required_categories.isdisjoint(item_categories):
+                continue
+            date_tag = item["date"]
+            if config.get("date_timezone") == "UTC" and item.get("date_text"):
+                try:
+                    source_date = parsedate_to_datetime(item["date_text"])
+                    if source_date.tzinfo is None:
+                        source_date = source_date.replace(tzinfo=timezone.utc)
+                    date_tag = source_date.astimezone(timezone.utc)
+                except Exception:
+                    pass
+            if date_tag and date_tag.strftime("%Y.%m.%d") != target_dot:
+                continue
+            news_item = build_source_news_item(
+                source_name,
+                item["title"],
+                item["link"],
+                target_date,
+                seen_links,
+                seen_titles,
+                context,
+                desc_text=strip_tags(item.get("description", "")),
+                story_cache=story_cache,
+                date_tag=date_tag,
+                require_article_date=not bool(date_tag),
+                strict_story_dedupe=False,
+                seen_title_threshold=0.50,
+                cache_title_threshold=0.50,
+            )
+            if news_item:
+                news_items.append(news_item)
+            time.sleep(0.8)
     return news_items
 
 def fetch_ai_listing_items(source_name, listing_items, target_date, seen_links, seen_titles, context, limit=MAX_AI_NEWS_PER_SOURCE, cta_label="", accepted_dates=None, latest_on_or_before=False):
