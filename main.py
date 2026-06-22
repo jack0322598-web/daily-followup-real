@@ -3170,40 +3170,104 @@ def extract_newsletter_primary_link(html_text):
         return link
     return ""
 
+
+def newsletter_source_from_message(subject, sender, header_text="", body_text=""):
+    haystack = " ".join((subject, sender, header_text, body_text)).casefold()
+    if any(marker in haystack for marker in (
+        "ctvc", "climate tech vc", "sightline climate", "sightlineclimate.com",
+    )):
+        return "CTVC"
+    if "bloomberg green" in haystack:
+        return "Bloomberg Green"
+    return None
+
+
+def is_possible_newsletter_sender(sender, header_text=""):
+    haystack = f"{sender} {header_text}".casefold()
+    return any(marker in haystack for marker in (
+        "bloomberg.com", "bloomberg.net", "message.bloomberg",
+        "ctvc", "sightline climate", "sightlineclimate.com",
+    ))
+
+
+def parse_imap_internaldate(metadata):
+    if isinstance(metadata, bytes):
+        metadata = metadata.decode("utf-8", errors="replace")
+    match = re.search(r'INTERNALDATE\s+"([^"]+)"', str(metadata or ""), flags=re.IGNORECASE)
+    return parse_datetime_string(match.group(1)) if match else None
+
+
+def select_newsletter_mailbox(mail):
+    """Prefer Gmail's special-use All Mail folder, with INBOX as fallback."""
+    try:
+        status, mailboxes = mail.list()
+        if status == "OK":
+            for raw in mailboxes or []:
+                line = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else str(raw)
+                if "\\All" not in line:
+                    continue
+                match = re.search(r'(?:"([^"]+)"|([^ ]+))\s*$', line)
+                mailbox = (match.group(1) or match.group(2)) if match else ""
+                if mailbox and mail.select(mailbox, readonly=True)[0] == "OK":
+                    return mailbox
+    except Exception as exc:
+        print(f"  - Newsletter All Mail selection failed: {exc}")
+    mail.select("INBOX", readonly=True)
+    return "INBOX"
+
+
+def extract_imap_payload(fetch_data):
+    for part in fetch_data or []:
+        if isinstance(part, tuple) and len(part) > 1 and isinstance(part[1], bytes):
+            return part[1]
+    return b""
+
 def fetch_newsletter_emails(gmail_user, gmail_password, target_date, seen_links, seen_titles):
     target_dot = target_date.strftime("%Y.%m.%d")
-    source_rules = [
-        ("CTVC", lambda subject, sender: "ctvc" in sender or "ctvc" in subject or "climate tech vc" in subject),
-        ("Bloomberg Green", lambda subject, sender: "bloomberg green" in sender or "bloomberg green" in subject),
-    ]
     collected = []
+    source_counts = {"Bloomberg Green": 0, "CTVC": 0}
     mail = None
     try:
         mail = imaplib.IMAP4_SSL("imap.gmail.com", timeout=NEWSLETTER_IMAP_TIMEOUT_SECONDS)
         mail.login(gmail_user, gmail_password)
-        mail.select("INBOX")
+        mailbox = select_newsletter_mailbox(mail)
         since = (target_date - timedelta(days=1)).strftime("%d-%b-%Y")
-        status, data = mail.search(None, f'(SINCE "{since}")')
+        before = (target_date + timedelta(days=2)).strftime("%d-%b-%Y")
+        status, data = mail.search(None, f'(SINCE "{since}" BEFORE "{before}")')
         if status != "OK":
             return collected
         for num in reversed(data[0].split()):
-            status, msg_data = mail.fetch(num, "(RFC822)")
-            if status != "OK" or not msg_data or not msg_data[0]:
+            status, header_data = mail.fetch(
+                num,
+                "(INTERNALDATE BODY.PEEK[HEADER.FIELDS (DATE FROM SUBJECT REPLY-TO LIST-ID MAILING-LIST)])",
+            )
+            if status != "OK":
                 continue
-            msg = message_from_bytes(msg_data[0][1])
-            subject = decode_mime_header(msg.get("Subject", "")).lower()
-            sender = decode_mime_header(msg.get("From", "")).lower()
-            msg_date = parse_datetime_string(msg.get("Date", ""))
-            if msg_date and msg_date.strftime("%Y.%m.%d") != target_dot:
+            header_bytes = extract_imap_payload(header_data)
+            if not header_bytes:
+                continue
+            header_msg = message_from_bytes(header_bytes)
+            subject = decode_mime_header(header_msg.get("Subject", ""))
+            sender = decode_mime_header(header_msg.get("From", ""))
+            header_text = " ".join(
+                decode_mime_header(header_msg.get(name, ""))
+                for name in ("Reply-To", "List-ID", "Mailing-List")
+            )
+            metadata = header_data[0][0] if header_data and isinstance(header_data[0], tuple) else b""
+            received_at = parse_imap_internaldate(metadata)
+            message_date = received_at or parse_datetime_string(header_msg.get("Date", ""))
+            if not message_date or message_date.strftime("%Y.%m.%d") != target_dot:
                 continue
 
-            source_name = None
-            for candidate, matcher in source_rules:
-                if matcher(subject, sender):
-                    source_name = candidate
-                    break
-            if not source_name:
+            source_name = newsletter_source_from_message(subject, sender, header_text)
+            if not source_name and not is_possible_newsletter_sender(sender, header_text):
                 continue
+
+            status, msg_data = mail.fetch(num, "(BODY.PEEK[])")
+            raw_message = extract_imap_payload(msg_data)
+            if status != "OK" or not raw_message:
+                continue
+            msg = message_from_bytes(raw_message)
 
             html_body = ""
             text_body = ""
@@ -3229,6 +3293,16 @@ def fetch_newsletter_emails(gmail_user, gmail_password, target_date, seen_links,
                 else:
                     text_body = decoded
 
+            if not source_name:
+                source_name = newsletter_source_from_message(
+                    subject,
+                    sender,
+                    header_text,
+                    strip_tags(html_body) if html_body else text_body,
+                )
+            if not source_name:
+                continue
+
             items = extract_newsletter_items_from_html(html_body or text_body, source_name, target_dot)
             primary_link = extract_newsletter_primary_link(html_body or text_body)
             body_text = strip_tags(html_body) if html_body else text_body
@@ -3253,6 +3327,11 @@ def fetch_newsletter_emails(gmail_user, gmail_password, target_date, seen_links,
                 seen_links.add(item["link"])
                 seen_titles.append(item["title"])
                 collected.append(item)
+                source_counts[source_name] += 1
+        print(
+            f"  - Newsletter ({mailbox}, {target_dot}): "
+            f"Bloomberg Green {source_counts['Bloomberg Green']}건 / CTVC {source_counts['CTVC']}건"
+        )
     except Exception as e:
         print(f"  - Newsletter fetch failed: {e}")
     finally:
