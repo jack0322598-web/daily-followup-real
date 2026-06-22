@@ -3,7 +3,7 @@ version: 2.1
 parameters:
   run_daily:
     type: boolean
-    default: false
+    default: true
 
 jobs:
   validate:
