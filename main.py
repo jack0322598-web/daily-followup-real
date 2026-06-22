@@ -4295,44 +4295,82 @@ def collect_aitimes_listing_items(target_date, max_pages=3):
             break
     return items
 
-def collect_the_batch_listing_items(page_url, required_path_prefix="", exclude_issue_links=False):
-    items = []
-    seen = set()
+def fetch_the_batch_reader_text(url, attempts=3):
+    reader_url = f"https://r.jina.ai/{url}"
+    last_error = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return http_get_reader_text(reader_url, timeout=45)
+        except Exception as exc:
+            last_error = exc
+            if attempt < attempts:
+                time.sleep(min(2 ** (attempt - 1), 4))
+    raise last_error
+
+
+def parse_the_batch_reader_article(markdown_text, link):
+    title_match = re.search(r"^Title:\s*(.+)$", markdown_text or "", flags=re.MULTILINE)
+    published_match = re.search(r"^Published Time:\s*(.+)$", markdown_text or "", flags=re.MULTILINE)
+    if not title_match or not published_match:
+        return None
     try:
-        page_html = fetch_text(page_url, timeout=20)
-        soup = BeautifulSoup(page_html, "html.parser")
-        for article in soup.select("main article"):
-            text = normalize_space(article.get_text(" ", strip=True))
-            date_tag = parse_display_date(text)
-            link = ""
-            for anchor in article.find_all("a", href=True):
-                href = anchor.get("href", "").strip()
-                absolute = clean_tracking_url(urllib.parse.urljoin(page_url, href))
-                path = urllib.parse.urlparse(absolute).path.rstrip("/")
-                if not path.startswith("/the-batch/") or "/tag/" in path or path == "/the-batch":
-                    continue
-                if required_path_prefix and not path.startswith(required_path_prefix):
-                    continue
-                if exclude_issue_links and path.startswith("/the-batch/issue-"):
-                    continue
-                link = absolute
-                break
-            if not link or link in seen:
-                continue
-            title_node = article.find(["h1", "h2", "h3"])
-            title = normalize_space(title_node.get_text(" ", strip=True)) if title_node else ""
-            if not title:
-                for anchor in article.find_all("a", href=True):
-                    candidate = normalize_space(anchor.get_text(" ", strip=True))
-                    if len(candidate) > len(title):
-                        title = candidate
-            if len(title) < 6:
-                continue
+        published_at = datetime.fromisoformat(published_match.group(1).strip().replace("Z", "+00:00"))
+        if published_at.tzinfo is None:
+            published_at = published_at.replace(tzinfo=timezone.utc)
+        published_at = published_at.astimezone(KST)
+    except ValueError:
+        return None
+    title = normalize_space(title_match.group(1))
+    title = re.sub(r"^Data Points:\s*", "", title, flags=re.IGNORECASE)
+    content = (markdown_text.split("Markdown Content:", 1)[-1] if "Markdown Content:" in markdown_text else markdown_text)
+    return {
+        "title": title,
+        "link": link,
+        "date": published_at,
+        "description": normalize_space(content)[:4000],
+    }
+
+
+def collect_the_batch_listing_items(page_url, required_path_prefix="", exclude_issue_links=False, max_candidates=10):
+    """Collect The Batch items using each article's timestamp converted to KST.
+
+    DeepLearning.AI blocks automated HTML requests intermittently and publishes in
+    US Pacific time. The reader endpoint gives us the canonical timestamp, which is
+    converted to KST before the daily archive date is selected.
+    """
+    try:
+        listing_text = fetch_the_batch_reader_text(page_url)
+    except Exception as exc:
+        print(f"  - The Batch reader listing failed ({page_url}): {exc}")
+        return []
+
+    links = []
+    seen = set()
+    for match in re.finditer(r"\]\((https://www\.deeplearning\.ai/the-batch/[^)]+)\)", listing_text):
+        link = clean_tracking_url(match.group(1)).rstrip("/")
+        path = urllib.parse.urlparse(link).path.rstrip("/")
+        if not path.startswith("/the-batch/") or "/tag/" in path or path in {"/the-batch", "/the-batch/about"}:
+            continue
+        if required_path_prefix and not path.startswith(required_path_prefix):
+            continue
+        if exclude_issue_links and path.startswith("/the-batch/issue-"):
+            continue
+        if link not in seen:
             seen.add(link)
-            items.append({"title": title, "link": link, "date": date_tag, "description": text})
-    except Exception as e:
-        print(f"  - The Batch listing failed ({page_url}): {e}")
-    return items
+            links.append(link)
+        if len(links) >= max_candidates:
+            break
+
+    def collect_article(link):
+        try:
+            return parse_the_batch_reader_article(fetch_the_batch_reader_text(link), link)
+        except Exception as exc:
+            print(f"  - The Batch reader article failed ({link}): {exc}")
+            return None
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(5, len(links) or 1)) as executor:
+        items = list(executor.map(collect_article, links))
+    return [item for item in items if item]
 
 def fetch_ai_rss_source(config, target_date, seen_links, seen_titles):
     source_name = config["source"]
@@ -4470,17 +4508,23 @@ def fetch_ai_sources(target_date, seen_links, seen_titles):
         seen_titles,
         "DeepLearning.AI The Batch Data Points의 AI 주요 뉴스 브리핑입니다.",
     )
-    source_news["The Batch Weekly Issues"] = fetch_ai_listing_items(
-            "The Batch Weekly Issues",
-            collect_the_batch_listing_items("https://www.deeplearning.ai/the-batch", required_path_prefix="/the-batch/issue-"),
-            target_date,
-            seen_links,
-            seen_titles,
-            "DeepLearning.AI The Batch의 주간 AI 이슈 요약입니다.",
-            limit=1,
-            latest_on_or_before=True,
-            cta_label="원문 링크",
-        )
+    # Weekly Issues is a Friday publication. Do not repeat the latest issue on
+    # other weekdays, and on Friday require an exact KST publication-date match.
+    if target_date.weekday() == 4:
+        source_news["The Batch Weekly Issues"] = fetch_ai_listing_items(
+                "The Batch Weekly Issues",
+                collect_the_batch_listing_items(
+                    "https://www.deeplearning.ai/the-batch",
+                    required_path_prefix="/the-batch/issue-",
+                    max_candidates=5,
+                ),
+                target_date,
+                seen_links,
+                seen_titles,
+                "DeepLearning.AI The Batch의 주간 AI 이슈 요약입니다.",
+                limit=1,
+                cta_label="원문 링크",
+            )
     return {
         "id": "ai",
         "label": "AI",
@@ -4978,7 +5022,8 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
             f'</span>'
         )
 
-    def render_source_tab_section(section_id, label, kicker, heading, source_groups, source_priority, branding, empty_source_message, empty_news_message, show_empty_sources=False):
+    def render_source_tab_section(section_id, label, kicker, heading, source_groups, source_priority, branding, empty_source_message, empty_news_message, show_empty_sources=False, source_notices=None):
+        source_notices = source_notices or {}
         ordered_sources = [source for source in source_priority if show_empty_sources or source in source_groups]
         ordered_sources.extend(sorted(source for source in source_groups if source not in ordered_sources))
         ordered_sources = [source for source in ordered_sources if show_empty_sources or source_groups.get(source)]
@@ -4991,6 +5036,12 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
             brand_class, _logo_url = branding.get(source_name, ("generic", ""))
             key = f"{section_id}-{source_key(source_name)}"
             active_class = " active" if source_name == default_source else ""
+            notice_html = ""
+            if source_name in source_notices:
+                notice_html = (
+                    f'<div class="source-schedule-note"><span>FRIDAY</span>'
+                    f'{esc(source_notices[source_name])}</div>'
+                )
             source_cards.append(
                 f'<button class="impact-source-card impact-brand-{esc(brand_class)}{active_class}" data-source-target="{esc(key)}">'
                 f'{render_source_logo(source_name, branding)}'
@@ -5001,6 +5052,7 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
             source_panels.append(
                 f'<div class="impact-news-panel{active_class}" data-source-panel="{esc(key)}">'
                 f'<div class="impact-panel-head">{render_source_logo(source_name, branding, panel=True)}<h3>{esc(source_name)}</h3></div>'
+                f'{notice_html}'
                 f'{render_news_list(source_groups.get(source_name, []), empty_news_message)}'
                 f'</div>'
             )
@@ -5097,6 +5149,9 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
         "수집된 AI 소스가 없습니다.",
         "수집된 AI 뉴스가 없습니다.",
         show_empty_sources=True,
+        source_notices={
+            "The Batch Weekly Issues": "매주 금요일에만 발행되는 주간 AI 뉴스레터예요. 오늘의 최신 호를 확인해 보세요."
+        } if target_date.weekday() == 4 else None,
     )
 
     industry_source_groups = {}
@@ -5790,6 +5845,32 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
             font-family: 'Outfit', 'Noto Sans KR', sans-serif;
             font-size: 1.35rem;
             letter-spacing: -0.03em;
+        }
+
+        .source-schedule-note {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 0 0 18px;
+            padding: 13px 16px;
+            border: 1px solid rgba(117, 87, 255, 0.22);
+            border-radius: 16px;
+            background: linear-gradient(135deg, rgba(117, 87, 255, 0.11), rgba(67, 190, 168, 0.09));
+            color: var(--text-main);
+            font-size: 0.92rem;
+            line-height: 1.55;
+        }
+
+        .source-schedule-note span {
+            flex: 0 0 auto;
+            padding: 4px 8px;
+            border-radius: 999px;
+            background: #7557ff;
+            color: #fff;
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.7rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
         }
 
         .story-board {
