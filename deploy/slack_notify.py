@@ -199,6 +199,33 @@ def build_daily_briefing_message(result: dict) -> str:
     return "\n".join(lines).strip()
 
 
+def build_daily_briefing_blocks(result: dict) -> list[dict]:
+    article_sections = extract_sections_from_archive(result.get("latest_archive", ""))
+    blocks = section_blocks(
+        "\n".join(
+            [
+                f"*오늘의 날짜: {today_dot()}*",
+                f"*업데이트된 기사 발행 날짜: {result_date_text(result)}*",
+            ]
+        )
+    )
+
+    if article_sections:
+        for section in article_sections:
+            article_lines = [section_heading(section.name)]
+            for article in section.articles:
+                source = f" ({slack_escape(article.source)})" if article.source else ""
+                article_lines.append(f"• {slack_link(article.link, article.title)}{source}")
+            blocks.extend(section_blocks("\n".join(article_lines)))
+    else:
+        blocks.extend(section_blocks("수집된 기사 목록을 찾지 못했습니다."))
+
+    links = footer_links(result)
+    if links:
+        blocks.extend(section_blocks(links))
+    return blocks
+
+
 def legacy_success_message(result: dict) -> str:
     links = footer_links(result)
     target = result_date_text(result)
@@ -236,9 +263,13 @@ def send(status: str) -> None:
     webhook = os.environ.get("SLACK_WEBHOOK_URL", "").strip().strip('"').strip("'")
     if not webhook:
         raise RuntimeError("SLACK_WEBHOOK_URL is not configured")
-    title, message, color = build_message(status, load_result())
+    result = load_result()
+    title, message, color = build_message(status, result)
     blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": f"*{title}*"}}]
-    blocks.extend(section_blocks(message))
+    if status == "success":
+        blocks.extend(build_daily_briefing_blocks(result))
+    else:
+        blocks.extend(section_blocks(message))
     payload = {
         "text": title,
         "blocks": blocks,
