@@ -18,6 +18,16 @@ from bs4 import BeautifulSoup
 ROOT = Path(__file__).resolve().parents[1]
 KST = timezone(timedelta(hours=9))
 SLACK_SECTION_LIMIT = 2900
+SECTION_EMOJIS = {
+    "주요 지표": "📊",
+    "임팩트": "🌱",
+    "VC/AC/대체투자": "🚀",
+    "AI": "🤖",
+    "거시경제": "🌐",
+    "산업트랜드": "🏭",
+    "MBB 인사이트": "🧠",
+    "강세 테마": "🔥",
+}
 
 
 @dataclass
@@ -162,16 +172,21 @@ def footer_links(result: dict) -> str:
     return " | ".join(links)
 
 
+def section_heading(section_name: str) -> str:
+    emoji = SECTION_EMOJIS.get(section_name, "🗞️")
+    return f"{emoji} *{section_name}*"
+
+
 def build_daily_briefing_message(result: dict) -> str:
     article_sections = extract_sections_from_archive(result.get("latest_archive", ""))
     lines = [
-        f"오늘의 날짜: {today_dot()}",
-        f"업데이트된 기사 발행 날짜: {result_date_text(result)}",
+        f"*오늘의 날짜: {today_dot()}*",
+        f"*업데이트된 기사 발행 날짜: {result_date_text(result)}*",
     ]
 
     if article_sections:
         for section in article_sections:
-            lines.extend(["", f"*{section.name}*"])
+            lines.extend(["", section_heading(section.name)])
             for article in section.articles:
                 source = f" ({slack_escape(article.source)})" if article.source else ""
                 lines.append(f"• {slack_link(article.link, article.title)}{source}")
