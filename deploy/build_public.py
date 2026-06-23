@@ -11,6 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PUBLIC_DIR = ROOT / "public"
 PUBLIC_SUFFIXES = {".html", ".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".svgz", ".webp", ".ico"}
+PUBLIC_DIRS = ("assets",)
 MAX_FILE_SIZE = 25 * 1024 * 1024
 STATE_FILES = (
     "industry_source_cache.json",
@@ -40,6 +41,20 @@ def build_public() -> list[Path]:
         destination = PUBLIC_DIR / source.name
         shutil.copy2(source, destination)
         copied.append(destination)
+
+    for dirname in PUBLIC_DIRS:
+        source_dir = ROOT / dirname
+        if not source_dir.exists():
+            continue
+        for source in sorted(path for path in source_dir.rglob("*") if path.is_file()):
+            if source.suffix.lower() not in PUBLIC_SUFFIXES:
+                continue
+            if source.stat().st_size > MAX_FILE_SIZE:
+                raise RuntimeError(f"Cloudflare Pages file limit exceeded: {source.relative_to(ROOT)}")
+            destination = PUBLIC_DIR / source.relative_to(ROOT)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
+            copied.append(destination)
 
     state_dir = PUBLIC_DIR / "_state"
     state_dir.mkdir()

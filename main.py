@@ -162,7 +162,7 @@ VCAC_BRANDING = {
     "유니콘팩토리": ("unicorn", "https://menu.mt.co.kr/ucfactory/images/meta_unicornfactory.png"),
     "딜사이트": ("dealsite", "https://dealsite.co.kr/images/favicon.svg"),
     "스타트업레시피": ("recipe", "https://startuprecipe.co.kr/wp-content/uploads/2025/05/StartupRecipe_logo-removebg-preview.png"),
-    "PEI": ("pei", "https://www.privateequityinternational.com/favicon.ico"),
+    "PEI": ("pei", "assets/pei-logo.png"),
     "Crunchbase News": ("crunchbase", "https://news.crunchbase.com/wp-content/uploads/cb_news_favicon-150x150.png"),
     "TechCrunch": ("techcrunch", "https://techcrunch.com/wp-content/uploads/2015/02/cropped-cropped-favicon-gradient.png"),
 }
