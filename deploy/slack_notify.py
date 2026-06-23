@@ -79,6 +79,7 @@ def archive_path(latest_archive: str) -> Path | None:
         for candidate in (ROOT / name, ROOT / "public" / name):
             if candidate.exists():
                 return candidate
+        return None
 
     candidates = sorted(ROOT.glob("archive_*.html"))
     if not candidates:
@@ -224,8 +225,8 @@ def send(status: str) -> None:
     blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": f"*{title}*"}}]
     blocks.extend(section_blocks(message))
     payload = {
-        "text": f"{title}: {message[:500]}",
-        "attachments": [{"color": color, "blocks": blocks}],
+        "text": title,
+        "blocks": blocks,
     }
     request = urllib.request.Request(
         webhook,

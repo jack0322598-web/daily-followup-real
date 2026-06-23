@@ -2,6 +2,11 @@ name: Slack Notification Test
 
 on:
   workflow_dispatch:
+    inputs:
+      news_date:
+        description: "Optional KST article date to test (YYYY-MM-DD). Defaults to yesterday."
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -27,16 +32,18 @@ jobs:
         run: python -m pip install --upgrade pip && pip install -r requirements.txt
 
       - name: Send Slack article-format test notification
+        env:
+          INPUT_NEWS_DATE: ${{ github.event.inputs.news_date || '' }}
         run: |
           repo_name="${GITHUB_REPOSITORY#*/}"
-          latest_archive="$(find . -maxdepth 1 -name 'archive_*.html' -printf '%f\n' | sed -E 's/^archive_([0-9-]+)\.html$/\1/' | sort | tail -n 1)"
+          target_date="${INPUT_NEWS_DATE:-$(TZ=Asia/Seoul date -d 'yesterday' +%F)}"
 
-          if [[ -z "$latest_archive" ]]; then
-            echo "No archive file found for Slack test."
+          if [[ ! -f "archive_${target_date}.html" ]]; then
+            echo "archive_${target_date}.html does not exist. Generate that date before sending the Slack article-format test."
             exit 1
           fi
 
-          export latest_archive
+          export target_date
           export SITE_URL="https://${GITHUB_REPOSITORY_OWNER}.github.io/${repo_name}"
           python - <<'PY'
           from __future__ import annotations
@@ -46,14 +53,14 @@ jobs:
           from datetime import datetime, timedelta, timezone
           from pathlib import Path
 
-          latest_archive = os.environ["latest_archive"]
+          target_date = os.environ["target_date"]
           kst = timezone(timedelta(hours=9))
           Path("deploy_result.json").write_text(
               json.dumps(
                   {
                       "status": "updated",
-                      "dates": [latest_archive],
-                      "latest_archive": latest_archive,
+                      "dates": [target_date],
+                      "latest_archive": target_date,
                       "generated_at": datetime.now(kst).isoformat(),
                       "error": "",
                   },
