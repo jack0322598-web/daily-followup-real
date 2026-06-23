@@ -46,37 +46,6 @@ jobs:
           export target_date
           export site_url
 
-          if [[ ! -f "archive_${target_date}.html" ]]; then
-            python - <<'PY'
-            from __future__ import annotations
-
-            import os
-            from pathlib import Path
-            from urllib.error import HTTPError
-            from urllib.request import Request, urlopen
-
-            target_date = os.environ["target_date"]
-            site_url = os.environ["site_url"].rstrip("/")
-            destination = Path(f"archive_{target_date}.html")
-            candidates = [
-                f"{site_url}/archive_{target_date}.html",
-                f"{site_url}/archive_{target_date}",
-            ]
-            last_error = None
-            for url in candidates:
-                try:
-                    request = Request(url, headers={"User-Agent": "Mozilla/5.0"})
-                    html = urlopen(request, timeout=30).read().decode("utf-8", errors="ignore")
-                    destination.write_text(html, encoding="utf-8")
-                    print(f"Downloaded {url} for Slack test.")
-                    break
-                except Exception as exc:
-                    last_error = exc
-            else:
-                raise RuntimeError(f"Could not download archive_{target_date}.html from {site_url}: {last_error}")
-            PY
-          fi
-
           export SITE_URL="$site_url"
           python - <<'PY'
           from __future__ import annotations
@@ -85,8 +54,29 @@ jobs:
           import os
           from datetime import datetime, timedelta, timezone
           from pathlib import Path
+          from urllib.request import Request, urlopen
 
           target_date = os.environ["target_date"]
+          site_url = os.environ["site_url"].rstrip("/")
+          archive = Path(f"archive_{target_date}.html")
+          if not archive.exists():
+              candidates = [
+                  f"{site_url}/archive_{target_date}.html",
+                  f"{site_url}/archive_{target_date}",
+              ]
+              last_error = None
+              for url in candidates:
+                  try:
+                      request = Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                      html = urlopen(request, timeout=30).read().decode("utf-8", errors="ignore")
+                      archive.write_text(html, encoding="utf-8")
+                      print(f"Downloaded {url} for Slack test.")
+                      break
+                  except Exception as exc:
+                      last_error = exc
+              else:
+                  raise RuntimeError(f"Could not download archive_{target_date}.html from {site_url}: {last_error}")
+
           kst = timezone(timedelta(hours=9))
           Path("deploy_result.json").write_text(
               json.dumps(
