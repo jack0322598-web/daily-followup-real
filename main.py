@@ -156,12 +156,15 @@ GLOBAL_IMPACT_FEEDS = [
 IMPACTON_ALLOWED_SECTIONS = {"산업", "정책", "투자·평가", "투자.평가"}
 
 VCAC_SECTION_LABEL = "VC/AC/PEF"
-VCAC_SOURCE_PRIORITY = ("유니콘팩토리", "딜사이트", "스타트업레시피")
+VCAC_SOURCE_PRIORITY = ("유니콘팩토리", "딜사이트", "스타트업레시피", "PEI", "Crunchbase News", "TechCrunch")
 
 VCAC_BRANDING = {
     "유니콘팩토리": ("unicorn", "https://menu.mt.co.kr/ucfactory/images/meta_unicornfactory.png"),
     "딜사이트": ("dealsite", "https://dealsite.co.kr/images/favicon.svg"),
     "스타트업레시피": ("recipe", "https://startuprecipe.co.kr/wp-content/uploads/2025/05/StartupRecipe_logo-removebg-preview.png"),
+    "PEI": ("pei", "https://www.privateequityinternational.com/favicon.ico"),
+    "Crunchbase News": ("crunchbase", "https://news.crunchbase.com/wp-content/uploads/cb_news_favicon-150x150.png"),
+    "TechCrunch": ("techcrunch", "https://techcrunch.com/wp-content/uploads/2015/02/cropped-cropped-favicon-gradient.png"),
 }
 
 AI_SOURCE_PRIORITY = ("AI News", "AI TIMES", "MarketingTech", "The Batch Data Points", "The Batch Weekly Issues")
@@ -209,6 +212,27 @@ VCAC_RSS_SOURCE_CONFIGS = [
             "https://startuprecipe.co.kr/archives/category/news/feed",
         ],
         "context": "스타트업레시피의 뉴스레터와 뉴스레시피 기반 스타트업 생태계 소식입니다.",
+    },
+    {
+        "source": "PEI",
+        "feeds": ["https://www.privateequityinternational.com/news-analysis/feed/"],
+        "context": "Private Equity International의 Latest News & Analysis 기반 글로벌 PEF 및 사모투자 뉴스입니다.",
+    },
+    {
+        "source": "Crunchbase News",
+        "feeds": ["https://news.crunchbase.com/feed/"],
+        "headers": {
+            "Accept": "application/rss+xml,application/xml,text/xml,text/html,*/*;q=0.9",
+            "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Referer": "https://news.crunchbase.com/",
+        },
+        "required_categories": ["Venture", "Startups", "Seed funding", "M&A", "IPO"],
+        "context": "Crunchbase News의 스타트업·벤처 투자 및 딜 관련 뉴스입니다.",
+    },
+    {
+        "source": "TechCrunch",
+        "feeds": ["https://techcrunch.com/category/venture/feed/"],
+        "context": "TechCrunch Venture 섹션의 스타트업 및 벤처투자 뉴스입니다.",
     },
 ]
 
@@ -1861,6 +1885,12 @@ SOURCE_FETCH_HEADERS = {
 
 def fetch_source_text(url, timeout=20):
     with urllib.request.urlopen(urllib.request.Request(url, headers=SOURCE_FETCH_HEADERS), timeout=timeout) as response:
+        body = response.read()
+        return decode_response_body(body, response.headers.get_content_charset())
+
+def fetch_source_text_with_headers(url, headers, timeout=20):
+    merged_headers = {**SOURCE_FETCH_HEADERS, **HEADERS, **(headers or {})}
+    with urllib.request.urlopen(urllib.request.Request(url, headers=merged_headers), timeout=timeout) as response:
         body = response.read()
         return decode_response_body(body, response.headers.get_content_charset())
 
@@ -3985,18 +4015,25 @@ def fetch_vcac_rss_source(config, target_date, seen_links, seen_titles):
     target_dot = target_date.strftime("%Y.%m.%d")
     news_items = []
     story_cache = []
+    required_categories = {value.casefold() for value in config.get("required_categories", [])}
     for feed_url in config["feeds"]:
         if len(news_items) >= MAX_VCAC_NEWS_PER_SOURCE:
             break
         try:
-            feed_fetcher = fetch_text if config.get("use_browser_headers", False) else fetch_source_text
-            feed_text = feed_fetcher(feed_url, timeout=20)
+            if config.get("headers"):
+                feed_text = fetch_source_text_with_headers(feed_url, config.get("headers"), timeout=20)
+            else:
+                feed_fetcher = fetch_text if config.get("use_browser_headers", False) else fetch_source_text
+                feed_text = feed_fetcher(feed_url, timeout=20)
             for item in parse_rss_feed_items(feed_text):
                 if len(news_items) >= MAX_VCAC_NEWS_PER_SOURCE:
                     break
                 title = item["title"]
                 link = clean_tracking_url(item["link"])
                 if not title or not link:
+                    continue
+                item_categories = {value.casefold() for value in item.get("categories", [])}
+                if required_categories and required_categories.isdisjoint(item_categories):
                     continue
                 date_tag = item["date"]
                 if date_tag and date_tag.strftime("%Y.%m.%d") != target_dot:
@@ -5845,6 +5882,9 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
         .impact-brand-unicorn { box-shadow: inset 0 4px 0 #111827; }
         .impact-brand-dealsite { box-shadow: inset 0 4px 0 #0f172a; }
         .impact-brand-recipe { box-shadow: inset 0 4px 0 #f59e0b; }
+        .impact-brand-pei { box-shadow: inset 0 4px 0 #b91c1c; }
+        .impact-brand-crunchbase { box-shadow: inset 0 4px 0 #146aff; }
+        .impact-brand-techcrunch { box-shadow: inset 0 4px 0 #00d301; }
         .impact-brand-ai-news { box-shadow: inset 0 4px 0 #2563eb; }
         .impact-brand-aitimes { box-shadow: inset 0 4px 0 #111827; }
         .impact-brand-marketingtech { box-shadow: inset 0 4px 0 #ec4899; }
