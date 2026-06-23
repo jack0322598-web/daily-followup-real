@@ -149,76 +149,39 @@ jobs:
           REPOSITORY_OWNER: ${{ github.repository_owner }}
         run: |
           repo_name="${REPOSITORY#*/}"
-          site_url="https://${REPOSITORY_OWNER}.github.io/${repo_name}/"
-          commit_sha="$(git rev-parse HEAD)"
-          commit_url="https://github.com/${REPOSITORY}/commit/${commit_sha}"
+          export SITE_URL="https://${REPOSITORY_OWNER}.github.io/${repo_name}"
+          export CIRCLE_BUILD_URL="https://github.com/${REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          python - <<'PY'
+          from __future__ import annotations
 
-          if [ "$START_DATE" = "$END_DATE" ]; then
-            update_label="$END_DATE"
-            page_url="${site_url}archive_${END_DATE}.html"
-            archive_label="View today's briefing"
-          else
-            update_label="${START_DATE} ~ ${END_DATE}"
-            page_url="${site_url}"
-            archive_label="View briefing home"
-          fi
-
-          export SITE_URL="$site_url"
-          export PAGE_URL="$page_url"
-          export UPDATE_LABEL="$update_label"
-          export ARCHIVE_LABEL="$archive_label"
-          export COMMIT_URL="$commit_url"
-          export RAW_SLACK_WEBHOOK_URL="$SLACK_WEBHOOK_URL"
-
-          python - <<'PY' > slack_payload.json
           import json
           import os
+          from datetime import date, datetime, timedelta, timezone
+          from pathlib import Path
 
-          payload = {
-              "text": f"Daily news briefing updated: {os.environ['UPDATE_LABEL']}",
-              "blocks": [
-                  {
-                      "type": "header",
-                      "text": {
-                          "type": "plain_text",
-                          "text": "Daily news briefing updated",
-                      },
-                  },
-                  {
-                      "type": "section",
-                      "text": {
-                          "type": "mrkdwn",
-                          "text": (
-                              f"*Updated target*: `{os.environ['UPDATE_LABEL']}`\n"
-                              f"<{os.environ['PAGE_URL']}|{os.environ['ARCHIVE_LABEL']}> | "
-                              f"<{os.environ['COMMIT_URL']}|View commit>"
-                          ),
-                      },
-                  },
-              ],
-          }
+          KST = timezone(timedelta(hours=9))
+          start = date.fromisoformat(os.environ["START_DATE"])
+          end = date.fromisoformat(os.environ["END_DATE"])
+          dates = []
+          current = start
+          while current <= end:
+              dates.append(current.isoformat())
+              current += timedelta(days=1)
 
-          print(json.dumps(payload, ensure_ascii=False))
+          Path("deploy_result.json").write_text(
+              json.dumps(
+                  {
+                      "status": "updated",
+                      "dates": dates,
+                      "latest_archive": end.isoformat(),
+                      "generated_at": datetime.now(KST).isoformat(),
+                      "error": "",
+                  },
+                  ensure_ascii=False,
+                  indent=2,
+              ),
+              encoding="utf-8",
+          )
           PY
 
-          webhook_url="$(python - <<'PY'
-          import os
-          print(os.environ.get("RAW_SLACK_WEBHOOK_URL", "").strip().strip('"').strip("'"))
-          PY
-          )"
-
-          if [[ -z "$webhook_url" ]]; then
-            echo "Slack webhook URL is empty after trimming."
-            exit 0
-          fi
-
-          if [[ "$webhook_url" != https://hooks.slack.com/services/* && "$webhook_url" != https://hooks.slack-gov.com/services/* ]]; then
-            echo "Slack webhook URL format looks invalid. Re-save SLACK_WEBHOOK_URL in GitHub Secrets without quotes or extra spaces."
-            exit 0
-          fi
-
-          curl --fail --silent --show-error \
-            -X POST \
-            -H "Content-type: application/json" \
-            --data @slack_payload.json \
-            "$webhook_url"
+          python deploy/slack_notify.py success
