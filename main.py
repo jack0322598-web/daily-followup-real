@@ -216,22 +216,31 @@ VCAC_RSS_SOURCE_CONFIGS = [
     {
         "source": "PEI",
         "feeds": ["https://www.privateequityinternational.com/news-analysis/feed/"],
+        "date_timezone": "UTC",
+        "seen_title_threshold": 0.55,
+        "strict_story_dedupe": False,
         "context": "Private Equity International의 Latest News & Analysis 기반 글로벌 PEF 및 사모투자 뉴스입니다.",
     },
     {
         "source": "Crunchbase News",
         "feeds": ["https://news.crunchbase.com/feed/"],
+        "date_timezone": "UTC",
         "headers": {
             "Accept": "application/rss+xml,application/xml,text/xml,text/html,*/*;q=0.9",
             "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
             "Referer": "https://news.crunchbase.com/",
         },
         "required_categories": ["Venture", "Startups", "Seed funding", "M&A", "IPO"],
+        "seen_title_threshold": 0.55,
+        "strict_story_dedupe": False,
         "context": "Crunchbase News의 스타트업·벤처 투자 및 딜 관련 뉴스입니다.",
     },
     {
         "source": "TechCrunch",
         "feeds": ["https://techcrunch.com/category/venture/feed/"],
+        "date_timezone": "UTC",
+        "seen_title_threshold": 0.55,
+        "strict_story_dedupe": False,
         "context": "TechCrunch Venture 섹션의 스타트업 및 벤처투자 뉴스입니다.",
     },
 ]
@@ -248,6 +257,29 @@ VCAC_LISTING_SOURCE_CONFIGS = [
             "(투자 OR 유치 OR 펀딩 OR 인수 OR 합병 OR M&A OR IPO OR 상장 OR 엑시트)"
         ),
         "context": "유니콘팩토리 투자·회수 섹션의 스타트업 투자 및 회수 소식입니다.",
+    },
+    {
+        "source": "PEI",
+        "pages": [
+            "https://www.privateequityinternational.com/",
+            "https://www.privateequityinternational.com/news-analysis/",
+            "https://www.privateequityinternational.com/tag/fundraising/",
+        ],
+        "link_pattern": (
+            r"^/(?!news-analysis|tag|content_types|events|about|database|private-equity-data|"
+            r"digital-magazine|author|wp-content|contact-us|subscription-options|sign-in-faq|"
+            r"suggest-a-story|bookstore|podcasts|rankings|fund-formation-league-table|"
+            r"regions_and_countries|institution_types|strategies|pei-300|future-of-private-equity)"
+            r"(?:[a-z0-9][a-z0-9-]*/?)$"
+        ),
+        "link_selector": "h1 a[href], h2 a[href], h3 a[href]",
+        "use_browser_headers": True,
+        "listing_attempts": 2,
+        "listing_timeout": 30,
+        "listing_candidate_limit": 20,
+        "seen_title_threshold": 0.55,
+        "strict_story_dedupe": False,
+        "context": "Private Equity International의 웹 최신 목록 기반 글로벌 PEF 및 사모투자 뉴스입니다.",
     },
 ]
 
@@ -3871,7 +3903,7 @@ def parse_rss_feed_items(feed_text):
         })
     return items
 
-def collect_listing_article_links(page_url, link_pattern, use_browser_headers=False, attempts=1, timeout=20):
+def collect_listing_article_links(page_url, link_pattern, use_browser_headers=False, attempts=1, timeout=20, link_selector=""):
     page_fetcher = fetch_text if use_browser_headers else fetch_source_text
     last_error = None
     for attempt in range(1, max(1, attempts) + 1):
@@ -3880,7 +3912,8 @@ def collect_listing_article_links(page_url, link_pattern, use_browser_headers=Fa
             soup = BeautifulSoup(page_html, "html.parser")
             items = []
             seen = set()
-            for anchor in soup.find_all("a", href=True):
+            anchors = soup.select(link_selector) if link_selector else soup.find_all("a", href=True)
+            for anchor in anchors:
                 href = anchor.get("href", "").strip()
                 if not href or href.startswith(("javascript:", "mailto:", "#")):
                     continue
@@ -3960,13 +3993,27 @@ def fetch_vcac_google_news_fallback(
         print(f"  - {source_name} Google News fallback: {len(news_items)}건")
     return news_items
 
-def build_vcac_news_item(source_name, title, link, target_date, seen_links, seen_titles, context, desc_text="", story_cache=None, require_article_date=True):
+def build_vcac_news_item(
+    source_name,
+    title,
+    link,
+    target_date,
+    seen_links,
+    seen_titles,
+    context,
+    desc_text="",
+    story_cache=None,
+    require_article_date=True,
+    allow_article_date_mismatch=False,
+    seen_title_threshold=0.40,
+    strict_story_dedupe=True,
+):
     target_dot = target_date.strftime("%Y.%m.%d")
     link = clean_tracking_url(link)
     title = clean_source_article_title(title, source_name)
     if not title or not link or link in seen_links:
         return None
-    if any(is_similar_title(title, st) for st in seen_titles):
+    if any(is_similar_title(title, st, threshold=seen_title_threshold) for st in seen_titles):
         return None
 
     article_html = ""
@@ -3982,18 +4029,23 @@ def build_vcac_news_item(source_name, title, link, target_date, seen_links, seen
     if require_article_date:
         if not article_dt or article_dt.strftime("%Y.%m.%d") != target_dot:
             return None
-    elif article_dt and article_dt.strftime("%Y.%m.%d") != target_dot:
+    elif (
+        article_dt
+        and article_dt.strftime("%Y.%m.%d") != target_dot
+        and not allow_article_date_mismatch
+    ):
         return None
 
     body = extract_best_article_text(soup) if soup else ""
     if soup:
         title = clean_source_article_title(extract_page_title(soup) or title, source_name)
     summary_source = body if len(body) >= 180 else desc_text
-    if story_cache is not None and any(
-        is_duplicate_story(title, summary_source, cached["title"], cached["text"])
-        for cached in story_cache
-    ):
-        return None
+    if story_cache is not None and strict_story_dedupe:
+        if any(
+            is_duplicate_story(title, summary_source, cached["title"], cached["text"])
+            for cached in story_cache
+        ):
+            return None
 
     seen_links.add(link)
     seen_titles.append(title)
@@ -4036,6 +4088,14 @@ def fetch_vcac_rss_source(config, target_date, seen_links, seen_titles):
                 if required_categories and required_categories.isdisjoint(item_categories):
                     continue
                 date_tag = item["date"]
+                if config.get("date_timezone") == "UTC" and item.get("date_text"):
+                    try:
+                        source_date = parsedate_to_datetime(item["date_text"])
+                        if source_date.tzinfo is None:
+                            source_date = source_date.replace(tzinfo=timezone.utc)
+                        date_tag = source_date.astimezone(timezone.utc)
+                    except Exception:
+                        pass
                 if date_tag and date_tag.strftime("%Y.%m.%d") != target_dot:
                     continue
                 desc_text = strip_tags(item.get("description", ""))
@@ -4050,19 +4110,24 @@ def fetch_vcac_rss_source(config, target_date, seen_links, seen_titles):
                     desc_text=desc_text,
                     story_cache=story_cache,
                     require_article_date=not bool(date_tag),
+                    allow_article_date_mismatch=bool(date_tag),
+                    seen_title_threshold=config.get("seen_title_threshold", 0.40),
+                    strict_story_dedupe=config.get("strict_story_dedupe", True),
                 )
                 if news_item:
                     news_items.append(news_item)
                 time.sleep(0.8)
         except Exception as e:
             print(f"  - {source_name} RSS failed ({feed_url}): {e}")
-    return dedupe_news_items(news_items)
+    return dedupe_news_items(news_items) if config.get("strict_story_dedupe", True) else news_items
 
 def fetch_vcac_listing_source(config, target_date, seen_links, seen_titles):
     source_name = config["source"]
     context = config["context"]
     news_items = []
     story_cache = []
+    checked_candidates = 0
+    candidate_limit = config.get("listing_candidate_limit")
     for page_url in config["pages"]:
         if len(news_items) >= MAX_VCAC_NEWS_PER_SOURCE:
             break
@@ -4072,9 +4137,13 @@ def fetch_vcac_listing_source(config, target_date, seen_links, seen_titles):
             use_browser_headers=config.get("use_browser_headers", False),
             attempts=config.get("listing_attempts", 1),
             timeout=config.get("listing_timeout", 20),
+            link_selector=config.get("link_selector", ""),
         ):
             if len(news_items) >= MAX_VCAC_NEWS_PER_SOURCE:
                 break
+            if candidate_limit and checked_candidates >= candidate_limit:
+                break
+            checked_candidates += 1
             news_item = build_vcac_news_item(
                 source_name,
                 item["title"],
@@ -4085,10 +4154,14 @@ def fetch_vcac_listing_source(config, target_date, seen_links, seen_titles):
                 context,
                 story_cache=story_cache,
                 require_article_date=True,
+                seen_title_threshold=config.get("seen_title_threshold", 0.40),
+                strict_story_dedupe=config.get("strict_story_dedupe", True),
             )
             if news_item:
                 news_items.append(news_item)
             time.sleep(0.8)
+        if candidate_limit and checked_candidates >= candidate_limit:
+            break
     if config.get("fallback_google_query") and len(news_items) < MAX_VCAC_NEWS_PER_SOURCE:
         news_items.extend(
             fetch_vcac_google_news_fallback(
@@ -4100,7 +4173,7 @@ def fetch_vcac_listing_source(config, target_date, seen_links, seen_titles):
                 limit=MAX_VCAC_NEWS_PER_SOURCE - len(news_items),
             )
         )
-    return dedupe_news_items(news_items)
+    return dedupe_news_items(news_items) if config.get("strict_story_dedupe", True) else news_items
 
 def fetch_dealsite_category_html(category_code, start_date, end_date):
     page_url = f"https://dealsite.co.kr/categories/{category_code}"
@@ -4316,9 +4389,15 @@ def fetch_dealsite_vcac_source(target_date, seen_links, seen_titles):
 def fetch_vcac_sources(target_date, seen_links, seen_titles):
     source_news = {source_name: [] for source_name in VCAC_SOURCE_PRIORITY}
     for config in VCAC_LISTING_SOURCE_CONFIGS:
-        source_news[config["source"]] = fetch_vcac_listing_source(config, target_date, seen_links, seen_titles)
+        source_news.setdefault(config["source"], []).extend(
+            fetch_vcac_listing_source(config, target_date, seen_links, seen_titles)
+        )
     for config in VCAC_RSS_SOURCE_CONFIGS:
-        source_news[config["source"]] = fetch_vcac_rss_source(config, target_date, seen_links, seen_titles)
+        source_news.setdefault(config["source"], []).extend(
+            fetch_vcac_rss_source(config, target_date, seen_links, seen_titles)
+        )
+        if config.get("strict_story_dedupe", True):
+            source_news[config["source"]] = dedupe_news_items(source_news[config["source"]])
     source_news["딜사이트"] = fetch_dealsite_vcac_source(target_date, seen_links, seen_titles)
     return {
         "id": "vcac",
@@ -4330,7 +4409,7 @@ def fetch_vcac_sources(target_date, seen_links, seen_titles):
                     {
                         "name": source_name,
                         "news": source_news.get(source_name, []),
-                        "preserve_selection": source_name == "딜사이트",
+                        "preserve_selection": source_name in {"딜사이트", "PEI", "Crunchbase News", "TechCrunch"},
                     }
                     for source_name in VCAC_SOURCE_PRIORITY
                 ],
