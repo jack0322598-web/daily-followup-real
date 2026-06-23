@@ -1,6 +1,126 @@
 {
-  "date": "2026.06.21",
+  "date": "2026.06.22",
   "items": [
+    {
+      "source": "BCG",
+      "title": "Cloud Cover: There’s More to Cloud AI Cost Than Token Price",
+      "date": "2026.06.22",
+      "source_url": "https://www.bcg.com/publications/2026/cloud-ai-cost-beyond-token-pricing",
+      "description_en": "Platform selection is not a single procurement decision but three linked choices—model, architecture, and control-plane—each with different implications for cost, lock-in, and governance. Leaders must not conflate these choices or optimize simply based on headline token prices, or they will systematically over-spend,…",
+      "description_ko": "",
+      "summary": [
+        "The decisions concerning model choice, workforce architecture, and enterprise platforms.",
+        "control plane help leadership connect workload economics to platform readiness so CXOs can make the trade-offs explicit.",
+        "Leaders must not conflate these choices or optimize simply based on headline token prices, or they will systematically over-spend, under-govern"
+      ],
+      "_summary_source": "Platform selection is not a single procurement decision but three linked choices—model, architecture, and control-plane—each with different implications for cost, lock-in, and governance. Leaders must not conflate these choices or optimize simply based on headline token prices, or they will systematically over-spend, under-govern, or both. What used to be a procurement decision—negotiated on headline pricing and master-agreement leverage—is now a strategic platform decision that shapes innovation velocity, governance control, and cost economics at scale. The decisions concerning model choice, workforce architecture, and enterprise platforms. control plane help leadership connect workload economics to platform readiness so CXOs can make the trade-offs explicit.",
+      "_summary_context": "BCG가 발행한 경영·산업 인사이트입니다.",
+      "chart_image_url": "",
+      "chart_image_alt": "Cloud Cover: There’s More to Cloud AI Cost Than Token Price",
+      "report_title": "",
+      "report_url": "",
+      "updated_at": "2026-06-23T15:48:17+0900"
+    },
+    {
+      "source": "BCG",
+      "title": "Why We Still Need a CIO in the AI-First Era",
+      "date": "2026.06.22",
+      "source_url": "https://www.bcg.com/publications/2026/why-we-still-need-a-cio-in-the-ai-first-era",
+      "description_en": "Governing how a company uses AI to build solutions, at what cost, and for what purpose demands a stronger CIO. Every workplace team can now build and deploy agents directly, yet without governance over what gets built and how AI spending is tied to outcomes. This causes organizations to confront more and more complexi…",
+      "description_ko": "",
+      "summary": [
+        "Governing how a company uses AI to build solutions, at what cost, and for what purpose demands a stronger CIO.",
+        "Every workplace team can now build and deploy agents directly",
+        "BCG가 짚은 핵심 쟁점과 영향 포인트를 함께 확인할 수 있습니다."
+      ],
+      "_summary_source": "Governing how a company uses AI to build solutions, at what cost, and for what purpose demands a stronger CIO. Every workplace team can now build and deploy agents directly, yet without governance over what gets built and how AI spending is tied to outcomes. This causes organizations to confront more and more complexity. The traditional CIO mandate to control scarce IT delivery is collapsing, just as ungoverned AI—fragmented agents, runaway costs, brittle architectures—becomes an enterprise-scale risk. CIOs who pivot from service provider to orchestrator— owning enterprise intelligence, digital labor, and value pathways—will define which companies turn AI abundance into competitive advantage.",
+      "_summary_context": "BCG가 발행한 경영·산업 인사이트입니다.",
+      "chart_image_url": "",
+      "chart_image_alt": "Why We Still Need a CIO in the AI-First Era",
+      "report_title": "",
+      "report_url": "",
+      "updated_at": "2026-06-23T15:48:17+0900"
+    },
+    {
+      "source": "Bain & Company",
+      "title": "Banking Modernization at Scale: A Conversation with Patrick Wright",
+      "date": "2026.06.22",
+      "source_url": "https://www.bain.com/insights/banking-modernization-at-scale-a-conversation-with-patrick-wright-video/",
+      "description_en": "As National Australia Bank’s group executive of technology and enterprise operations, Patrick Wright led one of the most ambitious tech transformations in Australian banking. Now he sits down with Bain’s Damian Stephenson to explain how he pulled it off and what he learned.",
+      "description_ko": "",
+      "summary": [
+        "Now he sits down with Bain’s Damian Stephenson to explain how he pulled it off and what he learned.",
+        "Bain & Company가 짚은 핵심 쟁점과 영향 포인트를 함께 확인할 수 있습니다.",
+        "Banking Modernization at Scale: A Conversation with Patrick Wright 관련 핵심 내용을 정리한 자료입니다."
+      ],
+      "_summary_source": "As National Australia Bank’s group executive of technology and enterprise operations, Patrick Wright led one of the most ambitious tech transformations in Australian banking. Now he sits down with Bain’s Damian Stephenson to explain how he pulled it off and what he learned.",
+      "_summary_context": "Bain & Company가 발행한 경영·산업 인사이트입니다.",
+      "chart_image_url": "https://www.bain.com/contentassets/3094f866ab534342a177b9611204cce9/still-for-thumbnail.jpg?width=768&height=432&rmode=crop&rsampler=bicubic&compand=true",
+      "chart_image_alt": "Banking Modernization at Scale: A Conversation with Patrick Wright",
+      "report_title": "",
+      "report_url": "",
+      "updated_at": "2026-06-23T15:48:07+0900"
+    },
+    {
+      "source": "Bain & Company",
+      "title": "Business Breakthrough Barometer 2026",
+      "date": "2026.06.22",
+      "source_url": "https://www.bain.com/insights/business-breakthrough-barometer-2026/",
+      "description_en": "The annual pulse check from leading businesses on the pace of the net-zero transition.",
+      "description_ko": "",
+      "summary": [
+        "The annual pulse check from leading businesses on the pace of the net-zero transition.",
+        "Bain & Company가 짚은 핵심 쟁점과 영향 포인트를 함께 확인할 수 있습니다.",
+        "Business Breakthrough Barometer 2026 관련 핵심 내용을 정리한 자료입니다."
+      ],
+      "_summary_source": "The annual pulse check from leading businesses on the pace of the net-zero transition.",
+      "_summary_context": "Bain & Company가 발행한 경영·산업 인사이트입니다.",
+      "chart_image_url": "https://www.bain.com/contentassets/868b3a907cd44226a2dcce59d690196b/businessbreakthroughbarometer2026landingpage_16-9.jpg?width=768&height=432&rmode=crop&rsampler=bicubic&compand=true",
+      "chart_image_alt": "Business Breakthrough Barometer 2026",
+      "report_title": "",
+      "report_url": "",
+      "updated_at": "2026-06-23T15:48:07+0900"
+    },
+    {
+      "source": "Bain & Company",
+      "title": "Preparing for the Quantum Computing Acceleration",
+      "date": "2026.06.22",
+      "source_url": "https://www.bain.com/insights/preparing-for-the-quantum-computing-acceleration/",
+      "description_en": "By 2030, quantum machines will be capable of performing analytics that can create competitive advantage. Will companies be ready?",
+      "description_ko": "",
+      "summary": [
+        "By 2030, quantum machines will be capable of performing analytics that can create competitive advantage.",
+        "Bain & Company가 짚은 핵심 쟁점과 영향 포인트를 함께 확인할 수 있습니다.",
+        "Preparing for the Quantum Computing Acceleration 관련 핵심 내용을 정리한 자료입니다."
+      ],
+      "_summary_source": "By 2030, quantum machines will be capable of performing analytics that can create competitive advantage. Will companies be ready?",
+      "_summary_context": "Bain & Company가 발행한 경영·산업 인사이트입니다.",
+      "chart_image_url": "https://www.bain.com/contentassets/482d4f3285454abda3dce944df138655/45052-gettyimages-1421134615-16-9.jpg?width=768&height=432&rmode=crop&rsampler=bicubic&compand=true",
+      "chart_image_alt": "Preparing for the Quantum Computing Acceleration",
+      "report_title": "",
+      "report_url": "",
+      "updated_at": "2026-06-23T15:48:07+0900"
+    },
+    {
+      "source": "Bain & Company",
+      "title": "The Future of Sovereign Wealth Funds: Four Imperatives for the Next Decade",
+      "date": "2026.06.22",
+      "source_url": "https://www.bain.com/insights/the-future-of-sovereign-wealth-funds-four-imperatives-for-the-next-decade/",
+      "description_en": "Fueled by strong returns and state capital injections, SWFs have expanded faster than any other institutional investor. Where do they go from here?",
+      "description_ko": "",
+      "summary": [
+        "Fueled by strong returns and state capital injections, SWFs have expanded faster than any other institutional investor.",
+        "Bain & Company가 짚은 핵심 쟁점과 영향 포인트를 함께 확인할 수 있습니다.",
+        "The Future of Sovereign Wealth Funds: Four Imperatives for the Next… 관련 핵심 내용을 정리한 자료입니다."
+      ],
+      "_summary_source": "Fueled by strong returns and state capital injections, SWFs have expanded faster than any other institutional investor. Where do they go from here?",
+      "_summary_context": "Bain & Company가 발행한 경영·산업 인사이트입니다.",
+      "chart_image_url": "https://www.bain.com/contentassets/2019c294183e441480bd89367e0ad604/sovereignwealthfund-hero-16-9.jpg?width=768&height=432&rmode=crop&rsampler=bicubic&compand=true",
+      "chart_image_alt": "The Future of Sovereign Wealth Funds: Four Imperatives for the Next Decade",
+      "report_title": "",
+      "report_url": "",
+      "updated_at": "2026-06-23T15:48:07+0900"
+    },
     {
       "source": "McKinsey",
       "title": "Trauma's toll on the workforce",
@@ -32,5 +152,5 @@
       "updated_at": "2026-06-18T00:00:00+0900"
     }
   ],
-  "updated_at": "2026-06-22T07:08:14+0900"
+  "updated_at": "2026-06-23T15:48:18+0900"
 }
