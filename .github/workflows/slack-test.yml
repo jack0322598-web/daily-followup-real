@@ -7,6 +7,11 @@ on:
         description: "Optional KST article date to test (YYYY-MM-DD). Defaults to yesterday."
         required: false
         type: string
+      site_url:
+        description: "Briefing site URL."
+        required: false
+        default: "https://daily-followup-real.pages.dev"
+        type: string
 
 permissions:
   contents: read
@@ -34,17 +39,45 @@ jobs:
       - name: Send Slack article-format test notification
         env:
           INPUT_NEWS_DATE: ${{ github.event.inputs.news_date || '' }}
+          INPUT_SITE_URL: ${{ github.event.inputs.site_url || 'https://daily-followup-real.pages.dev' }}
         run: |
-          repo_name="${GITHUB_REPOSITORY#*/}"
           target_date="${INPUT_NEWS_DATE:-$(TZ=Asia/Seoul date -d 'yesterday' +%F)}"
+          site_url="${INPUT_SITE_URL%/}"
+          export target_date
+          export site_url
 
           if [[ ! -f "archive_${target_date}.html" ]]; then
-            echo "archive_${target_date}.html does not exist. Generate that date before sending the Slack article-format test."
-            exit 1
+            python - <<'PY'
+            from __future__ import annotations
+
+            import os
+            from pathlib import Path
+            from urllib.error import HTTPError
+            from urllib.request import Request, urlopen
+
+            target_date = os.environ["target_date"]
+            site_url = os.environ["site_url"].rstrip("/")
+            destination = Path(f"archive_{target_date}.html")
+            candidates = [
+                f"{site_url}/archive_{target_date}.html",
+                f"{site_url}/archive_{target_date}",
+            ]
+            last_error = None
+            for url in candidates:
+                try:
+                    request = Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                    html = urlopen(request, timeout=30).read().decode("utf-8", errors="ignore")
+                    destination.write_text(html, encoding="utf-8")
+                    print(f"Downloaded {url} for Slack test.")
+                    break
+                except Exception as exc:
+                    last_error = exc
+            else:
+                raise RuntimeError(f"Could not download archive_{target_date}.html from {site_url}: {last_error}")
+            PY
           fi
 
-          export target_date
-          export SITE_URL="https://${GITHUB_REPOSITORY_OWNER}.github.io/${repo_name}"
+          export SITE_URL="$site_url"
           python - <<'PY'
           from __future__ import annotations
 

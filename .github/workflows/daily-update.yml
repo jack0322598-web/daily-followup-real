@@ -32,6 +32,7 @@ jobs:
       GMAIL_USER: ${{ secrets.GMAIL_USER }}
       GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      SITE_URL: ${{ secrets.SITE_URL }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
@@ -148,8 +149,8 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           REPOSITORY_OWNER: ${{ github.repository_owner }}
         run: |
-          repo_name="${REPOSITORY#*/}"
-          export SITE_URL="https://${REPOSITORY_OWNER}.github.io/${repo_name}"
+          export SITE_URL="${SITE_URL:-https://daily-followup-real.pages.dev}"
+          export SITE_URL="${SITE_URL%/}"
           export CIRCLE_BUILD_URL="https://github.com/${REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           python - <<'PY'
           from __future__ import annotations
