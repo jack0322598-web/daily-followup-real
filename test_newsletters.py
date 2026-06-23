@@ -52,17 +52,19 @@ class FakeImap:
 
 
 class NewsletterCollectionTests(unittest.TestCase):
-    def test_authentication_failure_skips_newsletter_sources(self):
+    def test_authentication_failure_is_not_silently_treated_as_zero_items(self):
         failed_mail = mock.Mock()
         failed_mail.login.side_effect = main.imaplib.IMAP4.error(
             b"[ALERT] Application-specific password required"
         )
 
-        with mock.patch.object(main.imaplib, "IMAP4_SSL", return_value=failed_mail):
-            items = main.fetch_newsletter_emails(
+        with (
+            mock.patch.object(main.imaplib, "IMAP4_SSL", return_value=failed_mail),
+            self.assertRaisesRegex(RuntimeError, "Refresh GMAIL_APP_PASSWORD"),
+        ):
+            main.fetch_newsletter_emails(
                 "user@example.com", "expired-password", date(2026, 6, 21), set(), []
             )
-        self.assertEqual(items, [])
 
     def test_uses_all_mail_and_received_date_for_two_bloomberg_newsletters(self):
         fake_mail = FakeImap({
