@@ -177,6 +177,33 @@ def section_heading(section_name: str) -> str:
     return f"{emoji} *{section_name}*"
 
 
+def article_rich_text_section(article: Article) -> dict:
+    elements = []
+    clean_url = (article.link or "").strip().replace(" ", "%20").replace(">", "%3E")
+    if clean_url:
+        elements.append({"type": "link", "url": clean_url, "text": article.title})
+    else:
+        elements.append({"type": "text", "text": article.title})
+    if article.source:
+        elements.append({"type": "text", "text": f" ({article.source})"})
+    return {"type": "rich_text_section", "elements": elements}
+
+
+def article_list_block(articles: list[Article]) -> dict:
+    return {
+        "type": "rich_text",
+        "elements": [
+            {
+                "type": "rich_text_list",
+                "style": "bullet",
+                "indent": 0,
+                "border": 0,
+                "elements": [article_rich_text_section(article) for article in articles],
+            }
+        ],
+    }
+
+
 def build_daily_briefing_message(result: dict) -> str:
     article_sections = extract_sections_from_archive(result.get("latest_archive", ""))
     lines = [
@@ -212,11 +239,8 @@ def build_daily_briefing_blocks(result: dict) -> list[dict]:
 
     if article_sections:
         for section in article_sections:
-            article_lines = [section_heading(section.name)]
-            for article in section.articles:
-                source = f" ({slack_escape(article.source)})" if article.source else ""
-                article_lines.append(f"• {slack_link(article.link, article.title)}{source}")
-            blocks.extend(section_blocks("\n".join(article_lines)))
+            blocks.extend(section_blocks(section_heading(section.name)))
+            blocks.append(article_list_block(section.articles))
     else:
         blocks.extend(section_blocks("수집된 기사 목록을 찾지 못했습니다."))
 
