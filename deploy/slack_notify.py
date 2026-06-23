@@ -21,12 +21,19 @@ SLACK_SECTION_LIMIT = 2900
 SECTION_EMOJIS = {
     "주요 지표": "📊",
     "임팩트": "🌱",
-    "VC/AC/대체투자": "🚀",
+    "VC/AC/PEF": "🚀",
     "AI": "🤖",
     "거시경제": "🌐",
     "산업트랜드": "🏭",
     "MBB 인사이트": "🧠",
     "강세 테마": "🔥",
+}
+SECTION_DISPLAY_NAMES = {
+    "VC/AC/대체투자": "VC/AC/PEF",
+}
+SECTION_EXCLUDED_SOURCES = {
+    "VC/AC/대체투자": {"플래텀", "벤처스퀘어"},
+    "VC/AC/PEF": {"플래텀", "벤처스퀘어"},
 }
 
 
@@ -149,6 +156,24 @@ def extract_sections_from_archive(latest_archive: str) -> list[ArticleSection]:
     return sections
 
 
+def display_section_name(section_name: str) -> str:
+    return SECTION_DISPLAY_NAMES.get(section_name, section_name)
+
+
+def should_include_article(section_name: str, article: Article) -> bool:
+    excluded_sources = SECTION_EXCLUDED_SOURCES.get(section_name, set())
+    return article.source not in excluded_sources
+
+
+def prepare_sections_for_slack(sections: list[ArticleSection]) -> list[ArticleSection]:
+    prepared = []
+    for section in sections:
+        articles = [article for article in section.articles if should_include_article(section.name, article)]
+        if articles:
+            prepared.append(ArticleSection(name=display_section_name(section.name), articles=articles))
+    return prepared
+
+
 def result_date_text(result: dict) -> str:
     dates = result.get("dates") or []
     if dates:
@@ -205,7 +230,7 @@ def article_list_block(articles: list[Article]) -> dict:
 
 
 def build_daily_briefing_message(result: dict) -> str:
-    article_sections = extract_sections_from_archive(result.get("latest_archive", ""))
+    article_sections = prepare_sections_for_slack(extract_sections_from_archive(result.get("latest_archive", "")))
     lines = [
         f"*오늘의 날짜: {today_dot()}*",
         f"*업데이트된 기사 발행 날짜: {result_date_text(result)}*",
@@ -227,7 +252,7 @@ def build_daily_briefing_message(result: dict) -> str:
 
 
 def build_daily_briefing_blocks(result: dict) -> list[dict]:
-    article_sections = extract_sections_from_archive(result.get("latest_archive", ""))
+    article_sections = prepare_sections_for_slack(extract_sections_from_archive(result.get("latest_archive", "")))
     blocks = section_blocks(
         "\n".join(
             [

@@ -155,14 +155,13 @@ GLOBAL_IMPACT_FEEDS = [
 
 IMPACTON_ALLOWED_SECTIONS = {"산업", "정책", "투자·평가", "투자.평가"}
 
-VCAC_SOURCE_PRIORITY = ("유니콘팩토리", "딜사이트", "스타트업레시피", "플래텀", "벤처스퀘어")
+VCAC_SECTION_LABEL = "VC/AC/PEF"
+VCAC_SOURCE_PRIORITY = ("유니콘팩토리", "딜사이트", "스타트업레시피")
 
 VCAC_BRANDING = {
     "유니콘팩토리": ("unicorn", "https://menu.mt.co.kr/ucfactory/images/meta_unicornfactory.png"),
     "딜사이트": ("dealsite", "https://dealsite.co.kr/images/favicon.svg"),
     "스타트업레시피": ("recipe", "https://startuprecipe.co.kr/wp-content/uploads/2025/05/StartupRecipe_logo-removebg-preview.png"),
-    "플래텀": ("platum", "https://cdn.platum.kr/wp-content/uploads/2024/11/Platum-logo.svg"),
-    "벤처스퀘어": ("venturesquare", "https://www.venturesquare.net/wp-content/uploads/2026/04/cropped-vs-symbol-color-192x192.png"),
 }
 
 AI_SOURCE_PRIORITY = ("AI News", "AI TIMES", "MarketingTech", "The Batch Data Points", "The Batch Weekly Issues")
@@ -204,26 +203,12 @@ AI_RSS_SOURCE_CONFIGS = [
 
 VCAC_RSS_SOURCE_CONFIGS = [
     {
-        "source": "플래텀",
-        "feeds": ["https://platum.kr/archives/category/investment/feed"],
-        "use_browser_headers": True,
-        "context": "플래텀 투자 섹션의 스타트업 투자 및 회수 소식입니다.",
-    },
-    {
         "source": "스타트업레시피",
         "feeds": [
             "https://startuprecipe.co.kr/archives/invest-newsletter/feed",
             "https://startuprecipe.co.kr/archives/category/news/feed",
         ],
         "context": "스타트업레시피의 뉴스레터와 뉴스레시피 기반 스타트업 생태계 소식입니다.",
-    },
-    {
-        "source": "벤처스퀘어",
-        "feeds": [
-            "https://www.venturesquare.net/category/guide/startups/feed/",
-            "https://www.venturesquare.net/category/news-contents/news-trends/trend/feed/",
-        ],
-        "context": "벤처스퀘어의 스타트업 가이드와 스타트업 트렌드 기사입니다.",
     },
 ]
 
@@ -335,7 +320,7 @@ MACRO_ALLOWED_SOURCE_QUERY = " OR ".join(
 NAV_SECTIONS = (
     ("indicators", "주요 지표"),
     ("impact", "임팩트"),
-    ("vcac", "VC/AC/대체투자"),
+    ("vcac", VCAC_SECTION_LABEL),
     ("ai", "AI"),
     ("macro", "거시경제"),
     ("industrytrend", "산업트랜드"),
@@ -3691,7 +3676,6 @@ def clean_source_article_title(title, source_name):
     suffixes = [
         f" - {source_name}",
         " - 유니콘팩토리",
-        " - 플래텀",
         " - AI타임스",
         " < 기사본문 - AI타임스",
         " - 뉴스레터로 만나는 스타트업 투자 리포트 ‘스타트업레시피’",
@@ -3887,9 +3871,9 @@ def collect_listing_article_links(page_url, link_pattern, use_browser_headers=Fa
         except Exception as exc:
             last_error = exc
             if attempt < max(1, attempts):
-                print(f"  - VC/AC/대체투자 listing retry {attempt}/{attempts} ({page_url}): {exc}")
+                print(f"  - {VCAC_SECTION_LABEL} listing retry {attempt}/{attempts} ({page_url}): {exc}")
                 time.sleep(min(2 ** (attempt - 1), 4))
-    print(f"  - VC/AC/대체투자 listing failed ({page_url}): {last_error}")
+    print(f"  - {VCAC_SECTION_LABEL} listing failed ({page_url}): {last_error}")
     return []
 
 
@@ -4301,10 +4285,10 @@ def fetch_vcac_sources(target_date, seen_links, seen_titles):
     source_news["딜사이트"] = fetch_dealsite_vcac_source(target_date, seen_links, seen_titles)
     return {
         "id": "vcac",
-        "label": "VC/AC/대체투자",
+        "label": VCAC_SECTION_LABEL,
         "groups": [
             {
-                "title": "VC/AC/대체투자",
+                "title": VCAC_SECTION_LABEL,
                 "categories": [
                     {
                         "name": source_name,
@@ -5218,14 +5202,14 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
 
     vcac_section_html = render_source_tab_section(
         "vcac",
-        "VC/AC/대체투자",
+        VCAC_SECTION_LABEL,
         "Startup & Capital",
-        "VC/AC/대체투자",
+        VCAC_SECTION_LABEL,
         vcac_groups,
         VCAC_SOURCE_PRIORITY,
         VCAC_BRANDING,
-        "수집된 VC/AC/대체투자 소스가 없습니다.",
-        "수집된 VC/AC/대체투자 뉴스가 없습니다.",
+        "수집된 VC/AC/PEF 소스가 없습니다.",
+        "수집된 VC/AC/PEF 뉴스가 없습니다.",
         show_empty_sources=True,
     )
 
@@ -5861,8 +5845,6 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
         .impact-brand-unicorn { box-shadow: inset 0 4px 0 #111827; }
         .impact-brand-dealsite { box-shadow: inset 0 4px 0 #0f172a; }
         .impact-brand-recipe { box-shadow: inset 0 4px 0 #f59e0b; }
-        .impact-brand-platum { box-shadow: inset 0 4px 0 #2563eb; }
-        .impact-brand-venturesquare { box-shadow: inset 0 4px 0 #10b981; }
         .impact-brand-ai-news { box-shadow: inset 0 4px 0 #2563eb; }
         .impact-brand-aitimes { box-shadow: inset 0 4px 0 #111827; }
         .impact-brand-marketingtech { box-shadow: inset 0 4px 0 #ec4899; }
