@@ -377,8 +377,11 @@ AP_BUSINESS_SITE_QUERY = "site:apnews.com"
 AP_BUSINESS_CONTEXT = "AP Business macroeconomic and policy news."
 
 YAHOO_FINANCE_SOURCE_NAME = "Yahoo Finance"
-YAHOO_FINANCE_SITE_QUERY = "site:finance.yahoo.com"
+YAHOO_FINANCE_ECONOMY_URL = "https://finance.yahoo.com/economy/"
+YAHOO_FINANCE_SITE_QUERY = "site:finance.yahoo.com/economy"
 YAHOO_FINANCE_CONTEXT = "Yahoo Finance economic news and analysis."
+YAHOO_FINANCE_ECONOMY_LINK_CACHE = None
+YAHOO_FINANCE_ARTICLE_CACHE = {}
 
 MACRO_AP_BUSINESS_QUERIES = {
     ("미국", "경제지표"): "United States (PCE OR CPI OR GDP OR jobs report OR unemployment OR inflation OR retail sales OR consumer prices)",
@@ -1911,6 +1914,59 @@ def is_yahoo_finance_source(url):
         netloc = netloc[4:]
     path = parsed.path.lower()
     return netloc == "finance.yahoo.com" and ("/articles/" in path or path.startswith("/news/"))
+
+def fetch_yahoo_finance_economy_links():
+    global YAHOO_FINANCE_ECONOMY_LINK_CACHE
+    if YAHOO_FINANCE_ECONOMY_LINK_CACHE is not None:
+        return list(YAHOO_FINANCE_ECONOMY_LINK_CACHE)
+    links = []
+    seen = set()
+    try:
+        page_html = fetch_text(YAHOO_FINANCE_ECONOMY_URL, timeout=20)
+        html_head = page_html[:500].lower()
+        if "<html" not in html_head and "<!doctype" not in html_head:
+            YAHOO_FINANCE_ECONOMY_LINK_CACHE = ()
+            return []
+        soup = BeautifulSoup(page_html, "html.parser")
+        for anchor in soup.select("a[href]"):
+            href = urllib.parse.urljoin(YAHOO_FINANCE_ECONOMY_URL, anchor.get("href") or "")
+            href = clean_tracking_url(href)
+            if not is_yahoo_finance_source(href):
+                continue
+            if href in seen:
+                continue
+            seen.add(href)
+            links.append(href)
+    except Exception as e:
+        print(f"  - Yahoo Finance economy listing failed: {e}")
+    YAHOO_FINANCE_ECONOMY_LINK_CACHE = tuple(links)
+    return links
+
+def fetch_yahoo_finance_article_metadata(url):
+    if url in YAHOO_FINANCE_ARTICLE_CACHE:
+        return YAHOO_FINANCE_ARTICLE_CACHE[url]
+    metadata = {"title": "", "description": "", "published_date": None, "body": ""}
+    try:
+        article_html = fetch_text(url, timeout=20)
+        soup = BeautifulSoup(article_html, "html.parser")
+        title = extract_page_title(soup)
+        title = re.sub(r"\s*[|-]\s*Yahoo Finance\s*$", "", title, flags=re.IGNORECASE).strip()
+        description = extract_meta_content(
+            soup,
+            {"name": "description"},
+            {"property": "og:description"},
+            {"name": "twitter:description"},
+        )
+        metadata = {
+            "title": title,
+            "description": description,
+            "published_date": parse_article_date_from_html(article_html),
+            "body": extract_best_article_text(soup),
+        }
+    except Exception as e:
+        print(f"  - Yahoo Finance article failed ({url}): {e}")
+    YAHOO_FINANCE_ARTICLE_CACHE[url] = metadata
+    return metadata
 
 def normalize_macro_source_name(url, fallback_source_name=""):
     domain = get_macro_source_domain(url)
@@ -5242,23 +5298,55 @@ def fetch_ap_business_macro_news(target_date, section_id, group_title, category,
     )
 
 def fetch_yahoo_finance_macro_news(target_date, section_id, group_title, category, seen_links, seen_titles, limit=MAX_NEWS_PER_CATEGORY):
-    return fetch_foreign_macro_source_news(
-        target_date,
-        section_id,
-        group_title,
-        category,
-        seen_links,
-        seen_titles,
-        YAHOO_FINANCE_SOURCE_NAME,
-        YAHOO_FINANCE_SITE_QUERY,
-        YAHOO_FINANCE_CONTEXT,
-        MACRO_YAHOO_FINANCE_QUERIES,
-        is_yahoo_finance_macro_candidate,
-        is_yahoo_finance_macro_match,
-        is_yahoo_finance_source,
-        search_scope="",
-        limit=limit,
-    )
+    news_list = []
+    category_story_cache = []
+    target_date_obj = target_date.date() if isinstance(target_date, datetime) else target_date
+    target_dot = target_date_obj.strftime("%Y.%m.%d")
+    if not MACRO_YAHOO_FINANCE_QUERIES.get((group_title, category["name"])):
+        return news_list
+
+    for link in fetch_yahoo_finance_economy_links():
+        if len(news_list) >= limit:
+            break
+        if link in seen_links:
+            continue
+        metadata = fetch_yahoo_finance_article_metadata(link)
+        if metadata.get("published_date") != target_date_obj:
+            continue
+        title = metadata.get("title", "")
+        desc_text = metadata.get("description", "")
+        article_body = metadata.get("body", "")
+        if not title:
+            continue
+        if not is_yahoo_finance_macro_candidate(group_title, category["name"], title, desc_text):
+            continue
+        if should_skip_search_item(section_id, category["name"], YAHOO_FINANCE_SOURCE_NAME, title, link):
+            continue
+        if any(is_similar_title(title, st) for st in seen_titles):
+            continue
+        summary_source = article_body if len(article_body) >= 180 else desc_text
+        if not is_yahoo_finance_macro_match(group_title, category["name"], title, desc_text, article_body):
+            continue
+        if any(
+            is_duplicate_story(title, summary_source, cached["title"], cached["text"])
+            for cached in category_story_cache
+        ):
+            continue
+
+        seen_links.add(link)
+        seen_titles.append(title)
+        category_story_cache.append({"title": title, "text": summary_source})
+        news_list.append({
+            "title": title,
+            "link": link,
+            "source": YAHOO_FINANCE_SOURCE_NAME,
+            "date": target_dot,
+            "summary": make_three_line_summary(title, summary_source, YAHOO_FINANCE_SOURCE_NAME, YAHOO_FINANCE_CONTEXT),
+            "_summary_source": summary_source,
+            "_summary_context": YAHOO_FINANCE_CONTEXT,
+        })
+
+    return dedupe_news_items(news_list)
 
 def fetch_google_news_for_category(target_date, section_id, group_title, category, seen_links, seen_titles, previous_titles=None, limit=MAX_NEWS_PER_CATEGORY, forced_source=None, trend_keywords=None):
     if section_id == "macro":
