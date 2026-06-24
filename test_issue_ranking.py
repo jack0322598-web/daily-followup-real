@@ -6,6 +6,12 @@ import main
 
 
 class IssueRankingTests(unittest.TestCase):
+    def setUp(self):
+        main.AP_BUSINESS_LINK_CACHE = None
+        main.AP_BUSINESS_ARTICLE_CACHE.clear()
+        main.YAHOO_FINANCE_ECONOMY_LINK_CACHE = None
+        main.YAHOO_FINANCE_ARTICLE_CACHE.clear()
+
     def make_item(self, title, source="연합뉴스", text=""):
         return {
             "title": title,
@@ -76,20 +82,28 @@ class IssueRankingTests(unittest.TestCase):
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0]["link"], "https://www.yna.co.kr/view/AKR202606220001")
 
-    def test_ap_business_macro_uses_english_site_query(self):
-        rss = """<?xml version="1.0" encoding="UTF-8"?>
-        <rss><channel>
-          <item>
+    def test_ap_business_macro_uses_business_listing_articles(self):
+        listing_html = """
+        <html><body>
+          <main>
+            <a href="/article/fed-rates-inflation">Fed story</a>
+            <a href="/hub/financial-markets">Financial Markets</a>
+          </main>
+        </body></html>"""
+        article_html = """
+        <html>
+          <head>
             <title>Federal Reserve keeps interest rates steady as inflation cools - AP News</title>
-            <link>https://news.google.com/rss/articles/ap-example</link>
-            <pubDate>Mon, 22 Jun 2026 02:00:00 +0900</pubDate>
-            <description>The Federal Reserve held interest rates steady as monetary policy officials watched inflation.</description>
-          </item>
-        </channel></rss>"""
-        body = (
-            "The Federal Reserve held interest rates steady after inflation cooled. "
-            "Officials said monetary policy could remain restrictive if price pressures return."
-        )
+            <meta name="description" content="The Federal Reserve held interest rates steady as monetary policy officials watched inflation.">
+            <script type="application/ld+json">{"datePublished":"2026-06-22T02:00:00+09:00"}</script>
+          </head>
+          <body>
+            <article>
+              The Federal Reserve held interest rates steady after inflation cooled.
+              Officials said monetary policy could remain restrictive if price pressures return.
+            </article>
+          </body>
+        </html>"""
         category = {
             "name": "통화정책",
             "query": "미국 연준",
@@ -99,14 +113,16 @@ class IssueRankingTests(unittest.TestCase):
 
         def fake_fetch_text(url, *_args, **_kwargs):
             fetched_urls.append(url)
-            return rss
+            if url == main.AP_BUSINESS_URL:
+                return listing_html
+            return article_html
 
         with (
             patch.object(main, "fetch_text", side_effect=fake_fetch_text),
-            patch.object(main, "resolve_google_news_url", return_value="https://apnews.com/article/fed-rates-inflation"),
-            patch.object(main, "fetch_article_body_text", return_value=body),
             patch.object(main, "make_three_line_summary", return_value=["요약 1", "요약 2", "요약 3"]),
         ):
+            main.AP_BUSINESS_LINK_CACHE = None
+            main.AP_BUSINESS_ARTICLE_CACHE.clear()
             items = main.fetch_ap_business_macro_news(
                 date(2026, 6, 22),
                 "macro",
@@ -119,8 +135,8 @@ class IssueRankingTests(unittest.TestCase):
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0]["source"], "AP News")
         self.assertEqual(items[0]["link"], "https://apnews.com/article/fed-rates-inflation")
-        self.assertIn("site%3Aapnews.com", fetched_urls[0])
-        self.assertIn("Federal%20Reserve", fetched_urls[0])
+        self.assertEqual(fetched_urls[0], main.AP_BUSINESS_URL)
+        self.assertFalse(main.is_ap_news_article_source("https://apnews.com/hub/financial-markets"))
 
     def test_yahoo_finance_macro_uses_economy_listing_articles(self):
         listing_html = """

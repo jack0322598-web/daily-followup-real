@@ -373,8 +373,11 @@ MACRO_ALLOWED_SOURCE_QUERY = " OR ".join(
 )
 
 AP_BUSINESS_SOURCE_NAME = "AP News"
+AP_BUSINESS_URL = "https://apnews.com/business"
 AP_BUSINESS_SITE_QUERY = "site:apnews.com"
 AP_BUSINESS_CONTEXT = "AP Business macroeconomic and policy news."
+AP_BUSINESS_LINK_CACHE = None
+AP_BUSINESS_ARTICLE_CACHE = {}
 
 YAHOO_FINANCE_SOURCE_NAME = "Yahoo Finance"
 YAHOO_FINANCE_ECONOMY_URL = "https://finance.yahoo.com/economy/"
@@ -384,10 +387,10 @@ YAHOO_FINANCE_ECONOMY_LINK_CACHE = None
 YAHOO_FINANCE_ARTICLE_CACHE = {}
 
 MACRO_AP_BUSINESS_QUERIES = {
-    ("미국", "경제지표"): "United States (PCE OR CPI OR GDP OR jobs report OR unemployment OR inflation OR retail sales OR consumer prices)",
-    ("미국", "관세"): "United States (tariffs OR protectionism OR USTR OR trade pressure OR import restrictions OR Trump tariffs)",
-    ("미국", "통화정책"): "United States (Federal Reserve OR Fed OR FOMC OR Jerome Powell OR monetary policy OR rate cut OR rate hike)",
-    ("미국", "외교"): "United States (diplomacy OR sanctions OR US-China tensions OR China sanctions OR allies OR semiconductor export controls)",
+    ("미국", "경제지표"): "PCE OR CPI OR GDP OR PMI OR jobs report OR unemployment OR inflation OR retail sales OR consumer prices OR Wall Street OR S&P 500 OR Nasdaq OR Dow",
+    ("미국", "관세"): "tariffs OR trade war OR protectionism OR USTR OR trade pressure OR import restrictions OR Trump tariffs",
+    ("미국", "통화정책"): "Federal Reserve OR Fed OR FOMC OR Jerome Powell OR Kevin Warsh OR monetary policy OR interest rates OR rate cut OR rate hike OR Treasury yields",
+    ("미국", "외교"): "diplomacy OR sanctions OR Iran OR US-China tensions OR China sanctions OR allies OR semiconductor export controls OR trade talks",
     ("한국", "경제지표"): "South Korea (consumer prices OR GDP OR growth OR employment report OR exports OR imports OR unemployment)",
     ("한국", "통화정책"): "South Korea (Bank of Korea OR BOK OR interest rates OR monetary policy OR Rhee Chang-yong)",
     ("유럽", "통화정책"): "ECB OR European Central Bank OR eurozone rates OR Lagarde monetary policy",
@@ -407,10 +410,10 @@ MACRO_YAHOO_FINANCE_QUERIES = {
 
 MACRO_AP_BUSINESS_MATCH_RULES = {
     ("미국", "경제지표"): {
-        "precheck_any": ("pce", "cpi", "gdp", "jobs", "employment", "unemployment", "inflation", "retail sales", "consumer prices"),
+        "precheck_any": ("pce", "cpi", "gdp", "pmi", "jobs", "employment", "unemployment", "inflation", "retail sales", "consumer prices", "wall street", "s&p", "nasdaq", "dow", "stocks", "markets", "indexes"),
         "required_groups": (
-            ("united states", "u.s.", "us ", "american", "fed", "federal reserve"),
-            ("pce", "cpi", "gdp", "jobs", "employment", "unemployment", "inflation", "retail sales", "consumer prices"),
+            ("united states", "u.s.", "us ", "american", "wall street", "s&p", "nasdaq", "dow", "fed", "federal reserve"),
+            ("pce", "cpi", "gdp", "pmi", "jobs", "employment", "unemployment", "inflation", "retail sales", "consumer prices", "stocks", "markets", "indexes"),
         ),
     },
     ("미국", "관세"): {
@@ -421,17 +424,16 @@ MACRO_AP_BUSINESS_MATCH_RULES = {
         ),
     },
     ("미국", "통화정책"): {
-        "precheck_any": ("federal reserve", "fed", "fomc", "powell", "interest rates", "rate cut", "rate hike"),
+        "precheck_any": ("federal reserve", "fed", "fomc", "powell", "warsh", "interest rates", "rate cut", "rate hike", "treasury yields", "bond yields"),
         "required_groups": (
-            ("federal reserve", "fed", "fomc", "powell"),
-            ("interest rate", "interest rates", "monetary policy", "rate cut", "rate hike", "holds rates", "raises rates", "cuts rates"),
+            ("federal reserve", "fed", "fomc", "powell", "warsh", "treasury yields", "bond yields", "interest rates"),
         ),
     },
     ("미국", "외교"): {
-        "precheck_any": ("diplomacy", "sanctions", "china", "allies", "semiconductor", "export controls", "trade talks"),
+        "precheck_any": ("diplomacy", "sanctions", "iran", "china", "allies", "semiconductor", "export controls", "trade talks", "oil supplies", "frozen assets"),
         "required_groups": (
-            ("united states", "u.s.", "us ", "trump", "white house", "washington", "china"),
-            ("diplomacy", "sanctions", "china", "allies", "semiconductor", "export controls", "security", "trade talks"),
+            ("united states", "u.s.", "us ", "trump", "white house", "washington", "iran", "china"),
+            ("diplomacy", "sanctions", "iran", "china", "allies", "semiconductor", "export controls", "security", "trade talks", "oil supplies", "frozen assets"),
         ),
     },
     ("한국", "경제지표"): {
@@ -455,9 +457,9 @@ MACRO_AP_BUSINESS_MATCH_RULES = {
         ),
     },
     ("중국", "통화정책"): {
-        "precheck_any": ("china", "people's bank of china", "pboc", "lpr", "reserve requirement", "stimulus", "yuan"),
+        "precheck_any": ("people's bank of china", "pboc", "lpr", "reserve requirement", "monetary policy", "interest rates", "stimulus", "yuan"),
         "required_groups": (
-            ("china", "people's bank of china", "pboc", "lpr", "reserve requirement", "stimulus", "yuan"),
+            ("people's bank of china", "pboc", "lpr", "reserve requirement", "monetary policy", "interest rates", "stimulus", "yuan"),
         ),
     },
 }
@@ -1906,6 +1908,74 @@ def is_allowed_macro_source(url):
 def is_ap_news_source(url):
     netloc = normalize_news_netloc(url)
     return netloc == "apnews.com" or netloc.endswith(".apnews.com")
+
+def is_ap_news_article_source(url):
+    parsed = urllib.parse.urlparse(url or "")
+    netloc = parsed.netloc.lower()
+    if netloc.startswith("www."):
+        netloc = netloc[4:]
+    return netloc == "apnews.com" and parsed.path.lower().startswith("/article/")
+
+def fetch_ap_business_links():
+    global AP_BUSINESS_LINK_CACHE
+    if AP_BUSINESS_LINK_CACHE is not None:
+        return list(AP_BUSINESS_LINK_CACHE)
+    links = []
+    seen = set()
+    try:
+        page_html = fetch_text(AP_BUSINESS_URL, timeout=20)
+        html_head = page_html[:500].lower()
+        if "<html" not in html_head and "<!doctype" not in html_head:
+            AP_BUSINESS_LINK_CACHE = ()
+            return []
+        soup = BeautifulSoup(page_html, "html.parser")
+        roots = soup.select("main") or [soup]
+        for root in roots:
+            for anchor in root.select("a[href]"):
+                href = urllib.parse.urljoin(AP_BUSINESS_URL, anchor.get("href") or "")
+                href = clean_tracking_url(href)
+                if not is_ap_news_article_source(href):
+                    continue
+                if href in seen:
+                    continue
+                seen.add(href)
+                path_hint = urllib.parse.urlparse(href).path.replace("/", " ").replace("-", " ")
+                parent_text = ""
+                parent = anchor.parent
+                if parent is not None:
+                    parent_text = normalize_space(parent.get_text(" ", strip=True))
+                hint = normalize_space(f"{anchor.get_text(' ', strip=True)} {parent_text} {path_hint}")
+                links.append({"link": href, "hint": hint})
+    except Exception as e:
+        print(f"  - AP Business listing failed: {e}")
+    AP_BUSINESS_LINK_CACHE = tuple(links)
+    return links
+
+def fetch_ap_business_article_metadata(url):
+    if url in AP_BUSINESS_ARTICLE_CACHE:
+        return AP_BUSINESS_ARTICLE_CACHE[url]
+    metadata = {"title": "", "description": "", "published_date": None, "body": ""}
+    try:
+        article_html = fetch_text(url, timeout=20)
+        soup = BeautifulSoup(article_html, "html.parser")
+        title = extract_page_title(soup)
+        title = re.sub(r"\s*[|-]\s*AP News\s*$", "", title, flags=re.IGNORECASE).strip()
+        description = extract_meta_content(
+            soup,
+            {"name": "description"},
+            {"property": "og:description"},
+            {"name": "twitter:description"},
+        )
+        metadata = {
+            "title": title,
+            "description": description,
+            "published_date": parse_article_date_from_html(article_html),
+            "body": extract_best_article_text(soup),
+        }
+    except Exception as e:
+        print(f"  - AP Business article failed ({url}): {e}")
+    AP_BUSINESS_ARTICLE_CACHE[url] = metadata
+    return metadata
 
 def is_yahoo_finance_source(url):
     parsed = urllib.parse.urlparse(url or "")
@@ -5280,22 +5350,63 @@ def fetch_foreign_macro_source_news(
     return dedupe_news_items(news_list)
 
 def fetch_ap_business_macro_news(target_date, section_id, group_title, category, seen_links, seen_titles, limit=MAX_NEWS_PER_CATEGORY):
-    return fetch_foreign_macro_source_news(
-        target_date,
-        section_id,
-        group_title,
-        category,
-        seen_links,
-        seen_titles,
-        AP_BUSINESS_SOURCE_NAME,
-        AP_BUSINESS_SITE_QUERY,
-        AP_BUSINESS_CONTEXT,
-        MACRO_AP_BUSINESS_QUERIES,
-        is_ap_business_macro_candidate,
-        is_ap_business_macro_match,
-        is_ap_news_source,
-        limit=limit,
-    )
+    news_list = []
+    category_story_cache = []
+    target_date_obj = target_date.date() if isinstance(target_date, datetime) else target_date
+    target_dot = target_date_obj.strftime("%Y.%m.%d")
+    if not MACRO_AP_BUSINESS_QUERIES.get((group_title, category["name"])):
+        return news_list
+
+    for listing_item in fetch_ap_business_links():
+        if len(news_list) >= limit:
+            break
+        if isinstance(listing_item, dict):
+            link = listing_item.get("link", "")
+            listing_hint = listing_item.get("hint", "")
+        else:
+            link = listing_item
+            listing_hint = str(listing_item or "")
+        if not is_ap_business_macro_candidate(group_title, category["name"], listing_hint):
+            continue
+        if link in seen_links:
+            continue
+        metadata = fetch_ap_business_article_metadata(link)
+        if metadata.get("published_date") != target_date_obj:
+            continue
+        title = metadata.get("title", "")
+        desc_text = metadata.get("description", "")
+        article_body = metadata.get("body", "")
+        if not title:
+            continue
+        if not is_ap_business_macro_candidate(group_title, category["name"], title, desc_text):
+            continue
+        if should_skip_search_item(section_id, category["name"], AP_BUSINESS_SOURCE_NAME, title, link):
+            continue
+        if any(is_similar_title(title, st) for st in seen_titles):
+            continue
+        summary_source = article_body if len(article_body) >= 180 else desc_text
+        if not is_ap_business_macro_match(group_title, category["name"], title, desc_text, article_body):
+            continue
+        if any(
+            is_duplicate_story(title, summary_source, cached["title"], cached["text"])
+            for cached in category_story_cache
+        ):
+            continue
+
+        seen_links.add(link)
+        seen_titles.append(title)
+        category_story_cache.append({"title": title, "text": summary_source})
+        news_list.append({
+            "title": title,
+            "link": link,
+            "source": AP_BUSINESS_SOURCE_NAME,
+            "date": target_dot,
+            "summary": make_three_line_summary(title, summary_source, AP_BUSINESS_SOURCE_NAME, AP_BUSINESS_CONTEXT),
+            "_summary_source": summary_source,
+            "_summary_context": AP_BUSINESS_CONTEXT,
+        })
+
+    return dedupe_news_items(news_list)
 
 def fetch_yahoo_finance_macro_news(target_date, section_id, group_title, category, seen_links, seen_titles, limit=MAX_NEWS_PER_CATEGORY):
     news_list = []
