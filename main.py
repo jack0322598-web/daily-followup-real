@@ -42,6 +42,7 @@ BASE_DIR = Path(__file__).resolve().parent
 OUTPUT_FILE = BASE_DIR / "index.html"
 SHARE_OUTPUT_FILE = BASE_DIR / "share_index.html"
 ARCHIVE_JS_FILE = BASE_DIR / "archive_list.js"
+TREND_KEYWORDS_FILE = BASE_DIR / "weekly_keywords.json"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -370,6 +371,51 @@ MACRO_ALLOWED_SOURCE_MAP = {
 MACRO_ALLOWED_SOURCE_QUERY = " OR ".join(
     f"site:{domain}" for domain in MACRO_ALLOWED_SOURCE_MAP
 )
+
+def trend_category_key(section_id, group_title, category_name):
+    return f"{section_id}::{group_title}::{category_name}"
+
+def load_trend_keywords():
+    if not TREND_KEYWORDS_FILE.exists():
+        return {}
+    try:
+        return json.loads(TREND_KEYWORDS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+def normalize_keyword_list(keywords, limit=7):
+    normalized = []
+    seen = set()
+    for keyword in keywords or []:
+        value = normalize_space(str(keyword))
+        lowered = value.casefold()
+        if not value or lowered in seen:
+            continue
+        seen.add(lowered)
+        normalized.append(value)
+        if len(normalized) >= limit:
+            break
+    return normalized
+
+def get_trend_keywords_for_category(trend_keywords, section_id, group_title, category_name):
+    entry = (trend_keywords or {}).get("categories", {}).get(
+        trend_category_key(section_id, group_title, category_name),
+        {},
+    )
+    return normalize_keyword_list(entry.get("keywords", []))
+
+def format_or_clause(terms):
+    terms = [normalize_space(term) for term in terms if normalize_space(term)]
+    return " OR ".join(terms)
+
+def enhance_query_with_trends(base_query, trend_anchor, keywords):
+    keywords = normalize_keyword_list(keywords)
+    if not keywords:
+        return base_query
+    clause = format_or_clause(keywords)
+    if not clause:
+        return base_query
+    return f"({base_query}) OR ({trend_anchor} ({clause}))"
 
 NAV_SECTIONS = (
     ("indicators", "주요 지표"),
@@ -4869,7 +4915,87 @@ def fetch_trellis_news(target_date, seen_links, seen_titles):
         print(f"  - Trellis failed: {e}")
     return news_items
 
-def fetch_google_news_for_category(target_date, section_id, group_title, category, seen_links, seen_titles, previous_titles=None, limit=MAX_NEWS_PER_CATEGORY, forced_source=None):
+def fetch_macro_google_news_legacy(target_date, section_id, group_title, category, trend_keywords, seen_links, seen_titles, limit=MAX_NEWS_PER_CATEGORY, forced_source=None):
+    news_list = []
+    category_story_cache = []
+    target_dot = target_date.strftime("%Y.%m.%d")
+    start_date = target_date.strftime("%Y-%m-%d")
+    end_date = (target_date + timedelta(days=1)).strftime("%Y-%m-%d")
+    dynamic_keywords = get_trend_keywords_for_category(trend_keywords, section_id, group_title, category["name"])
+    trend_anchor = category.get("trend_anchor") or category.get("trend_query") or f"{group_title} {category['name']}"
+    enhanced_query = enhance_query_with_trends(category["query"], trend_anchor, dynamic_keywords)
+    try:
+        search_query = f"({enhanced_query})"
+        search_query = f"{search_query} ({MACRO_ALLOWED_SOURCE_QUERY})"
+        query = urllib.parse.quote(
+            f"{search_query} after:{start_date} before:{end_date} -블로그 -카페 -blog -cafe"
+        )
+        rss_text = fetch_text(f"https://news.google.com/rss/search?q={query}&hl=ko&gl=KR")
+        for item in ElementTree.fromstring(rss_text).findall(".//item"):
+            if len(news_list) >= limit:
+                break
+            title, source_name = parse_google_news_item(item)
+            source_name = normalize_source_name(source_name)
+            try:
+                if parsedate_to_datetime(item.findtext("pubDate", "")).astimezone(KST).strftime("%Y.%m.%d") != target_dot:
+                    continue
+            except:
+                continue
+            desc_text = strip_tags(item.findtext("description", ""))
+            if not is_macro_news_candidate(group_title, category["name"], title, desc_text):
+                continue
+            google_link = item.findtext("link", "")
+            article_link = resolve_google_news_url(google_link)
+            link = article_link or google_link
+            if not is_allowed_macro_source(link):
+                continue
+            source_name = normalize_macro_source_name(link, source_name)
+
+            if should_skip_search_item(section_id, category["name"], source_name, title, link):
+                continue
+            if link in seen_links or google_link in seen_links or any(is_similar_title(title, st) for st in seen_titles):
+                continue
+            article_body = fetch_article_body_text(article_link)
+            summary_source = article_body if len(article_body) >= 180 else desc_text
+            if not is_macro_news_match(group_title, category["name"], title, desc_text, article_body):
+                continue
+            if any(
+                is_duplicate_story(title, summary_source, cached["title"], cached["text"])
+                for cached in category_story_cache
+            ):
+                continue
+
+            seen_links.add(link)
+            seen_links.add(google_link)
+            seen_titles.append(title)
+            category_story_cache.append({"title": title, "text": summary_source})
+            news_list.append({
+                "title": title,
+                "link": link,
+                "source": forced_source or source_name,
+                "date": target_dot,
+                "summary": make_three_line_summary(title, summary_source, source_name, category["context"]),
+                "_summary_source": summary_source,
+                "_summary_context": category["context"],
+            })
+    except Exception as e:
+        print("수집 오류:", e)
+    return dedupe_news_items(news_list)
+
+def fetch_google_news_for_category(target_date, section_id, group_title, category, seen_links, seen_titles, previous_titles=None, limit=MAX_NEWS_PER_CATEGORY, forced_source=None, trend_keywords=None):
+    if section_id == "macro":
+        return fetch_macro_google_news_legacy(
+            target_date,
+            section_id,
+            group_title,
+            category,
+            trend_keywords or {},
+            seen_links,
+            seen_titles,
+            limit,
+            forced_source,
+        )
+
     candidates = []
     candidate_links = set()
     existing_titles = list(seen_titles)
@@ -4954,6 +5080,7 @@ def fetch_google_news_for_category(target_date, section_id, group_title, categor
 
 def fetch_search_sections(target_date, seen_links, seen_titles):
     previous_titles = load_recent_briefing_titles(target_date)
+    trend_keywords = load_trend_keywords()
     results = [
         rank_existing_section_categories(
             fetch_vcac_sources(target_date, seen_links, seen_titles),
@@ -4977,6 +5104,7 @@ def fetch_search_sections(target_date, seen_links, seen_titles):
                     seen_links,
                     seen_titles,
                     previous_titles,
+                    trend_keywords=trend_keywords,
                 )
                 group_result["categories"].append({"name": category["name"], "news": news_list})
             section_result["groups"].append(group_result)
