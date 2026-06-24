@@ -165,8 +165,9 @@ class IssueRankingTests(unittest.TestCase):
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0]["source"], "Yahoo Finance")
         self.assertEqual(items[0]["link"], "https://finance.yahoo.com/news/fed-rates-inflation")
-        self.assertIn("site%3Afinance.yahoo.com/economy", fetched_urls[0])
+        self.assertIn("site%3Afinance.yahoo.com", fetched_urls[0])
         self.assertIn("Federal%20Reserve", fetched_urls[0])
+        self.assertFalse(main.is_yahoo_finance_source("https://finance.yahoo.com/topic/tariffs/"))
 
 
 if __name__ == "__main__":

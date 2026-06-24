@@ -377,7 +377,7 @@ AP_BUSINESS_SITE_QUERY = "site:apnews.com"
 AP_BUSINESS_CONTEXT = "AP Business macroeconomic and policy news."
 
 YAHOO_FINANCE_SOURCE_NAME = "Yahoo Finance"
-YAHOO_FINANCE_SITE_QUERY = "site:finance.yahoo.com/economy"
+YAHOO_FINANCE_SITE_QUERY = "site:finance.yahoo.com"
 YAHOO_FINANCE_CONTEXT = "Yahoo Finance economic news and analysis."
 
 MACRO_AP_BUSINESS_QUERIES = {
@@ -391,7 +391,16 @@ MACRO_AP_BUSINESS_QUERIES = {
     ("중국", "통화정책"): "China (People's Bank of China OR PBOC OR LPR OR reserve requirement ratio OR RRR cut OR stimulus)",
 }
 
-MACRO_YAHOO_FINANCE_QUERIES = MACRO_AP_BUSINESS_QUERIES
+MACRO_YAHOO_FINANCE_QUERIES = {
+    ("미국", "경제지표"): "PCE OR CPI OR GDP OR PMI OR ISM OR jobs report OR unemployment OR inflation OR retail sales OR consumer confidence OR stock market OR S&P 500 OR Nasdaq OR Dow",
+    ("미국", "관세"): "tariffs OR trade war OR protectionism OR USTR OR trade pressure OR import duties OR import restrictions OR Trump tariffs",
+    ("미국", "통화정책"): "Federal Reserve OR Fed OR FOMC OR Jerome Powell OR Kevin Warsh OR interest rates OR interest-rate forecast OR rate bets OR rate cut OR rate hike OR Treasury yields OR dollar",
+    ("미국", "외교"): "diplomacy OR sanctions OR US-China tensions OR China sanctions OR allies OR semiconductor export controls OR trade talks",
+    ("한국", "경제지표"): "South Korea OR Korea OR Kospi OR won OR consumer prices OR GDP OR growth OR employment report OR exports OR imports OR unemployment OR trade balance",
+    ("한국", "통화정책"): "South Korea OR Korea OR Bank of Korea OR BOK OR interest rates OR monetary policy OR rate decision OR Rhee Chang-yong OR won",
+    ("유럽", "통화정책"): "ECB OR European Central Bank OR eurozone rates OR Lagarde monetary policy OR European bond yields",
+    ("중국", "통화정책"): "China (People's Bank of China OR PBOC OR LPR OR reserve requirement ratio OR RRR cut OR stimulus OR yuan)",
+}
 
 MACRO_AP_BUSINESS_MATCH_RULES = {
     ("미국", "경제지표"): {
@@ -450,7 +459,29 @@ MACRO_AP_BUSINESS_MATCH_RULES = {
     },
 }
 
-MACRO_YAHOO_FINANCE_MATCH_RULES = MACRO_AP_BUSINESS_MATCH_RULES
+MACRO_YAHOO_FINANCE_MATCH_RULES = {
+    **MACRO_AP_BUSINESS_MATCH_RULES,
+    ("미국", "경제지표"): {
+        "precheck_any": ("pce", "cpi", "gdp", "pmi", "ism", "jobs", "employment", "unemployment", "inflation", "retail sales", "consumer prices", "consumer confidence", "housing", "home sales", "economic growth"),
+        "required_groups": (
+            ("united states", "u.s.", "us ", "american", "wall street", "s&p", "nasdaq", "dow", "fed", "federal reserve"),
+            ("pce", "cpi", "gdp", "pmi", "ism", "jobs", "employment", "unemployment", "inflation", "retail sales", "consumer prices", "consumer confidence", "housing", "home sales", "economic growth"),
+        ),
+    },
+    ("미국", "관세"): {
+        "precheck_any": ("tariff", "tariffs", "trade war", "trade", "ustr", "protectionism", "import restrictions", "import duties", "duties"),
+        "required_groups": (
+            ("united states", "u.s.", "us ", "trump", "white house", "ustr", "washington"),
+            ("tariff", "tariffs", "trade war", "trade", "ustr", "protectionism", "import restrictions", "import duties", "duties"),
+        ),
+    },
+    ("미국", "통화정책"): {
+        "precheck_any": ("federal reserve", "fed", "fomc", "powell", "warsh", "interest rates", "interest-rate", "rate cut", "rate hike", "rate bets", "rate forecast", "treasury yields", "bond yields"),
+        "required_groups": (
+            ("federal reserve", "fed", "fomc", "powell", "warsh", "treasury yields", "bond yields", "interest rates", "interest-rate", "rate bets", "rate forecast"),
+        ),
+    },
+}
 
 def trend_category_key(section_id, group_title, category_name):
     return f"{section_id}::{group_title}::{category_name}"
@@ -1874,8 +1905,12 @@ def is_ap_news_source(url):
     return netloc == "apnews.com" or netloc.endswith(".apnews.com")
 
 def is_yahoo_finance_source(url):
-    netloc = normalize_news_netloc(url)
-    return netloc == "finance.yahoo.com"
+    parsed = urllib.parse.urlparse(url or "")
+    netloc = parsed.netloc.lower()
+    if netloc.startswith("www."):
+        netloc = netloc[4:]
+    path = parsed.path.lower()
+    return netloc == "finance.yahoo.com" and ("/articles/" in path or path.startswith("/news/"))
 
 def normalize_macro_source_name(url, fallback_source_name=""):
     domain = get_macro_source_domain(url)
@@ -5120,6 +5155,7 @@ def fetch_foreign_macro_source_news(
     candidate_check,
     final_match_check,
     source_check,
+    search_scope="(business OR economy OR markets OR inflation OR tariffs OR financial markets OR central bank)",
     limit=MAX_NEWS_PER_CATEGORY,
 ):
     news_list = []
@@ -5131,10 +5167,12 @@ def fetch_foreign_macro_source_news(
     target_dot = target_date.strftime("%Y.%m.%d")
     start_date = target_date.strftime("%Y-%m-%d")
     end_date = (target_date + timedelta(days=1)).strftime("%Y-%m-%d")
-    business_scope = "(business OR economy OR markets OR inflation OR tariffs OR financial markets OR central bank)"
+    scoped_query = f"({query_text})"
+    if search_scope:
+        scoped_query = f"{scoped_query} {search_scope}"
     try:
         query = urllib.parse.quote(
-            f"({query_text}) {business_scope} {site_query} after:{start_date} before:{end_date}"
+            f"{scoped_query} {site_query} after:{start_date} before:{end_date}"
         )
         rss_text = fetch_text(f"https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en")
         for item in ElementTree.fromstring(rss_text).findall(".//item"):
@@ -5200,7 +5238,7 @@ def fetch_ap_business_macro_news(target_date, section_id, group_title, category,
         is_ap_business_macro_candidate,
         is_ap_business_macro_match,
         is_ap_news_source,
-        limit,
+        limit=limit,
     )
 
 def fetch_yahoo_finance_macro_news(target_date, section_id, group_title, category, seen_links, seen_titles, limit=MAX_NEWS_PER_CATEGORY):
@@ -5218,7 +5256,8 @@ def fetch_yahoo_finance_macro_news(target_date, section_id, group_title, categor
         is_yahoo_finance_macro_candidate,
         is_yahoo_finance_macro_match,
         is_yahoo_finance_source,
-        limit,
+        search_scope="",
+        limit=limit,
     )
 
 def fetch_google_news_for_category(target_date, section_id, group_title, category, seen_links, seen_titles, previous_titles=None, limit=MAX_NEWS_PER_CATEGORY, forced_source=None, trend_keywords=None):
