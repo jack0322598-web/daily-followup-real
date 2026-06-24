@@ -372,6 +372,78 @@ MACRO_ALLOWED_SOURCE_QUERY = " OR ".join(
     f"site:{domain}" for domain in MACRO_ALLOWED_SOURCE_MAP
 )
 
+AP_BUSINESS_SOURCE_NAME = "AP News"
+AP_BUSINESS_SITE_QUERY = "site:apnews.com"
+AP_BUSINESS_CONTEXT = "AP Business macroeconomic and policy news."
+
+MACRO_AP_BUSINESS_QUERIES = {
+    ("미국", "경제지표"): "United States (PCE OR CPI OR GDP OR jobs report OR unemployment OR inflation OR retail sales OR consumer prices)",
+    ("미국", "관세"): "United States (tariffs OR protectionism OR USTR OR trade pressure OR import restrictions OR Trump tariffs)",
+    ("미국", "통화정책"): "United States (Federal Reserve OR Fed OR FOMC OR Jerome Powell OR monetary policy OR rate cut OR rate hike)",
+    ("미국", "외교"): "United States (diplomacy OR sanctions OR US-China tensions OR China sanctions OR allies OR semiconductor export controls)",
+    ("한국", "경제지표"): "South Korea (consumer prices OR GDP OR growth OR employment report OR exports OR imports OR unemployment)",
+    ("한국", "통화정책"): "South Korea (Bank of Korea OR BOK OR interest rates OR monetary policy OR Rhee Chang-yong)",
+    ("유럽", "통화정책"): "ECB OR European Central Bank OR eurozone rates OR Lagarde monetary policy",
+    ("중국", "통화정책"): "China (People's Bank of China OR PBOC OR LPR OR reserve requirement ratio OR RRR cut OR stimulus)",
+}
+
+MACRO_AP_BUSINESS_MATCH_RULES = {
+    ("미국", "경제지표"): {
+        "precheck_any": ("pce", "cpi", "gdp", "jobs", "employment", "unemployment", "inflation", "retail sales", "consumer prices"),
+        "required_groups": (
+            ("united states", "u.s.", "us ", "american", "fed", "federal reserve"),
+            ("pce", "cpi", "gdp", "jobs", "employment", "unemployment", "inflation", "retail sales", "consumer prices"),
+        ),
+    },
+    ("미국", "관세"): {
+        "precheck_any": ("tariff", "tariffs", "trade", "ustr", "protectionism", "import restrictions", "duties"),
+        "required_groups": (
+            ("united states", "u.s.", "us ", "trump", "white house", "ustr"),
+            ("tariff", "tariffs", "trade", "ustr", "protectionism", "import restrictions", "duties"),
+        ),
+    },
+    ("미국", "통화정책"): {
+        "precheck_any": ("federal reserve", "fed", "fomc", "powell", "interest rates", "rate cut", "rate hike"),
+        "required_groups": (
+            ("federal reserve", "fed", "fomc", "powell"),
+            ("interest rate", "interest rates", "monetary policy", "rate cut", "rate hike", "holds rates", "raises rates", "cuts rates"),
+        ),
+    },
+    ("미국", "외교"): {
+        "precheck_any": ("diplomacy", "sanctions", "china", "allies", "semiconductor", "export controls", "trade talks"),
+        "required_groups": (
+            ("united states", "u.s.", "us ", "trump", "white house", "washington", "china"),
+            ("diplomacy", "sanctions", "china", "allies", "semiconductor", "export controls", "security", "trade talks"),
+        ),
+    },
+    ("한국", "경제지표"): {
+        "precheck_any": ("south korea", "korea", "consumer prices", "gdp", "growth", "employment", "exports", "imports", "unemployment", "trade balance"),
+        "required_groups": (
+            ("south korea", "korea"),
+            ("consumer prices", "gdp", "growth", "employment", "exports", "imports", "unemployment", "trade balance"),
+        ),
+    },
+    ("한국", "통화정책"): {
+        "precheck_any": ("bank of korea", "bok", "interest rates", "monetary policy", "rate decision"),
+        "required_groups": (
+            ("bank of korea", "bok", "south korea", "korea"),
+            ("interest rate", "interest rates", "monetary policy", "rate decision", "rate cut", "rate hike"),
+        ),
+    },
+    ("유럽", "통화정책"): {
+        "precheck_any": ("ecb", "european central bank", "eurozone", "lagarde", "interest rates"),
+        "required_groups": (
+            ("ecb", "european central bank", "eurozone", "lagarde"),
+        ),
+    },
+    ("중국", "통화정책"): {
+        "precheck_any": ("china", "people's bank of china", "pboc", "lpr", "reserve requirement", "stimulus", "yuan"),
+        "required_groups": (
+            ("china", "people's bank of china", "pboc", "lpr", "reserve requirement", "stimulus", "yuan"),
+        ),
+    },
+}
+
 def trend_category_key(section_id, group_title, category_name):
     return f"{section_id}::{group_title}::{category_name}"
 
@@ -1789,6 +1861,10 @@ def get_macro_source_domain(url):
 def is_allowed_macro_source(url):
     return bool(get_macro_source_domain(url))
 
+def is_ap_news_source(url):
+    netloc = normalize_news_netloc(url)
+    return netloc == "apnews.com" or netloc.endswith(".apnews.com")
+
 def normalize_macro_source_name(url, fallback_source_name=""):
     domain = get_macro_source_domain(url)
     if domain:
@@ -1882,6 +1958,30 @@ MACRO_MATCH_RULES = {
 
 def contains_macro_token(text, tokens):
     return any(token.lower() in text for token in tokens)
+
+def is_ap_business_macro_candidate(group_title, category_name, *parts):
+    rule = MACRO_AP_BUSINESS_MATCH_RULES.get((group_title, category_name))
+    if not rule:
+        return True
+    haystack = normalize_space(" ".join(str(part or "") for part in parts)).lower()
+    exclude_any = rule.get("exclude_any", ())
+    if exclude_any and contains_macro_token(haystack, exclude_any):
+        return False
+    precheck_any = rule.get("precheck_any", ())
+    if precheck_any and not contains_macro_token(haystack, precheck_any):
+        return False
+    return True
+
+def is_ap_business_macro_match(group_title, category_name, *parts):
+    rule = MACRO_AP_BUSINESS_MATCH_RULES.get((group_title, category_name))
+    if not rule:
+        return True
+    haystack = normalize_space(" ".join(str(part or "") for part in parts)).lower()
+    exclude_any = rule.get("exclude_any", ())
+    if exclude_any and contains_macro_token(haystack, exclude_any):
+        return False
+    required_groups = rule.get("required_groups", ())
+    return all(contains_macro_token(haystack, tokens) for tokens in required_groups)
 
 def is_macro_news_candidate(group_title, category_name, *parts):
     rule = MACRO_MATCH_RULES.get((group_title, category_name))
@@ -4982,9 +5082,73 @@ def fetch_macro_google_news_legacy(target_date, section_id, group_title, categor
         print("수집 오류:", e)
     return dedupe_news_items(news_list)
 
+def fetch_ap_business_macro_news(target_date, section_id, group_title, category, seen_links, seen_titles, limit=MAX_NEWS_PER_CATEGORY):
+    news_list = []
+    category_story_cache = []
+    query_text = MACRO_AP_BUSINESS_QUERIES.get((group_title, category["name"]))
+    if not query_text:
+        return news_list
+
+    target_dot = target_date.strftime("%Y.%m.%d")
+    start_date = target_date.strftime("%Y-%m-%d")
+    end_date = (target_date + timedelta(days=1)).strftime("%Y-%m-%d")
+    business_scope = "(business OR economy OR markets OR inflation OR tariffs OR financial markets OR central bank)"
+    try:
+        query = urllib.parse.quote(
+            f"({query_text}) {business_scope} {AP_BUSINESS_SITE_QUERY} after:{start_date} before:{end_date}"
+        )
+        rss_text = fetch_text(f"https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en")
+        for item in ElementTree.fromstring(rss_text).findall(".//item"):
+            if len(news_list) >= limit:
+                break
+            title, _source_name = parse_google_news_item(item)
+            try:
+                if parsedate_to_datetime(item.findtext("pubDate", "")).astimezone(KST).strftime("%Y.%m.%d") != target_dot:
+                    continue
+            except:
+                continue
+            desc_text = strip_tags(item.findtext("description", ""))
+            if not is_ap_business_macro_candidate(group_title, category["name"], title, desc_text):
+                continue
+            google_link = item.findtext("link", "")
+            article_link = resolve_google_news_url(google_link)
+            link = article_link or google_link
+            if not is_ap_news_source(link):
+                continue
+            if should_skip_search_item(section_id, category["name"], AP_BUSINESS_SOURCE_NAME, title, link):
+                continue
+            if link in seen_links or google_link in seen_links or any(is_similar_title(title, st) for st in seen_titles):
+                continue
+            article_body = fetch_article_body_text(article_link)
+            summary_source = article_body if len(article_body) >= 180 else desc_text
+            if not is_ap_business_macro_match(group_title, category["name"], title, desc_text, article_body):
+                continue
+            if any(
+                is_duplicate_story(title, summary_source, cached["title"], cached["text"])
+                for cached in category_story_cache
+            ):
+                continue
+
+            seen_links.add(link)
+            seen_links.add(google_link)
+            seen_titles.append(title)
+            category_story_cache.append({"title": title, "text": summary_source})
+            news_list.append({
+                "title": title,
+                "link": link,
+                "source": AP_BUSINESS_SOURCE_NAME,
+                "date": target_dot,
+                "summary": make_three_line_summary(title, summary_source, AP_BUSINESS_SOURCE_NAME, AP_BUSINESS_CONTEXT),
+                "_summary_source": summary_source,
+                "_summary_context": AP_BUSINESS_CONTEXT,
+            })
+    except Exception as e:
+        print(f"  - AP Business macro failed ({group_title}/{category['name']}): {e}")
+    return dedupe_news_items(news_list)
+
 def fetch_google_news_for_category(target_date, section_id, group_title, category, seen_links, seen_titles, previous_titles=None, limit=MAX_NEWS_PER_CATEGORY, forced_source=None, trend_keywords=None):
     if section_id == "macro":
-        return fetch_macro_google_news_legacy(
+        local_news = fetch_macro_google_news_legacy(
             target_date,
             section_id,
             group_title,
@@ -4995,6 +5159,16 @@ def fetch_google_news_for_category(target_date, section_id, group_title, categor
             limit,
             forced_source,
         )
+        ap_news = fetch_ap_business_macro_news(
+            target_date,
+            section_id,
+            group_title,
+            category,
+            seen_links,
+            seen_titles,
+            limit,
+        )
+        return dedupe_news_items(local_news + ap_news)
 
     candidates = []
     candidate_links = set()
