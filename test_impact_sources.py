@@ -1,8 +1,26 @@
 import unittest
+import re
 from datetime import date
 from unittest.mock import patch
 
 import main
+
+
+class SummaryLanguageTests(unittest.TestCase):
+    def test_english_source_summary_falls_back_to_korean_lines(self):
+        summary = main.make_three_line_summary(
+            "Climate investors expand into new infrastructure",
+            (
+                "Investors allocated $10 million to climate infrastructure this quarter. "
+                "The market grew 20 percent as demand increased across utilities. "
+                "Companies expect policy support to unlock more projects next year."
+            ),
+            "Trellis",
+            "Global climate and impact news.",
+        )
+
+        self.assertEqual(len(summary), 3)
+        self.assertTrue(all(re.search(r"[\uac00-\ud7a3]", line) for line in summary))
 
 
 class GlobalImpactFeedTests(unittest.TestCase):
