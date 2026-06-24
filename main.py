@@ -376,6 +376,10 @@ AP_BUSINESS_SOURCE_NAME = "AP News"
 AP_BUSINESS_SITE_QUERY = "site:apnews.com"
 AP_BUSINESS_CONTEXT = "AP Business macroeconomic and policy news."
 
+YAHOO_FINANCE_SOURCE_NAME = "Yahoo Finance"
+YAHOO_FINANCE_SITE_QUERY = "site:finance.yahoo.com/economy"
+YAHOO_FINANCE_CONTEXT = "Yahoo Finance economic news and analysis."
+
 MACRO_AP_BUSINESS_QUERIES = {
     ("미국", "경제지표"): "United States (PCE OR CPI OR GDP OR jobs report OR unemployment OR inflation OR retail sales OR consumer prices)",
     ("미국", "관세"): "United States (tariffs OR protectionism OR USTR OR trade pressure OR import restrictions OR Trump tariffs)",
@@ -386,6 +390,8 @@ MACRO_AP_BUSINESS_QUERIES = {
     ("유럽", "통화정책"): "ECB OR European Central Bank OR eurozone rates OR Lagarde monetary policy",
     ("중국", "통화정책"): "China (People's Bank of China OR PBOC OR LPR OR reserve requirement ratio OR RRR cut OR stimulus)",
 }
+
+MACRO_YAHOO_FINANCE_QUERIES = MACRO_AP_BUSINESS_QUERIES
 
 MACRO_AP_BUSINESS_MATCH_RULES = {
     ("미국", "경제지표"): {
@@ -443,6 +449,8 @@ MACRO_AP_BUSINESS_MATCH_RULES = {
         ),
     },
 }
+
+MACRO_YAHOO_FINANCE_MATCH_RULES = MACRO_AP_BUSINESS_MATCH_RULES
 
 def trend_category_key(section_id, group_title, category_name):
     return f"{section_id}::{group_title}::{category_name}"
@@ -1865,6 +1873,10 @@ def is_ap_news_source(url):
     netloc = normalize_news_netloc(url)
     return netloc == "apnews.com" or netloc.endswith(".apnews.com")
 
+def is_yahoo_finance_source(url):
+    netloc = normalize_news_netloc(url)
+    return netloc == "finance.yahoo.com"
+
 def normalize_macro_source_name(url, fallback_source_name=""):
     domain = get_macro_source_domain(url)
     if domain:
@@ -1959,8 +1971,8 @@ MACRO_MATCH_RULES = {
 def contains_macro_token(text, tokens):
     return any(token.lower() in text for token in tokens)
 
-def is_ap_business_macro_candidate(group_title, category_name, *parts):
-    rule = MACRO_AP_BUSINESS_MATCH_RULES.get((group_title, category_name))
+def is_foreign_macro_candidate(match_rules, group_title, category_name, *parts):
+    rule = match_rules.get((group_title, category_name))
     if not rule:
         return True
     haystack = normalize_space(" ".join(str(part or "") for part in parts)).lower()
@@ -1972,8 +1984,8 @@ def is_ap_business_macro_candidate(group_title, category_name, *parts):
         return False
     return True
 
-def is_ap_business_macro_match(group_title, category_name, *parts):
-    rule = MACRO_AP_BUSINESS_MATCH_RULES.get((group_title, category_name))
+def is_foreign_macro_match(match_rules, group_title, category_name, *parts):
+    rule = match_rules.get((group_title, category_name))
     if not rule:
         return True
     haystack = normalize_space(" ".join(str(part or "") for part in parts)).lower()
@@ -1982,6 +1994,18 @@ def is_ap_business_macro_match(group_title, category_name, *parts):
         return False
     required_groups = rule.get("required_groups", ())
     return all(contains_macro_token(haystack, tokens) for tokens in required_groups)
+
+def is_ap_business_macro_candidate(group_title, category_name, *parts):
+    return is_foreign_macro_candidate(MACRO_AP_BUSINESS_MATCH_RULES, group_title, category_name, *parts)
+
+def is_ap_business_macro_match(group_title, category_name, *parts):
+    return is_foreign_macro_match(MACRO_AP_BUSINESS_MATCH_RULES, group_title, category_name, *parts)
+
+def is_yahoo_finance_macro_candidate(group_title, category_name, *parts):
+    return is_foreign_macro_candidate(MACRO_YAHOO_FINANCE_MATCH_RULES, group_title, category_name, *parts)
+
+def is_yahoo_finance_macro_match(group_title, category_name, *parts):
+    return is_foreign_macro_match(MACRO_YAHOO_FINANCE_MATCH_RULES, group_title, category_name, *parts)
 
 def is_macro_news_candidate(group_title, category_name, *parts):
     rule = MACRO_MATCH_RULES.get((group_title, category_name))
@@ -5082,10 +5106,25 @@ def fetch_macro_google_news_legacy(target_date, section_id, group_title, categor
         print("수집 오류:", e)
     return dedupe_news_items(news_list)
 
-def fetch_ap_business_macro_news(target_date, section_id, group_title, category, seen_links, seen_titles, limit=MAX_NEWS_PER_CATEGORY):
+def fetch_foreign_macro_source_news(
+    target_date,
+    section_id,
+    group_title,
+    category,
+    seen_links,
+    seen_titles,
+    source_name,
+    site_query,
+    source_context,
+    query_map,
+    candidate_check,
+    final_match_check,
+    source_check,
+    limit=MAX_NEWS_PER_CATEGORY,
+):
     news_list = []
     category_story_cache = []
-    query_text = MACRO_AP_BUSINESS_QUERIES.get((group_title, category["name"]))
+    query_text = query_map.get((group_title, category["name"]))
     if not query_text:
         return news_list
 
@@ -5095,7 +5134,7 @@ def fetch_ap_business_macro_news(target_date, section_id, group_title, category,
     business_scope = "(business OR economy OR markets OR inflation OR tariffs OR financial markets OR central bank)"
     try:
         query = urllib.parse.quote(
-            f"({query_text}) {business_scope} {AP_BUSINESS_SITE_QUERY} after:{start_date} before:{end_date}"
+            f"({query_text}) {business_scope} {site_query} after:{start_date} before:{end_date}"
         )
         rss_text = fetch_text(f"https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en")
         for item in ElementTree.fromstring(rss_text).findall(".//item"):
@@ -5108,20 +5147,20 @@ def fetch_ap_business_macro_news(target_date, section_id, group_title, category,
             except:
                 continue
             desc_text = strip_tags(item.findtext("description", ""))
-            if not is_ap_business_macro_candidate(group_title, category["name"], title, desc_text):
+            if not candidate_check(group_title, category["name"], title, desc_text):
                 continue
             google_link = item.findtext("link", "")
             article_link = resolve_google_news_url(google_link)
             link = article_link or google_link
-            if not is_ap_news_source(link):
+            if not source_check(link):
                 continue
-            if should_skip_search_item(section_id, category["name"], AP_BUSINESS_SOURCE_NAME, title, link):
+            if should_skip_search_item(section_id, category["name"], source_name, title, link):
                 continue
             if link in seen_links or google_link in seen_links or any(is_similar_title(title, st) for st in seen_titles):
                 continue
             article_body = fetch_article_body_text(article_link)
             summary_source = article_body if len(article_body) >= 180 else desc_text
-            if not is_ap_business_macro_match(group_title, category["name"], title, desc_text, article_body):
+            if not final_match_check(group_title, category["name"], title, desc_text, article_body):
                 continue
             if any(
                 is_duplicate_story(title, summary_source, cached["title"], cached["text"])
@@ -5136,15 +5175,51 @@ def fetch_ap_business_macro_news(target_date, section_id, group_title, category,
             news_list.append({
                 "title": title,
                 "link": link,
-                "source": AP_BUSINESS_SOURCE_NAME,
+                "source": source_name,
                 "date": target_dot,
-                "summary": make_three_line_summary(title, summary_source, AP_BUSINESS_SOURCE_NAME, AP_BUSINESS_CONTEXT),
+                "summary": make_three_line_summary(title, summary_source, source_name, source_context),
                 "_summary_source": summary_source,
-                "_summary_context": AP_BUSINESS_CONTEXT,
+                "_summary_context": source_context,
             })
     except Exception as e:
-        print(f"  - AP Business macro failed ({group_title}/{category['name']}): {e}")
+        print(f"  - {source_name} macro failed ({group_title}/{category['name']}): {e}")
     return dedupe_news_items(news_list)
+
+def fetch_ap_business_macro_news(target_date, section_id, group_title, category, seen_links, seen_titles, limit=MAX_NEWS_PER_CATEGORY):
+    return fetch_foreign_macro_source_news(
+        target_date,
+        section_id,
+        group_title,
+        category,
+        seen_links,
+        seen_titles,
+        AP_BUSINESS_SOURCE_NAME,
+        AP_BUSINESS_SITE_QUERY,
+        AP_BUSINESS_CONTEXT,
+        MACRO_AP_BUSINESS_QUERIES,
+        is_ap_business_macro_candidate,
+        is_ap_business_macro_match,
+        is_ap_news_source,
+        limit,
+    )
+
+def fetch_yahoo_finance_macro_news(target_date, section_id, group_title, category, seen_links, seen_titles, limit=MAX_NEWS_PER_CATEGORY):
+    return fetch_foreign_macro_source_news(
+        target_date,
+        section_id,
+        group_title,
+        category,
+        seen_links,
+        seen_titles,
+        YAHOO_FINANCE_SOURCE_NAME,
+        YAHOO_FINANCE_SITE_QUERY,
+        YAHOO_FINANCE_CONTEXT,
+        MACRO_YAHOO_FINANCE_QUERIES,
+        is_yahoo_finance_macro_candidate,
+        is_yahoo_finance_macro_match,
+        is_yahoo_finance_source,
+        limit,
+    )
 
 def fetch_google_news_for_category(target_date, section_id, group_title, category, seen_links, seen_titles, previous_titles=None, limit=MAX_NEWS_PER_CATEGORY, forced_source=None, trend_keywords=None):
     if section_id == "macro":
@@ -5168,7 +5243,16 @@ def fetch_google_news_for_category(target_date, section_id, group_title, categor
             seen_titles,
             limit,
         )
-        return dedupe_news_items(local_news + ap_news)
+        yahoo_news = fetch_yahoo_finance_macro_news(
+            target_date,
+            section_id,
+            group_title,
+            category,
+            seen_links,
+            seen_titles,
+            limit,
+        )
+        return dedupe_news_items(local_news + ap_news + yahoo_news)
 
     candidates = []
     candidate_links = set()
