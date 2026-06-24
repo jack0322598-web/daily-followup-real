@@ -350,6 +350,52 @@ Save It For Later
         self.assertEqual(item["report_title"], "How leaders can help their organizations metabolize strain")
         self.assertIn("Employees who report experiencing trauma", item["chart_image_alt"])
 
+    def test_mckinsey_ai_pricing_fallback_restores_chart_visual(self):
+        item = main.build_mckinsey_fallback_item({
+            "title": "The AI advantage in B2B pricing",
+            "published_date": "2026.06.23",
+            "source_url": "https://www.mckinsey.com/featured-insights/week-in-charts/the-ai-advantage-in-b2b-pricing",
+        })
+
+        self.assertEqual(item["date"], "2026.06.23")
+        self.assertTrue(item["chart_image_url"].startswith("data:image/svg+xml"))
+        self.assertIn("agentic AI breakthrough in pricing", item["chart_image_alt"])
+        self.assertEqual(
+            item["report_url"],
+            "https://www.mckinsey.com/capabilities/growth-marketing-and-sales/our-insights/b2b-pricing-navigating-the-next-phase-of-the-ai-revolution",
+        )
+        self.assertIn("생성형 AI", item["description_ko"])
+
+    def test_mckinsey_parser_prefers_chart_srcset_images(self):
+        article_html = """
+        <html>
+          <head>
+            <title>The AI advantage in B2B pricing | McKinsey</title>
+            <meta name="itemdate" content="2026-06-23">
+          </head>
+          <body>
+            <h1>The AI advantage in B2B pricing</h1>
+            <picture>
+              <source srcset="/~/media/mckinsey/featured%20insights/the%20week%20in%20charts/2026/june/exhibits/aipricing.svgz 1x">
+              <img alt="Image: Gen AI is more mature, but an agentic AI breakthrough in pricing is on the horizon.">
+            </picture>
+            <p>Image description: A dot chart titled “Gen AI is more mature, but an agentic AI breakthrough in pricing is on the horizon”. Source: McKinsey AI in Pricing Survey. End of image description.</p>
+            <a href="/capabilities/growth-marketing-and-sales/our-insights/b2b-pricing-navigating-the-next-phase-of-the-ai-revolution">B2B pricing: Navigating the next phase</a>
+          </body>
+        </html>
+        """
+
+        item = main.parse_mckinsey_week_article(
+            article_html,
+            "https://www.mckinsey.com/featured-insights/week-in-charts/the-ai-advantage-in-b2b-pricing",
+            {"published_date": "2026.06.23"},
+        )
+
+        self.assertIn("/~/media/mckinsey/featured%20insights/", item["chart_image_url"])
+        self.assertIn("aipricing.svgz", item["chart_image_url"])
+        self.assertIn("Gen AI is more mature", item["chart_image_alt"])
+        self.assertIn("/our-insights/b2b-pricing-navigating-the-next-phase", item["report_url"])
+
     def test_industry_trend_preserves_legacy_mckinsey_item_after_fetch_failure(self):
         previous_item = {
             "source": "McKinsey",
