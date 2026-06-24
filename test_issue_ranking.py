@@ -48,6 +48,9 @@ class IssueRankingTests(unittest.TestCase):
         self.assertFalse(main.is_macro_news_match("한국", "경제지표", "KOTRA, 포스트 중동 TF 출범…수출 복원 지원"))
         self.assertFalse(main.is_macro_news_match("한국", "경제지표", "에이프릴바이오, 신규 파이프라인 특허 출원…기술수출 추진"))
         self.assertTrue(main.is_macro_news_match("한국", "경제지표", "한국 5월 수출입 동향 발표…무역수지 흑자"))
+        self.assertTrue(main.is_macro_news_match("한국", "경제지표", "대구·경북 소비심리 개선…지수 전월보다 3.2p 상승"))
+        self.assertFalse(main.is_macro_news_match("미국", "외교", "청와대서 이재명 대통령, 주한외교단 초청 만찬"))
+        self.assertTrue(main.is_macro_news_match("미국", "외교", "미국, 대중 제재와 반도체 수출통제 협상 강화"))
 
     def test_macro_fetch_uses_description_and_body_for_final_match(self):
         rss = """<?xml version="1.0" encoding="UTF-8"?>
