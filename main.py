@@ -1810,8 +1810,13 @@ MACRO_MATCH_RULES = {
     },
     ("한국", "경제지표"): {
         "precheck_any": ("소비자물가", "gdp", "성장률", "고용", "실업률", "수출", "수출입", "ict", "무역수지"),
+        "exclude_any": ("고용안정", "채용", "신입", "보훈", "기술수출", "특허", "파이프라인", "홈쇼핑", "상품 발굴"),
         "required_groups": (
-            ("소비자물가", "gdp", "성장률", "고용", "실업률", "수출", "수출입", "ict", "무역수지"),
+            (
+                "소비자물가", "gdp", "성장률", "고용동향", "고용 동향", "고용률", "실업률", "취업자",
+                "수출입", "수출입 동향", "수출액", "수출 증가", "수출 감소", "수출 호황",
+                "반도체 수출", "ict 수출", "무역수지",
+            ),
         ),
     },
     ("한국", "통화정책"): {
@@ -4895,7 +4900,7 @@ def fetch_google_news_for_category(target_date, section_id, group_title, categor
             except:
                 continue
             desc_text = strip_tags(item.findtext("description", ""))
-            if section_id == "macro" and not is_macro_news_match(group_title, category["name"], title):
+            if section_id == "macro" and not is_macro_news_candidate(group_title, category["name"], title, desc_text):
                 continue
             google_link = item.findtext("link", "")
             article_link = resolve_google_news_url(google_link)
@@ -4915,6 +4920,8 @@ def fetch_google_news_for_category(target_date, section_id, group_title, categor
                 continue
             article_body = fetch_article_body_text(article_link)
             summary_source = article_body if len(article_body) >= 180 else desc_text
+            if section_id == "macro" and not is_macro_news_match(group_title, category["name"], title, desc_text, article_body):
+                continue
             candidate_links.add(link)
             candidate_links.add(google_link)
             candidates.append({

@@ -1,4 +1,6 @@
 import unittest
+from datetime import date
+from unittest.mock import patch
 
 import main
 
@@ -37,6 +39,68 @@ class IssueRankingTests(unittest.TestCase):
         self.assertTrue(main.is_macro_news_match("미국", "경제지표", "美 5월 수입물가 6.7% 상승"))
         self.assertFalse(main.is_macro_news_match("미국", "경제지표", "일본, 31년 만에 기준금리 1%"))
         self.assertFalse(main.is_macro_news_match("미국", "경제지표", "뉴욕증시, FOMC 대기하며 상승"))
+
+    def test_macro_fetch_uses_description_and_body_for_final_match(self):
+        rss = """<?xml version="1.0" encoding="UTF-8"?>
+        <rss><channel>
+          <item>
+            <title>미국 소비 둔화 조짐 - 연합뉴스</title>
+            <link>https://news.google.com/rss/articles/example</link>
+            <pubDate>Mon, 22 Jun 2026 01:00:00 +0900</pubDate>
+            <description>미국 소매판매 지표 관련 속보</description>
+          </item>
+        </channel></rss>"""
+        body = "미국 5월 소매판매가 전월 대비 부진하게 나오며 경기 둔화 우려가 커졌다."
+        category = {
+            "name": "경제지표",
+            "query": "미국 소비",
+            "context": "미국 경기 흐름 기사입니다.",
+        }
+
+        with (
+            patch.object(main, "fetch_text", return_value=rss),
+            patch.object(main, "resolve_google_news_url", return_value="https://www.yna.co.kr/view/AKR202606220001"),
+            patch.object(main, "fetch_article_body_text", return_value=body),
+            patch.object(main, "refine_issue_ranking_with_gemini", side_effect=lambda items, *_args: items),
+            patch.object(main, "make_three_line_summary", return_value=["요약 1", "요약 2", "요약 3"]),
+        ):
+            items = main.fetch_google_news_for_category(
+                date(2026, 6, 22),
+                "macro",
+                "미국",
+                category,
+                set(),
+                [],
+            )
+
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["link"], "https://www.yna.co.kr/view/AKR202606220001")
+
+    def test_korea_macro_rejects_generic_employment_and_export_words(self):
+        self.assertFalse(
+            main.is_macro_news_match(
+                "한국",
+                "경제지표",
+                "보훈가족 고용안정 상생 기여 인정",
+                "국가보훈부 감사패 수상",
+            )
+        )
+        self.assertFalse(
+            main.is_macro_news_match(
+                "한국",
+                "경제지표",
+                "신약 기술수출 추진",
+                "특허 출원과 파이프라인 소개",
+            )
+        )
+        self.assertTrue(
+            main.is_macro_news_match(
+                "한국",
+                "경제지표",
+                "반도체 수출 호황이 이어졌다",
+                "수출액 증가와 무역수지 개선이 확인됐다",
+            )
+        )
 
 
 if __name__ == "__main__":
