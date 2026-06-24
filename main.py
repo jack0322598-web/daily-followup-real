@@ -2107,7 +2107,7 @@ def generate_editor_summary_with_gemini(title, raw_text="", source="", context="
         cache_key = summary_cache_key(model, title, source, article_text)
         cached = normalize_summary_lines(SUMMARY_CACHE.get(cache_key))
         if cached:
-            return cached
+            return ensure_korean_summary_lines(cached, title, source, context)
 
         prompt = build_editor_summary_prompt(title, article_text, source, context)
         for attempt in range(2):
@@ -2115,6 +2115,7 @@ def generate_editor_summary_with_gemini(title, raw_text="", source="", context="
                 parsed = call_gemini_json(api_key, model, prompt)
                 lines = normalize_summary_lines(parsed)
                 if lines:
+                    lines = ensure_korean_summary_lines(lines, title, source, context)
                     SUMMARY_CACHE[cache_key] = {
                         "title": normalize_space(title),
                         "source": normalize_space(source),
@@ -2279,6 +2280,12 @@ def apply_ai_summaries_to_news(strong_theme, domestic_impact, global_impact, sea
             if cached:
                 break
         if cached:
+            cached = ensure_korean_summary_lines(
+                cached,
+                news.get("title", ""),
+                news.get("source", ""),
+                get_news_summary_context(news),
+            )
             news["summary"] = cached
             news["_summary_mode"] = "ai-cache"
             cached_count += 1
@@ -2318,6 +2325,7 @@ def apply_ai_summaries_to_news(strong_theme, domestic_impact, global_impact, sea
                     lines = result_map.get(item["id"])
                     if not lines:
                         continue
+                    lines = ensure_korean_summary_lines(lines, item["title"], item["source"], item["context"])
                     news = item["news"]
                     news["summary"] = lines
                     news["_summary_mode"] = f"ai-batch:{model}"
@@ -2767,6 +2775,32 @@ def normalize_summary_candidate(sentence, source=""):
         sentence = normalize_space(re.sub(rf"\s*[-|]?\s*{re.escape(source)}\s*$", "", sentence, flags=re.IGNORECASE))
     return sentence.strip(" -–—•·|")
 
+def contains_hangul(text):
+    return bool(re.search(r"[\uac00-\ud7a3]", str(text or "")))
+
+def build_korean_summary_fallback(title="", source="", context=""):
+    title = normalize_space(title)
+    source = normalize_space(source) or "해당 매체"
+    context = normalize_space(context)
+    lines = [
+        f"{source}가 보도한 원문 기사 내용을 한국어 브리핑 형식으로 정리한 항목입니다.",
+    ]
+    if title and contains_hangul(title):
+        lines.append(f"{truncate_text(title, 64)}의 배경과 핵심 쟁점을 중심으로 확인할 필요가 있습니다.")
+    else:
+        lines.append("원문 제목과 본문을 기준으로 핵심 배경, 주요 수치, 이해관계자 영향을 함께 확인할 필요가 있습니다.")
+    if context and contains_hangul(context):
+        lines.append(context)
+    else:
+        lines.append("원문 링크에서 세부 근거와 맥락을 함께 확인하는 것이 좋습니다.")
+    return [compress_summary_sentence(line) for line in lines[:SUMMARY_LINE_COUNT]]
+
+def ensure_korean_summary_lines(lines, title="", source="", context=""):
+    normalized = normalize_summary_lines(lines)
+    if len(normalized) == SUMMARY_LINE_COUNT and all(contains_hangul(line) for line in normalized):
+        return normalized
+    return build_korean_summary_fallback(title, source, context)
+
 def clean_summary_source_text(text, source="", title=""):
     text = clean_article_text(text)
     if not text:
@@ -3083,7 +3117,7 @@ def make_extractive_three_line_summary(title, raw_text="", source="", context=""
             lines.append(fallback)
             seen.add(fallback.casefold())
 
-    return lines[:SUMMARY_LINE_COUNT]
+    return ensure_korean_summary_lines(lines[:SUMMARY_LINE_COUNT], title, source, context)
 
 def make_three_line_summary(title, raw_text="", source="", context=""):
     return make_extractive_three_line_summary(title, raw_text, source, context)
@@ -4991,7 +5025,13 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
         return " / ".join(parts)
 
     def render_news_card(news):
-        summary_html = "".join(f"<li>{esc(str(line))}</li>" for line in news.get("summary", []))
+        summary_lines = ensure_korean_summary_lines(
+            news.get("summary", []),
+            news.get("title", ""),
+            news.get("source", ""),
+            news.get("_summary_context", ""),
+        )
+        summary_html = "".join(f"<li>{esc(str(line))}</li>" for line in summary_lines)
         if not summary_html:
             summary_html = "<li>요약 정보가 없습니다.</li>"
         action_html = ""
@@ -5028,7 +5068,12 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
                     f'<img src="{esc(item.get("chart_image_url", ""))}" alt="{esc(item.get("chart_image_alt") or item.get("title", ""))}" loading="lazy">'
                     f'</div>'
                 )
-            summary_lines = item.get("summary", [])
+            summary_lines = ensure_korean_summary_lines(
+                item.get("summary", []),
+                item.get("title", ""),
+                item.get("source", "MBB"),
+                item.get("_summary_context", ""),
+            )
             summary_html = "".join(f"<li>{esc(str(line))}</li>" for line in summary_lines)
             description = item.get("description_ko") or item.get("description_en") or ""
             if not summary_html:
