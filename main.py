@@ -149,9 +149,7 @@ AI_SUMMARY_MIN_INTERVAL_SECONDS = 4.0
 SINGLE_ITEM_NEWSLETTER_SOURCES = {"Bloomberg Green", "CTVC"}
 NEWSLETTER_IMAP_TIMEOUT_SECONDS = 30
 
-GLOBAL_IMPACT_FEEDS = [
-    ("ImpactAlpha", "https://impactalpha.com/feed/")
-]
+GLOBAL_IMPACT_FEEDS = []
 
 IMPACTON_ALLOWED_SECTIONS = {"산업", "정책", "투자·평가", "투자.평가"}
 
@@ -5197,7 +5195,6 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
         "Trellis": ("trellis", "https://trellis.net/wp-content/themes/greenbiz/static/logo-trellis.svg"),
         "Bloomberg Green": ("bloomberg", "https://www.bloomberg.com/favicon.ico"),
         "CTVC": ("ctvc", "https://www.ctvc.co/assets/img/logo.svg?v=af7ed10043"),
-        "ImpactAlpha": ("impactalpha", "https://impactalpha.com/wp-content/themes/impactalpha/assets/images/ia-subtitle-logo-color.svg"),
         "Causeartist": ("causeartist", "https://causeartist.com/favicon.png"),
     }
 
@@ -5956,7 +5953,6 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
         .impact-brand-trellis { box-shadow: inset 0 4px 0 #15803d; }
         .impact-brand-bloomberg { box-shadow: inset 0 4px 0 #65a30d; }
         .impact-brand-ctvc { box-shadow: inset 0 4px 0 #7c3aed; }
-        .impact-brand-impactalpha { box-shadow: inset 0 4px 0 #ec4899; }
         .impact-brand-causeartist { box-shadow: inset 0 4px 0 #0f766e; }
         .impact-brand-unicorn { box-shadow: inset 0 4px 0 #111827; }
         .impact-brand-dealsite { box-shadow: inset 0 4px 0 #0f172a; }
