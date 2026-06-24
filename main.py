@@ -128,6 +128,7 @@ MAX_CANDIDATE_NEWS_PER_CATEGORY = 30
 MAX_RANKED_ISSUES_PER_CATEGORY = 8
 MAX_VCAC_NEWS_PER_SOURCE = 8
 MAX_AI_NEWS_PER_SOURCE = 8
+MAX_BCG_MBB_INSIGHTS = MAX_NEWS_PER_CATEGORY
 SUMMARY_LINE_COUNT = 3
 SUMMARY_MAX_CHARS = 145
 SUMMARY_INPUT_MAX_CHARS = 20000
@@ -1270,6 +1271,29 @@ def should_exclude_bcg_item(title, source_url=""):
         return True
     return False
 
+def select_bcg_items(items, limit=MAX_BCG_MBB_INSIGHTS):
+    selected = []
+    seen_urls = set()
+    seen_title_keys = set()
+    for item in items or []:
+        title = normalize_space(item.get("title", ""))
+        source_url = normalize_space(item.get("source_url", ""))
+        title_key = compact_text(title)
+        if not title or should_exclude_bcg_item(title, source_url):
+            continue
+        if source_url and source_url in seen_urls:
+            continue
+        if title_key and title_key in seen_title_keys:
+            continue
+        selected.append(item)
+        if source_url:
+            seen_urls.add(source_url)
+        if title_key:
+            seen_title_keys.add(title_key)
+        if len(selected) >= limit:
+            break
+    return selected
+
 def build_mbb_item(source, title, source_url, published_date, description="", image_url="", raw_text=""):
     summary_source = clean_summary_source_text(
         normalize_space(raw_text) or normalize_space(description),
@@ -1891,10 +1915,10 @@ def fetch_bcg_items(target_date):
         if item.get("source_url"):
             merged[item["source_url"]] = item
     if merged:
-        return sorted(merged.values(), key=lambda item: item.get("title", ""))
+        return select_bcg_items(sorted(merged.values(), key=lambda item: item.get("title", "")))
 
     try:
-        return fetch_bcg_items_from_google_news(target_date)
+        return select_bcg_items(fetch_bcg_items_from_google_news(target_date))
     except Exception as exc:
         raise RuntimeError(
             f"BCG listing, sitemap, and RSS fetch failed: {direct_error}; {reader_error}; {sitemap_error}; {exc}"
@@ -1924,10 +1948,7 @@ def fetch_industry_trend(target_date):
         try:
             source_items = fetcher(target_date)
             if source == "BCG":
-                source_items = [
-                    item for item in source_items
-                    if not should_exclude_bcg_item(item.get("title", ""), item.get("source_url", ""))
-                ]
+                source_items = select_bcg_items(source_items)
             if not source_items and source == "McKinsey" and prev_mckinsey:
                 items.extend(prev_mckinsey)
                 print(f"  - McKinsey MBB insights: 신규 없음, 이전 게시물 {len(prev_mckinsey)}건 유지")
@@ -1941,10 +1962,7 @@ def fetch_industry_trend(target_date):
             if source == "McKinsey" and not fallback:
                 fallback = prev_mckinsey
             if source == "BCG":
-                fallback = [
-                    item for item in fallback
-                    if not should_exclude_bcg_item(item.get("title", ""), item.get("source_url", ""))
-                ]
+                fallback = select_bcg_items(fallback)
             items.extend(fallback)
             print(f"  - {source} MBB insights fetch failed, cache {len(fallback)}건 사용: {exc}")
 
