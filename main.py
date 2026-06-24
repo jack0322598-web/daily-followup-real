@@ -3757,9 +3757,8 @@ def fetch_newsletter_emails(gmail_user, gmail_password, target_date, seen_links,
             "authenticationfailed",
             "invalid credentials",
         )):
-            raise RuntimeError(
-                "Newsletter Gmail authentication failed. Refresh GMAIL_APP_PASSWORD in CircleCI."
-            ) from e
+            print("  - Newsletter Gmail authentication failed; skipping newsletter sources.")
+            return collected
         print(f"  - Newsletter IMAP fetch failed: {e}")
     except Exception as e:
         print(f"  - Newsletter fetch failed: {e}")
