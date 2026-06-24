@@ -372,6 +372,120 @@ MACRO_ALLOWED_SOURCE_QUERY = " OR ".join(
     f"site:{domain}" for domain in MACRO_ALLOWED_SOURCE_MAP
 )
 
+AP_BUSINESS_SOURCE_NAME = "AP News"
+AP_BUSINESS_SITE_QUERY = "site:apnews.com"
+AP_BUSINESS_CONTEXT = "AP Business macroeconomic and policy news."
+
+YAHOO_FINANCE_SOURCE_NAME = "Yahoo Finance"
+YAHOO_FINANCE_ECONOMY_URL = "https://finance.yahoo.com/economy/"
+YAHOO_FINANCE_SITE_QUERY = "site:finance.yahoo.com/economy"
+YAHOO_FINANCE_CONTEXT = "Yahoo Finance economic news and analysis."
+YAHOO_FINANCE_ECONOMY_LINK_CACHE = None
+YAHOO_FINANCE_ARTICLE_CACHE = {}
+
+MACRO_AP_BUSINESS_QUERIES = {
+    ("미국", "경제지표"): "United States (PCE OR CPI OR GDP OR jobs report OR unemployment OR inflation OR retail sales OR consumer prices)",
+    ("미국", "관세"): "United States (tariffs OR protectionism OR USTR OR trade pressure OR import restrictions OR Trump tariffs)",
+    ("미국", "통화정책"): "United States (Federal Reserve OR Fed OR FOMC OR Jerome Powell OR monetary policy OR rate cut OR rate hike)",
+    ("미국", "외교"): "United States (diplomacy OR sanctions OR US-China tensions OR China sanctions OR allies OR semiconductor export controls)",
+    ("한국", "경제지표"): "South Korea (consumer prices OR GDP OR growth OR employment report OR exports OR imports OR unemployment)",
+    ("한국", "통화정책"): "South Korea (Bank of Korea OR BOK OR interest rates OR monetary policy OR Rhee Chang-yong)",
+    ("유럽", "통화정책"): "ECB OR European Central Bank OR eurozone rates OR Lagarde monetary policy",
+    ("중국", "통화정책"): "China (People's Bank of China OR PBOC OR LPR OR reserve requirement ratio OR RRR cut OR stimulus)",
+}
+
+MACRO_YAHOO_FINANCE_QUERIES = {
+    ("미국", "경제지표"): "PCE OR CPI OR GDP OR PMI OR ISM OR jobs report OR unemployment OR inflation OR retail sales OR consumer confidence OR stock market OR S&P 500 OR Nasdaq OR Dow",
+    ("미국", "관세"): "tariffs OR trade war OR protectionism OR USTR OR trade pressure OR import duties OR import restrictions OR Trump tariffs",
+    ("미국", "통화정책"): "Federal Reserve OR Fed OR FOMC OR Jerome Powell OR Kevin Warsh OR interest rates OR interest-rate forecast OR rate bets OR rate cut OR rate hike OR Treasury yields OR dollar",
+    ("미국", "외교"): "diplomacy OR sanctions OR US-China tensions OR China sanctions OR allies OR semiconductor export controls OR trade talks",
+    ("한국", "경제지표"): "South Korea OR Korea OR Kospi OR won OR consumer prices OR GDP OR growth OR employment report OR exports OR imports OR unemployment OR trade balance",
+    ("한국", "통화정책"): "South Korea OR Korea OR Bank of Korea OR BOK OR interest rates OR monetary policy OR rate decision OR Rhee Chang-yong OR won",
+    ("유럽", "통화정책"): "ECB OR European Central Bank OR eurozone rates OR Lagarde monetary policy OR European bond yields",
+    ("중국", "통화정책"): "China (People's Bank of China OR PBOC OR LPR OR reserve requirement ratio OR RRR cut OR stimulus OR yuan)",
+}
+
+MACRO_AP_BUSINESS_MATCH_RULES = {
+    ("미국", "경제지표"): {
+        "precheck_any": ("pce", "cpi", "gdp", "jobs", "employment", "unemployment", "inflation", "retail sales", "consumer prices"),
+        "required_groups": (
+            ("united states", "u.s.", "us ", "american", "fed", "federal reserve"),
+            ("pce", "cpi", "gdp", "jobs", "employment", "unemployment", "inflation", "retail sales", "consumer prices"),
+        ),
+    },
+    ("미국", "관세"): {
+        "precheck_any": ("tariff", "tariffs", "trade", "ustr", "protectionism", "import restrictions", "duties"),
+        "required_groups": (
+            ("united states", "u.s.", "us ", "trump", "white house", "ustr"),
+            ("tariff", "tariffs", "trade", "ustr", "protectionism", "import restrictions", "duties"),
+        ),
+    },
+    ("미국", "통화정책"): {
+        "precheck_any": ("federal reserve", "fed", "fomc", "powell", "interest rates", "rate cut", "rate hike"),
+        "required_groups": (
+            ("federal reserve", "fed", "fomc", "powell"),
+            ("interest rate", "interest rates", "monetary policy", "rate cut", "rate hike", "holds rates", "raises rates", "cuts rates"),
+        ),
+    },
+    ("미국", "외교"): {
+        "precheck_any": ("diplomacy", "sanctions", "china", "allies", "semiconductor", "export controls", "trade talks"),
+        "required_groups": (
+            ("united states", "u.s.", "us ", "trump", "white house", "washington", "china"),
+            ("diplomacy", "sanctions", "china", "allies", "semiconductor", "export controls", "security", "trade talks"),
+        ),
+    },
+    ("한국", "경제지표"): {
+        "precheck_any": ("south korea", "korea", "consumer prices", "gdp", "growth", "employment", "exports", "imports", "unemployment", "trade balance"),
+        "required_groups": (
+            ("south korea", "korea"),
+            ("consumer prices", "gdp", "growth", "employment", "exports", "imports", "unemployment", "trade balance"),
+        ),
+    },
+    ("한국", "통화정책"): {
+        "precheck_any": ("bank of korea", "bok", "interest rates", "monetary policy", "rate decision"),
+        "required_groups": (
+            ("bank of korea", "bok", "south korea", "korea"),
+            ("interest rate", "interest rates", "monetary policy", "rate decision", "rate cut", "rate hike"),
+        ),
+    },
+    ("유럽", "통화정책"): {
+        "precheck_any": ("ecb", "european central bank", "eurozone", "lagarde", "interest rates"),
+        "required_groups": (
+            ("ecb", "european central bank", "eurozone", "lagarde"),
+        ),
+    },
+    ("중국", "통화정책"): {
+        "precheck_any": ("china", "people's bank of china", "pboc", "lpr", "reserve requirement", "stimulus", "yuan"),
+        "required_groups": (
+            ("china", "people's bank of china", "pboc", "lpr", "reserve requirement", "stimulus", "yuan"),
+        ),
+    },
+}
+
+MACRO_YAHOO_FINANCE_MATCH_RULES = {
+    **MACRO_AP_BUSINESS_MATCH_RULES,
+    ("미국", "경제지표"): {
+        "precheck_any": ("pce", "cpi", "gdp", "pmi", "ism", "jobs", "employment", "unemployment", "inflation", "retail sales", "consumer prices", "consumer confidence", "housing", "home sales", "economic growth"),
+        "required_groups": (
+            ("united states", "u.s.", "us ", "american", "wall street", "s&p", "nasdaq", "dow", "fed", "federal reserve"),
+            ("pce", "cpi", "gdp", "pmi", "ism", "jobs", "employment", "unemployment", "inflation", "retail sales", "consumer prices", "consumer confidence", "housing", "home sales", "economic growth"),
+        ),
+    },
+    ("미국", "관세"): {
+        "precheck_any": ("tariff", "tariffs", "trade war", "trade", "ustr", "protectionism", "import restrictions", "import duties", "duties"),
+        "required_groups": (
+            ("united states", "u.s.", "us ", "trump", "white house", "ustr", "washington"),
+            ("tariff", "tariffs", "trade war", "trade", "ustr", "protectionism", "import restrictions", "import duties", "duties"),
+        ),
+    },
+    ("미국", "통화정책"): {
+        "precheck_any": ("federal reserve", "fed", "fomc", "powell", "warsh", "interest rates", "interest-rate", "rate cut", "rate hike", "rate bets", "rate forecast", "treasury yields", "bond yields"),
+        "required_groups": (
+            ("federal reserve", "fed", "fomc", "powell", "warsh", "treasury yields", "bond yields", "interest rates", "interest-rate", "rate bets", "rate forecast"),
+        ),
+    },
+}
+
 def trend_category_key(section_id, group_title, category_name):
     return f"{section_id}::{group_title}::{category_name}"
 
@@ -1789,6 +1903,71 @@ def get_macro_source_domain(url):
 def is_allowed_macro_source(url):
     return bool(get_macro_source_domain(url))
 
+def is_ap_news_source(url):
+    netloc = normalize_news_netloc(url)
+    return netloc == "apnews.com" or netloc.endswith(".apnews.com")
+
+def is_yahoo_finance_source(url):
+    parsed = urllib.parse.urlparse(url or "")
+    netloc = parsed.netloc.lower()
+    if netloc.startswith("www."):
+        netloc = netloc[4:]
+    path = parsed.path.lower()
+    return netloc == "finance.yahoo.com" and ("/articles/" in path or path.startswith("/news/"))
+
+def fetch_yahoo_finance_economy_links():
+    global YAHOO_FINANCE_ECONOMY_LINK_CACHE
+    if YAHOO_FINANCE_ECONOMY_LINK_CACHE is not None:
+        return list(YAHOO_FINANCE_ECONOMY_LINK_CACHE)
+    links = []
+    seen = set()
+    try:
+        page_html = fetch_text(YAHOO_FINANCE_ECONOMY_URL, timeout=20)
+        html_head = page_html[:500].lower()
+        if "<html" not in html_head and "<!doctype" not in html_head:
+            YAHOO_FINANCE_ECONOMY_LINK_CACHE = ()
+            return []
+        soup = BeautifulSoup(page_html, "html.parser")
+        for anchor in soup.select("a[href]"):
+            href = urllib.parse.urljoin(YAHOO_FINANCE_ECONOMY_URL, anchor.get("href") or "")
+            href = clean_tracking_url(href)
+            if not is_yahoo_finance_source(href):
+                continue
+            if href in seen:
+                continue
+            seen.add(href)
+            links.append(href)
+    except Exception as e:
+        print(f"  - Yahoo Finance economy listing failed: {e}")
+    YAHOO_FINANCE_ECONOMY_LINK_CACHE = tuple(links)
+    return links
+
+def fetch_yahoo_finance_article_metadata(url):
+    if url in YAHOO_FINANCE_ARTICLE_CACHE:
+        return YAHOO_FINANCE_ARTICLE_CACHE[url]
+    metadata = {"title": "", "description": "", "published_date": None, "body": ""}
+    try:
+        article_html = fetch_text(url, timeout=20)
+        soup = BeautifulSoup(article_html, "html.parser")
+        title = extract_page_title(soup)
+        title = re.sub(r"\s*[|-]\s*Yahoo Finance\s*$", "", title, flags=re.IGNORECASE).strip()
+        description = extract_meta_content(
+            soup,
+            {"name": "description"},
+            {"property": "og:description"},
+            {"name": "twitter:description"},
+        )
+        metadata = {
+            "title": title,
+            "description": description,
+            "published_date": parse_article_date_from_html(article_html),
+            "body": extract_best_article_text(soup),
+        }
+    except Exception as e:
+        print(f"  - Yahoo Finance article failed ({url}): {e}")
+    YAHOO_FINANCE_ARTICLE_CACHE[url] = metadata
+    return metadata
+
 def normalize_macro_source_name(url, fallback_source_name=""):
     domain = get_macro_source_domain(url)
     if domain:
@@ -1882,6 +2061,42 @@ MACRO_MATCH_RULES = {
 
 def contains_macro_token(text, tokens):
     return any(token.lower() in text for token in tokens)
+
+def is_foreign_macro_candidate(match_rules, group_title, category_name, *parts):
+    rule = match_rules.get((group_title, category_name))
+    if not rule:
+        return True
+    haystack = normalize_space(" ".join(str(part or "") for part in parts)).lower()
+    exclude_any = rule.get("exclude_any", ())
+    if exclude_any and contains_macro_token(haystack, exclude_any):
+        return False
+    precheck_any = rule.get("precheck_any", ())
+    if precheck_any and not contains_macro_token(haystack, precheck_any):
+        return False
+    return True
+
+def is_foreign_macro_match(match_rules, group_title, category_name, *parts):
+    rule = match_rules.get((group_title, category_name))
+    if not rule:
+        return True
+    haystack = normalize_space(" ".join(str(part or "") for part in parts)).lower()
+    exclude_any = rule.get("exclude_any", ())
+    if exclude_any and contains_macro_token(haystack, exclude_any):
+        return False
+    required_groups = rule.get("required_groups", ())
+    return all(contains_macro_token(haystack, tokens) for tokens in required_groups)
+
+def is_ap_business_macro_candidate(group_title, category_name, *parts):
+    return is_foreign_macro_candidate(MACRO_AP_BUSINESS_MATCH_RULES, group_title, category_name, *parts)
+
+def is_ap_business_macro_match(group_title, category_name, *parts):
+    return is_foreign_macro_match(MACRO_AP_BUSINESS_MATCH_RULES, group_title, category_name, *parts)
+
+def is_yahoo_finance_macro_candidate(group_title, category_name, *parts):
+    return is_foreign_macro_candidate(MACRO_YAHOO_FINANCE_MATCH_RULES, group_title, category_name, *parts)
+
+def is_yahoo_finance_macro_match(group_title, category_name, *parts):
+    return is_foreign_macro_match(MACRO_YAHOO_FINANCE_MATCH_RULES, group_title, category_name, *parts)
 
 def is_macro_news_candidate(group_title, category_name, *parts):
     rule = MACRO_MATCH_RULES.get((group_title, category_name))
@@ -4982,9 +5197,160 @@ def fetch_macro_google_news_legacy(target_date, section_id, group_title, categor
         print("수집 오류:", e)
     return dedupe_news_items(news_list)
 
+def fetch_foreign_macro_source_news(
+    target_date,
+    section_id,
+    group_title,
+    category,
+    seen_links,
+    seen_titles,
+    source_name,
+    site_query,
+    source_context,
+    query_map,
+    candidate_check,
+    final_match_check,
+    source_check,
+    search_scope="(business OR economy OR markets OR inflation OR tariffs OR financial markets OR central bank)",
+    limit=MAX_NEWS_PER_CATEGORY,
+):
+    news_list = []
+    category_story_cache = []
+    query_text = query_map.get((group_title, category["name"]))
+    if not query_text:
+        return news_list
+
+    target_dot = target_date.strftime("%Y.%m.%d")
+    start_date = target_date.strftime("%Y-%m-%d")
+    end_date = (target_date + timedelta(days=1)).strftime("%Y-%m-%d")
+    scoped_query = f"({query_text})"
+    if search_scope:
+        scoped_query = f"{scoped_query} {search_scope}"
+    try:
+        query = urllib.parse.quote(
+            f"{scoped_query} {site_query} after:{start_date} before:{end_date}"
+        )
+        rss_text = fetch_text(f"https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en")
+        for item in ElementTree.fromstring(rss_text).findall(".//item"):
+            if len(news_list) >= limit:
+                break
+            title, _source_name = parse_google_news_item(item)
+            try:
+                if parsedate_to_datetime(item.findtext("pubDate", "")).astimezone(KST).strftime("%Y.%m.%d") != target_dot:
+                    continue
+            except:
+                continue
+            desc_text = strip_tags(item.findtext("description", ""))
+            if not candidate_check(group_title, category["name"], title, desc_text):
+                continue
+            google_link = item.findtext("link", "")
+            article_link = resolve_google_news_url(google_link)
+            link = article_link or google_link
+            if not source_check(link):
+                continue
+            if should_skip_search_item(section_id, category["name"], source_name, title, link):
+                continue
+            if link in seen_links or google_link in seen_links or any(is_similar_title(title, st) for st in seen_titles):
+                continue
+            article_body = fetch_article_body_text(article_link)
+            summary_source = article_body if len(article_body) >= 180 else desc_text
+            if not final_match_check(group_title, category["name"], title, desc_text, article_body):
+                continue
+            if any(
+                is_duplicate_story(title, summary_source, cached["title"], cached["text"])
+                for cached in category_story_cache
+            ):
+                continue
+
+            seen_links.add(link)
+            seen_links.add(google_link)
+            seen_titles.append(title)
+            category_story_cache.append({"title": title, "text": summary_source})
+            news_list.append({
+                "title": title,
+                "link": link,
+                "source": source_name,
+                "date": target_dot,
+                "summary": make_three_line_summary(title, summary_source, source_name, source_context),
+                "_summary_source": summary_source,
+                "_summary_context": source_context,
+            })
+    except Exception as e:
+        print(f"  - {source_name} macro failed ({group_title}/{category['name']}): {e}")
+    return dedupe_news_items(news_list)
+
+def fetch_ap_business_macro_news(target_date, section_id, group_title, category, seen_links, seen_titles, limit=MAX_NEWS_PER_CATEGORY):
+    return fetch_foreign_macro_source_news(
+        target_date,
+        section_id,
+        group_title,
+        category,
+        seen_links,
+        seen_titles,
+        AP_BUSINESS_SOURCE_NAME,
+        AP_BUSINESS_SITE_QUERY,
+        AP_BUSINESS_CONTEXT,
+        MACRO_AP_BUSINESS_QUERIES,
+        is_ap_business_macro_candidate,
+        is_ap_business_macro_match,
+        is_ap_news_source,
+        limit=limit,
+    )
+
+def fetch_yahoo_finance_macro_news(target_date, section_id, group_title, category, seen_links, seen_titles, limit=MAX_NEWS_PER_CATEGORY):
+    news_list = []
+    category_story_cache = []
+    target_date_obj = target_date.date() if isinstance(target_date, datetime) else target_date
+    target_dot = target_date_obj.strftime("%Y.%m.%d")
+    if not MACRO_YAHOO_FINANCE_QUERIES.get((group_title, category["name"])):
+        return news_list
+
+    for link in fetch_yahoo_finance_economy_links():
+        if len(news_list) >= limit:
+            break
+        if link in seen_links:
+            continue
+        metadata = fetch_yahoo_finance_article_metadata(link)
+        if metadata.get("published_date") != target_date_obj:
+            continue
+        title = metadata.get("title", "")
+        desc_text = metadata.get("description", "")
+        article_body = metadata.get("body", "")
+        if not title:
+            continue
+        if not is_yahoo_finance_macro_candidate(group_title, category["name"], title, desc_text):
+            continue
+        if should_skip_search_item(section_id, category["name"], YAHOO_FINANCE_SOURCE_NAME, title, link):
+            continue
+        if any(is_similar_title(title, st) for st in seen_titles):
+            continue
+        summary_source = article_body if len(article_body) >= 180 else desc_text
+        if not is_yahoo_finance_macro_match(group_title, category["name"], title, desc_text, article_body):
+            continue
+        if any(
+            is_duplicate_story(title, summary_source, cached["title"], cached["text"])
+            for cached in category_story_cache
+        ):
+            continue
+
+        seen_links.add(link)
+        seen_titles.append(title)
+        category_story_cache.append({"title": title, "text": summary_source})
+        news_list.append({
+            "title": title,
+            "link": link,
+            "source": YAHOO_FINANCE_SOURCE_NAME,
+            "date": target_dot,
+            "summary": make_three_line_summary(title, summary_source, YAHOO_FINANCE_SOURCE_NAME, YAHOO_FINANCE_CONTEXT),
+            "_summary_source": summary_source,
+            "_summary_context": YAHOO_FINANCE_CONTEXT,
+        })
+
+    return dedupe_news_items(news_list)
+
 def fetch_google_news_for_category(target_date, section_id, group_title, category, seen_links, seen_titles, previous_titles=None, limit=MAX_NEWS_PER_CATEGORY, forced_source=None, trend_keywords=None):
     if section_id == "macro":
-        return fetch_macro_google_news_legacy(
+        local_news = fetch_macro_google_news_legacy(
             target_date,
             section_id,
             group_title,
@@ -4995,6 +5361,25 @@ def fetch_google_news_for_category(target_date, section_id, group_title, categor
             limit,
             forced_source,
         )
+        ap_news = fetch_ap_business_macro_news(
+            target_date,
+            section_id,
+            group_title,
+            category,
+            seen_links,
+            seen_titles,
+            limit,
+        )
+        yahoo_news = fetch_yahoo_finance_macro_news(
+            target_date,
+            section_id,
+            group_title,
+            category,
+            seen_links,
+            seen_titles,
+            limit,
+        )
+        return dedupe_news_items(local_news + ap_news + yahoo_news)
 
     candidates = []
     candidate_links = set()
