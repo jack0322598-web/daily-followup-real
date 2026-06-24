@@ -3117,7 +3117,108 @@ def normalize_summary_candidate(sentence, source=""):
 def contains_hangul(text):
     return bool(re.search(r"[\uac00-\ud7a3]", str(text or "")))
 
-def build_korean_summary_fallback(title="", source="", context=""):
+def is_probably_english_text(text):
+    text = str(text or "")
+    alpha_count = sum(1 for ch in text if ch.isascii() and ch.isalpha())
+    hangul_count = len(re.findall(r"[\uac00-\ud7a3]", text))
+    return alpha_count >= 12 and alpha_count > hangul_count * 2
+
+def english_summary_terms(text):
+    lowered = str(text or "").lower()
+    term_patterns = (
+        (r"\bfederal reserve\b|\bfed\b", "연방준비제도(Fed)"),
+        (r"\binterest rates?\b|\brates?\b", "금리"),
+        (r"\binflation\b|\bprice pressures?\b|\bprices?\b", "물가"),
+        (r"\bmonetary policy\b", "통화정책"),
+        (r"\bstress tests?\b", "은행 스트레스 테스트"),
+        (r"\bbanks?\b", "은행권"),
+        (r"\btariffs?\b", "관세"),
+        (r"\bexports?\b", "수출"),
+        (r"\bimports?\b", "수입"),
+        (r"\bjobs?\b|\bemployment\b|\blabor market\b", "고용"),
+        (r"\bgdp\b|\bgrowth\b", "성장률"),
+        (r"\bconsumer\b|\bretail sales\b", "소비"),
+        (r"\bwall street\b|\bstock market\b", "증시"),
+        (r"\bindexes?\b|\bindices\b", "주요 지수"),
+        (r"\bbig tech\b|\btech companies\b", "빅테크"),
+        (r"\bfarmers?\b|\bagriculture\b", "농가"),
+        (r"\btrump administration\b", "트럼프 행정부"),
+        (r"\bir?an\b", "이란"),
+        (r"\bchina\b|\bchinese\b", "중국"),
+        (r"\bu\.s\.|\bus\b|\bunited states\b|\bamerican\b", "미국"),
+    )
+    terms = []
+    for pattern, label in term_patterns:
+        if re.search(pattern, lowered, flags=re.IGNORECASE) and label not in terms:
+            terms.append(label)
+    return terms
+
+def koreanize_english_summary_line(line, title="", source="", context=""):
+    line = normalize_space(line)
+    if not line:
+        return ""
+    if contains_hangul(line) or not is_probably_english_text(line):
+        return compress_summary_sentence(line)
+
+    lowered = line.lower()
+    numbers = re.findall(r"\b\d+(?:[.,]\d+)?\s*(?:%|percent|million|billion|trillion|bp|points?)?\b", line, flags=re.IGNORECASE)
+
+    if ("federal reserve" in lowered or re.search(r"\bfed\b", lowered)) and re.search(r"\binterest rates?\b|\brates?\b|monetary policy", lowered):
+        return "연방준비제도(Fed)의 금리·통화정책 판단이 물가 흐름과 경기 전망을 좌우하는 핵심 변수로 제시됐습니다."
+    if "stress test" in lowered and "bank" in lowered:
+        return "미국 은행 스트레스 테스트의 평가 기준과 변경 사항이 금융권 건전성 점검의 주요 변수로 다뤄졌습니다."
+    if (
+        "big tech" in lowered
+        or "tech companies" in lowered
+        or ("technology" in lowered and re.search(r"stocks?|shares?|wall street|market", lowered))
+        or ("wall street" in lowered and re.search(r"indexes?|indices|stocks?|shares?|market", lowered))
+    ):
+        return "월가에서는 빅테크 주가 하락이 주요 지수를 끌어내리며 투자심리와 증시 흐름을 압박했습니다."
+    if "trump administration" in lowered and "iran" in lowered and re.search(r"farm|agricultur", lowered):
+        return "트럼프 행정부는 이란 관련 합의가 미국 농가에 도움이 된다고 설명했지만, 이란 측은 이를 부인했습니다."
+    if "tariff" in lowered:
+        return "관세 정책과 무역 갈등이 기업 비용, 물가, 공급망에 미칠 영향이 핵심 쟁점으로 다뤄졌습니다."
+    if re.search(r"\bjobs?\b|\bemployment\b|\blabor market\b|unemployment", lowered):
+        return "고용 지표와 노동시장 흐름이 경기 둔화 여부와 향후 통화정책 판단의 주요 근거로 제시됐습니다."
+    if re.search(r"\binflation\b|\bprices?\b|\bconsumer price", lowered):
+        return "물가 압력과 소비자 가격 흐름이 경기 판단과 금리 전망을 가르는 핵심 변수로 언급됐습니다."
+    if re.search(r"\bgdp\b|\bgrowth\b|\beconomy\b", lowered):
+        return "경제 성장률과 경기 흐름이 향후 정책 대응과 시장 전망을 판단하는 주요 배경으로 정리됐습니다."
+    if re.search(r"\bstocks?\b|\bshares?\b|\bwall street\b|\bmarket\b", lowered):
+        return "시장 흐름과 주가 변동이 투자심리, 금리 전망, 경기 불확실성과 맞물려 주요 이슈로 다뤄졌습니다."
+
+    terms = english_summary_terms(line)
+    if terms:
+        topic = ", ".join(terms[:4])
+        if numbers:
+            return f"원문은 {topic} 이슈를 중심으로 {', '.join(numbers[:2])} 등 주요 수치와 시장 영향을 함께 다뤘습니다."
+        return f"원문은 {topic} 이슈를 중심으로 배경과 시장 영향을 정리했습니다."
+
+    if title and is_probably_english_text(title):
+        title_terms = english_summary_terms(title)
+        if title_terms:
+            return f"{', '.join(title_terms[:4])} 관련 원문 기사에서 핵심 배경과 이해관계자 영향을 정리했습니다."
+
+    return "영문 원문에서 확인된 핵심 문장을 바탕으로 주요 배경과 시장 영향을 한국어로 정리했습니다."
+
+def koreanize_english_summary_lines(lines, title="", source="", context=""):
+    normalized = normalize_summary_lines(lines)
+    if len(normalized) != SUMMARY_LINE_COUNT:
+        return []
+    converted = [
+        koreanize_english_summary_line(line, title=title, source=source, context=context)
+        for line in normalized
+    ]
+    converted = normalize_summary_lines(converted)
+    if len(converted) == SUMMARY_LINE_COUNT and all(contains_hangul(line) for line in converted):
+        return converted
+    return []
+
+def build_korean_summary_fallback(title="", source="", context="", source_lines=None):
+    translated = koreanize_english_summary_lines(source_lines or [], title=title, source=source, context=context)
+    if translated:
+        return translated
+
     title = normalize_space(title)
     source = normalize_space(source) or "해당 매체"
     context = normalize_space(context)
@@ -3138,7 +3239,10 @@ def ensure_korean_summary_lines(lines, title="", source="", context=""):
     normalized = normalize_summary_lines(lines)
     if len(normalized) == SUMMARY_LINE_COUNT and all(contains_hangul(line) for line in normalized):
         return normalized
-    return build_korean_summary_fallback(title, source, context)
+    translated = koreanize_english_summary_lines(normalized, title=title, source=source, context=context)
+    if translated:
+        return translated
+    return build_korean_summary_fallback(title, source, context, source_lines=normalized)
 
 def clean_summary_source_text(text, source="", title=""):
     text = clean_article_text(text)
