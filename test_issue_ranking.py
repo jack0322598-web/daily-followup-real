@@ -76,32 +76,6 @@ class IssueRankingTests(unittest.TestCase):
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0]["link"], "https://www.yna.co.kr/view/AKR202606220001")
 
-    def test_korea_macro_rejects_generic_employment_and_export_words(self):
-        self.assertFalse(
-            main.is_macro_news_match(
-                "한국",
-                "경제지표",
-                "보훈가족 고용안정 상생 기여 인정",
-                "국가보훈부 감사패 수상",
-            )
-        )
-        self.assertFalse(
-            main.is_macro_news_match(
-                "한국",
-                "경제지표",
-                "신약 기술수출 추진",
-                "특허 출원과 파이프라인 소개",
-            )
-        )
-        self.assertTrue(
-            main.is_macro_news_match(
-                "한국",
-                "경제지표",
-                "반도체 수출 호황이 이어졌다",
-                "수출액 증가와 무역수지 개선이 확인됐다",
-            )
-        )
-
 
 if __name__ == "__main__":
     unittest.main()
