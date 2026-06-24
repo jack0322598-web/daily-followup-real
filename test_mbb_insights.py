@@ -221,6 +221,23 @@ The second paragraph provides additional evidence and context for the reader.
             article, "https://www.bcg.com/publications/2026/complete", date(2026, 6, 18)
         ))
 
+    def test_bcg_selection_filters_duplicates_and_limits_to_three(self):
+        items = [
+            main.build_mbb_item("BCG", "AI transformation priorities", "https://www.bcg.com/publications/2026/ai-1", date(2026, 6, 23), "Description one."),
+            main.build_mbb_item("BCG", "AI transformation priorities", "https://www.bcg.com/publications/2026/ai-duplicate", date(2026, 6, 23), "Duplicate."),
+            main.build_mbb_item("BCG", "Supply chain reset", "https://www.bcg.com/publications/2026/supply-chain", date(2026, 6, 23), "Description two."),
+            main.build_mbb_item("BCG", "Pricing strategy update", "https://www.bcg.com/publications/2026/pricing", date(2026, 6, 23), "Description three."),
+            main.build_mbb_item("BCG", "金融科技新篇章：规模化领先者与新兴破局者", "https://www.bcg.com/publications/2026/china-global-fintech-report", date(2026, 6, 23), "Excluded."),
+            main.build_mbb_item("BCG", "Operating model redesign", "https://www.bcg.com/publications/2026/operating", date(2026, 6, 23), "Description four."),
+        ]
+
+        selected = main.select_bcg_items(items)
+
+        self.assertEqual(
+            [item["title"] for item in selected],
+            ["AI transformation priorities", "Supply chain reset", "Pricing strategy update"],
+        )
+
     def test_bcg_cleaner_prefers_key_takeaways_over_navigation(self):
         markdown = """Title: BCG Sample
 URL Source: https://www.bcg.com/publications/2026/sample
@@ -350,6 +367,52 @@ Save It For Later
         self.assertEqual(item["report_title"], "How leaders can help their organizations metabolize strain")
         self.assertIn("Employees who report experiencing trauma", item["chart_image_alt"])
 
+    def test_mckinsey_ai_pricing_fallback_restores_chart_visual(self):
+        item = main.build_mckinsey_fallback_item({
+            "title": "The AI advantage in B2B pricing",
+            "published_date": "2026.06.23",
+            "source_url": "https://www.mckinsey.com/featured-insights/week-in-charts/the-ai-advantage-in-b2b-pricing",
+        })
+
+        self.assertEqual(item["date"], "2026.06.23")
+        self.assertTrue(item["chart_image_url"].startswith("data:image/svg+xml"))
+        self.assertIn("agentic AI breakthrough in pricing", item["chart_image_alt"])
+        self.assertEqual(
+            item["report_url"],
+            "https://www.mckinsey.com/capabilities/growth-marketing-and-sales/our-insights/b2b-pricing-navigating-the-next-phase-of-the-ai-revolution",
+        )
+        self.assertIn("생성형 AI", item["description_ko"])
+
+    def test_mckinsey_parser_prefers_chart_srcset_images(self):
+        article_html = """
+        <html>
+          <head>
+            <title>The AI advantage in B2B pricing | McKinsey</title>
+            <meta name="itemdate" content="2026-06-23">
+          </head>
+          <body>
+            <h1>The AI advantage in B2B pricing</h1>
+            <picture>
+              <source srcset="/~/media/mckinsey/featured%20insights/the%20week%20in%20charts/2026/june/exhibits/aipricing.svgz 1x">
+              <img alt="Image: Gen AI is more mature, but an agentic AI breakthrough in pricing is on the horizon.">
+            </picture>
+            <p>Image description: A dot chart titled “Gen AI is more mature, but an agentic AI breakthrough in pricing is on the horizon”. Source: McKinsey AI in Pricing Survey. End of image description.</p>
+            <a href="/capabilities/growth-marketing-and-sales/our-insights/b2b-pricing-navigating-the-next-phase-of-the-ai-revolution">B2B pricing: Navigating the next phase</a>
+          </body>
+        </html>
+        """
+
+        item = main.parse_mckinsey_week_article(
+            article_html,
+            "https://www.mckinsey.com/featured-insights/week-in-charts/the-ai-advantage-in-b2b-pricing",
+            {"published_date": "2026.06.23"},
+        )
+
+        self.assertIn("/~/media/mckinsey/featured%20insights/", item["chart_image_url"])
+        self.assertIn("aipricing.svgz", item["chart_image_url"])
+        self.assertIn("Gen AI is more mature", item["chart_image_alt"])
+        self.assertIn("/our-insights/b2b-pricing-navigating-the-next-phase", item["report_url"])
+
     def test_industry_trend_preserves_legacy_mckinsey_item_after_fetch_failure(self):
         previous_item = {
             "source": "McKinsey",
@@ -375,6 +438,25 @@ Save It For Later
 
         self.assertIn(previous_item, items)
         self.assertEqual(saved_payload["mckinsey_last_known"], [previous_item])
+
+    def test_industry_trend_limits_bcg_to_three_items(self):
+        bcg_items = [
+            main.build_mbb_item("BCG", f"BCG insight {index}", f"https://www.bcg.com/publications/2026/bcg-{index}", date(2026, 6, 23), f"Description {index}.")
+            for index in range(5)
+        ]
+        saved_payload = {}
+
+        with (
+            patch.object(main, "load_industry_trend_cache", return_value={}),
+            patch.object(main, "fetch_mckinsey_items", return_value=[]),
+            patch.object(main, "fetch_bain_items", return_value=[]),
+            patch.object(main, "fetch_bcg_items", return_value=bcg_items),
+            patch.object(main, "save_industry_trend_cache", side_effect=saved_payload.update),
+        ):
+            items = main.fetch_industry_trend(date(2026, 6, 23))
+
+        self.assertEqual(len([item for item in items if item.get("source") == "BCG"]), 3)
+        self.assertEqual(len([item for item in saved_payload["items"] if item.get("source") == "BCG"]), 3)
 
     def test_render_html_includes_industrytrend_section(self):
         target_date = date(2026, 6, 18)

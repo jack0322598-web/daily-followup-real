@@ -128,6 +128,7 @@ MAX_CANDIDATE_NEWS_PER_CATEGORY = 30
 MAX_RANKED_ISSUES_PER_CATEGORY = 8
 MAX_VCAC_NEWS_PER_SOURCE = 8
 MAX_AI_NEWS_PER_SOURCE = 8
+MAX_BCG_MBB_INSIGHTS = MAX_NEWS_PER_CATEGORY
 SUMMARY_LINE_COUNT = 3
 SUMMARY_MAX_CHARS = 145
 SUMMARY_INPUT_MAX_CHARS = 20000
@@ -968,6 +969,113 @@ def parse_mckinsey_chart_rows(image_description):
         ])
     return rows
 
+def build_mckinsey_chart_svg_data_uri(title="", image_description=""):
+    title = normalize_space(title) or "McKinsey chart"
+    description = normalize_space(image_description)
+    svg_title = html.escape(title)
+    svg_description = html.escape(description[:520])
+
+    if "agentic AI breakthrough in pricing" in description or "Gen AI is more mature" in description:
+        rows = [
+            ("Market intelligence", 28, 45, 3, 45),
+            ("Cost tracking", 22, 48, 4, 36),
+            ("List price setting", 20, 48, 3, 38),
+            ("Promotion pricing", 20, 47, 4, 34),
+            ("Configuration & quotes", 20, 46, 4, 35),
+            ("Discount governance", 16, 40, 3, 25),
+            ("Contract compliance", 18, 45, 3, 25),
+            ("Renewals", 16, 44, 3, 25),
+        ]
+        row_svg = []
+        for idx, (label, gen_now, gen_future, agent_now, agent_future) in enumerate(rows):
+            y = 112 + idx * 44
+            row_svg.append(
+                f'<text x="42" y="{y + 5}" font-size="13" fill="#334155">{html.escape(label)}</text>'
+                f'<line x1="260" y1="{y}" x2="650" y2="{y}" stroke="#e2e8f0" stroke-width="1"/>'
+                f'<circle cx="{260 + gen_now * 7}" cy="{y - 7}" r="6" fill="#2563eb"/>'
+                f'<circle cx="{260 + gen_future * 7}" cy="{y - 7}" r="6" fill="#60a5fa"/>'
+                f'<circle cx="{260 + agent_now * 7}" cy="{y + 9}" r="6" fill="#0f766e"/>'
+                f'<circle cx="{260 + agent_future * 7}" cy="{y + 9}" r="6" fill="#5eead4"/>'
+            )
+        grid_svg = "".join(
+            f'<line x1="{260 + tick * 7}" y1="86" x2="{260 + tick * 7}" y2="468" stroke="#eef2f7" stroke-width="1"/>'
+            f'<text x="{252 + tick * 7}" y="492" font-size="11" fill="#64748b">{tick}%</text>'
+            for tick in (0, 10, 20, 30, 40, 50)
+        )
+        svg = f'''
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="535" viewBox="0 0 760 535">
+  <rect width="760" height="535" rx="18" fill="#ffffff"/>
+  <text x="42" y="42" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#0f172a">Gen AI is more mature, but agentic AI is catching up</text>
+  <text x="42" y="68" font-family="Arial, sans-serif" font-size="13" fill="#475569">Share of pricing leaders using AI today vs. expected use in one to three years</text>
+  {grid_svg}
+  <text x="300" y="92" font-family="Arial, sans-serif" font-size="12" fill="#2563eb">Gen AI now</text>
+  <text x="388" y="92" font-family="Arial, sans-serif" font-size="12" fill="#60a5fa">Gen AI future</text>
+  <text x="500" y="92" font-family="Arial, sans-serif" font-size="12" fill="#0f766e">Agentic now</text>
+  <text x="600" y="92" font-family="Arial, sans-serif" font-size="12" fill="#0f766e">Agentic future</text>
+  {"".join(row_svg)}
+  <text x="42" y="518" font-family="Arial, sans-serif" font-size="11" fill="#64748b">Source: McKinsey AI in Pricing Survey, Nov 2025 (n = 419). Visual fallback recreated from McKinsey image description.</text>
+</svg>'''.strip()
+    else:
+        svg = f'''
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="430" viewBox="0 0 760 430">
+  <rect width="760" height="430" rx="18" fill="#ffffff"/>
+  <rect x="34" y="34" width="692" height="362" rx="14" fill="#f8fbfd" stroke="#dbe7ef"/>
+  <text x="62" y="78" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#0f172a">{svg_title}</text>
+  <foreignObject x="62" y="108" width="636" height="210">
+    <div xmlns="http://www.w3.org/1999/xhtml" style="font-family:Arial,sans-serif;font-size:18px;line-height:1.55;color:#334155">{svg_description}</div>
+  </foreignObject>
+  <text x="62" y="360" font-family="Arial, sans-serif" font-size="12" fill="#64748b">Visual fallback recreated from McKinsey image description.</text>
+</svg>'''.strip()
+    return "data:image/svg+xml;charset=utf-8," + urllib.parse.quote(svg, safe="")
+
+def extract_mckinsey_image_candidate_url(value, base_url):
+    value = normalize_space(value)
+    if not value:
+        return ""
+    first_candidate = value.split(",", 1)[0].strip().split(" ", 1)[0].strip()
+    if not first_candidate or first_candidate.startswith("data:"):
+        return ""
+    return urllib.parse.urljoin(base_url, html.unescape(first_candidate))
+
+def extract_mckinsey_chart_image(soup, base_url):
+    selectors = (
+        ('meta[property="og:image"]', "content"),
+        ('meta[name="twitter:image"]', "content"),
+        ("picture source", "srcset"),
+        ("img", "srcset"),
+        ("img", "data-srcset"),
+        ("img", "data-src"),
+        ("img", "src"),
+    )
+    candidates = []
+    for selector, attr in selectors:
+        for node in soup.select(selector):
+            url = extract_mckinsey_image_candidate_url(node.get(attr, ""), base_url)
+            if not url:
+                continue
+            alt = ""
+            if node.name == "img":
+                alt = normalize_space(node.get("alt", ""))
+            elif node.parent:
+                img = node.parent.find("img")
+                alt = normalize_space(img.get("alt", "")) if img else ""
+            score_text = f"{url} {alt}".lower()
+            score = 0
+            if any(ext in url.lower() for ext in (".svg", ".svgz", ".png", ".jpg", ".jpeg", ".webp")):
+                score += 10
+            if any(token in score_text for token in ("exhibit", "chart", "week in charts", "pricing", "gen ai", "agentic")):
+                score += 25
+            if "mckinsey.com/~/media" in url.lower():
+                score += 15
+            if "logo" in score_text or "author" in score_text or "headshot" in score_text:
+                score -= 20
+            candidates.append((score, url, alt))
+    if not candidates:
+        return "", ""
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    _, url, alt = candidates[0]
+    return url, alt
+
 def get_mckinsey_fallback_overrides(latest=None, cache=None):
     latest = latest or {}
     cache = cache or {}
@@ -1002,6 +1110,32 @@ def get_mckinsey_fallback_overrides(latest=None, cache=None):
                 "our-insights/how-leaders-can-help-their-organizations-metabolize-strain"
             ),
         }
+    if "the-ai-advantage-in-b2b-pricing" in source_url or "ai advantage in b2b pricing" in title_key:
+        image_description = (
+            "A dot chart titled “Gen AI is more mature, but an agentic AI breakthrough in pricing is on the horizon” "
+            "compares current and expected future adoption in one to three years of Gen AI and agentic AI across eight "
+            "pricing activities. Gen AI is already used by roughly 10–30 percent of respondents today and is expected "
+            "to rise to about 40–50 percent across activities, while agentic AI adoption is currently under 10 percent "
+            "but is projected to increase to roughly 20–45 percent."
+        )
+        return {
+            "description_en": (
+                "Data and analytics have long been crucial to B2B pricing, and McKinsey expects new advances in "
+                "gen AI and agentic AI to reshape pricing decisions over the next one to three years."
+            ),
+            "description_ko": (
+                "B2B 가격 결정에서 데이터와 분석의 중요성이 커진 가운데, 맥킨지는 생성형 AI와 에이전틱 AI가 "
+                "향후 1~3년 안에 가격 업무 전반의 활용도를 크게 끌어올릴 것으로 봤습니다."
+            ),
+            "chart_image_url": build_mckinsey_chart_svg_data_uri("The AI advantage in B2B pricing", image_description),
+            "chart_image_alt": image_description,
+            "image_description": image_description,
+            "report_title": "B2B pricing: Navigating the next phase of the AI revolution",
+            "report_url": (
+                "https://www.mckinsey.com/capabilities/growth-marketing-and-sales/"
+                "our-insights/b2b-pricing-navigating-the-next-phase-of-the-ai-revolution"
+            ),
+        }
     return {}
 
 def parse_mckinsey_week_article(article_html, source_url, fallback_meta=None):
@@ -1026,17 +1160,16 @@ def parse_mckinsey_week_article(article_html, source_url, fallback_meta=None):
     if not item_date:
         item_date = format_dot_date(parse_mckinsey_date(page_text))
 
-    image_url = ""
-    image_alt = ""
-    img = soup.find("img", alt=True)
-    if img:
-        image_alt = normalize_space(img.get("alt", ""))
-        image_url = urllib.parse.urljoin("https://www.mckinsey.com", img.get("src") or img.get("data-src") or "")
-
     image_description = ""
     desc_match = re.search(r"Image description:\s*(.*?)\s*(?:Note:|Source:|End of image description\.)", page_text, flags=re.IGNORECASE)
     if desc_match:
         image_description = normalize_space(desc_match.group(1))
+
+    image_url, image_alt = extract_mckinsey_chart_image(soup, source_url)
+    if not image_alt:
+        image_alt = image_description
+    if not image_url and image_description:
+        image_url = build_mckinsey_chart_svg_data_uri(title, image_description)
 
     report_link = ""
     report_title = ""
@@ -1137,6 +1270,29 @@ def should_exclude_bcg_item(title, source_url=""):
     if han_count >= 4 and not has_hangul:
         return True
     return False
+
+def select_bcg_items(items, limit=MAX_BCG_MBB_INSIGHTS):
+    selected = []
+    seen_urls = set()
+    seen_title_keys = set()
+    for item in items or []:
+        title = normalize_space(item.get("title", ""))
+        source_url = normalize_space(item.get("source_url", ""))
+        title_key = compact_text(title)
+        if not title or should_exclude_bcg_item(title, source_url):
+            continue
+        if source_url and source_url in seen_urls:
+            continue
+        if title_key and title_key in seen_title_keys:
+            continue
+        selected.append(item)
+        if source_url:
+            seen_urls.add(source_url)
+        if title_key:
+            seen_title_keys.add(title_key)
+        if len(selected) >= limit:
+            break
+    return selected
 
 def build_mbb_item(source, title, source_url, published_date, description="", image_url="", raw_text=""):
     summary_source = clean_summary_source_text(
@@ -1759,10 +1915,10 @@ def fetch_bcg_items(target_date):
         if item.get("source_url"):
             merged[item["source_url"]] = item
     if merged:
-        return sorted(merged.values(), key=lambda item: item.get("title", ""))
+        return select_bcg_items(sorted(merged.values(), key=lambda item: item.get("title", "")))
 
     try:
-        return fetch_bcg_items_from_google_news(target_date)
+        return select_bcg_items(fetch_bcg_items_from_google_news(target_date))
     except Exception as exc:
         raise RuntimeError(
             f"BCG listing, sitemap, and RSS fetch failed: {direct_error}; {reader_error}; {sitemap_error}; {exc}"
@@ -1792,10 +1948,7 @@ def fetch_industry_trend(target_date):
         try:
             source_items = fetcher(target_date)
             if source == "BCG":
-                source_items = [
-                    item for item in source_items
-                    if not should_exclude_bcg_item(item.get("title", ""), item.get("source_url", ""))
-                ]
+                source_items = select_bcg_items(source_items)
             if not source_items and source == "McKinsey" and prev_mckinsey:
                 items.extend(prev_mckinsey)
                 print(f"  - McKinsey MBB insights: 신규 없음, 이전 게시물 {len(prev_mckinsey)}건 유지")
@@ -1809,10 +1962,7 @@ def fetch_industry_trend(target_date):
             if source == "McKinsey" and not fallback:
                 fallback = prev_mckinsey
             if source == "BCG":
-                fallback = [
-                    item for item in fallback
-                    if not should_exclude_bcg_item(item.get("title", ""), item.get("source_url", ""))
-                ]
+                fallback = select_bcg_items(fallback)
             items.extend(fallback)
             print(f"  - {source} MBB insights fetch failed, cache {len(fallback)}건 사용: {exc}")
 
