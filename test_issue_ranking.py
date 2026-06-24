@@ -45,6 +45,9 @@ class IssueRankingTests(unittest.TestCase):
         self.assertTrue(main.is_macro_news_match("미국", "경제지표", "美 5월 수입물가 6.7% 상승"))
         self.assertFalse(main.is_macro_news_match("미국", "경제지표", "일본, 31년 만에 기준금리 1%"))
         self.assertFalse(main.is_macro_news_match("미국", "경제지표", "뉴욕증시, FOMC 대기하며 상승"))
+        self.assertFalse(main.is_macro_news_match("한국", "경제지표", "KOTRA, 포스트 중동 TF 출범…수출 복원 지원"))
+        self.assertFalse(main.is_macro_news_match("한국", "경제지표", "에이프릴바이오, 신규 파이프라인 특허 출원…기술수출 추진"))
+        self.assertTrue(main.is_macro_news_match("한국", "경제지표", "한국 5월 수출입 동향 발표…무역수지 흑자"))
 
     def test_macro_fetch_uses_description_and_body_for_final_match(self):
         rss = """<?xml version="1.0" encoding="UTF-8"?>
