@@ -84,18 +84,27 @@ class SummaryFallbackTests(unittest.TestCase):
         batch.assert_called_once()
         single_retry.assert_called_once()
 
-    def test_korean_summary_fallback_uses_natural_briefing_language(self):
-        summary = main.build_korean_summary_fallback(
-            title="AP News reports on inflation and markets",
-            source="AP News",
-            context="거시경제 미국 경제지표 주요 뉴스입니다.",
-            source_lines=[],
+    def test_content_based_fallback_uses_article_sentences_before_safety_copy(self):
+        raw_text = """
+        Sharp drops in Big Tech companies pulled indexes mostly lower on Wall Street.
+        Investors weighed whether inflation data would change the Federal Reserve's interest-rate path.
+        The market reaction showed how technology shares and monetary policy expectations remain linked.
+        """
+
+        summary = main.make_extractive_three_line_summary(
+            "Sharp drops in Big Tech companies pull indexes mostly lower on Wall Street",
+            raw_text,
+            "AP News",
+            "거시경제 미국 경제지표 주요 뉴스입니다.",
         )
 
         self.assertEqual(len(summary), 3)
         self.assertTrue(all(main.contains_hangul(line) for line in summary))
-        self.assertTrue(any("보도는" in line for line in summary))
-        self.assertFalse(any("원문 제목과 본문" in line or "원문 링크" in line for line in summary))
+        joined = " ".join(summary)
+        self.assertTrue(any(term in joined for term in ["월가", "빅테크", "증시"]))
+        self.assertIn("연방준비제도", joined)
+        self.assertIn("통화정책", joined)
+        self.assertFalse(any("보도는" in line or "원문 링크" in line for line in summary))
 
     def test_english_summary_lines_are_koreanized_instead_of_generic_fallback(self):
         lines = [

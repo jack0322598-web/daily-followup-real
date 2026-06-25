@@ -3373,6 +3373,8 @@ def koreanize_english_summary_line(line, title="", source="", context=""):
         return "연방준비제도(Fed)의 금리·통화정책 판단이 물가 흐름과 경기 전망을 좌우하는 핵심 변수로 제시됐습니다."
     if "stress test" in lowered and "bank" in lowered:
         return "미국 은행 스트레스 테스트의 평가 기준과 변경 사항이 금융권 건전성 점검의 주요 변수로 다뤄졌습니다."
+    if "monetary policy" in lowered and re.search(r"technology shares|tech shares|market reaction|expectations", lowered):
+        return "기술주 흐름과 통화정책 기대가 맞물리며 증시 변동성과 투자심리에 함께 영향을 주는 구도로 정리됐습니다."
     if (
         "big tech" in lowered
         or "tech companies" in lowered
@@ -3692,6 +3694,39 @@ def combine_summary_sentences(first, second):
             return candidate
     return compress_summary_sentence(first)
 
+def build_content_based_fallback_lines(title, text, source="", context="", existing_lines=None):
+    title_key = compact_text(title)
+    source_key = compact_text(source)
+    used = {normalize_space(line).casefold() for line in existing_lines or [] if normalize_space(line)}
+    used_compact = {compact_text(line) for line in existing_lines or [] if normalize_space(line)}
+    lines = []
+    for sentence in split_into_summary_candidates(text):
+        sentence = normalize_summary_candidate(sentence, source=source)
+        sentence_key = compact_text(sentence)
+        sentence_lower = sentence.lower()
+        if len(sentence) < 12 or any(k.lower() in sentence_lower for k in SUMMARY_SKIP_KEYWORDS):
+            continue
+        if sentence_key in {title_key, source_key}:
+            continue
+        if sentence_key in used_compact:
+            continue
+        if title_key and sentence_key and sentence_key in title_key and len(sentence_key) >= 10:
+            continue
+        line = koreanize_english_summary_line(sentence, title=title, source=source, context=context)
+        line = compress_summary_sentence(line)
+        if not line or not contains_hangul(line):
+            continue
+        key = line.casefold()
+        compact_key = compact_text(line)
+        if key in used or compact_key in used_compact:
+            continue
+        lines.append(line)
+        used.add(key)
+        used_compact.add(compact_key)
+        if len(lines) >= SUMMARY_LINE_COUNT:
+            break
+    return lines
+
 def make_extractive_three_line_summary(title, raw_text="", source="", context=""):
     title = normalize_space(title)
     source = normalize_space(source)
@@ -3745,6 +3780,15 @@ def make_extractive_three_line_summary(title, raw_text="", source="", context=""
         if key not in seen:
             lines.append(sentence)
             seen.add(key)
+
+    if len(lines) < SUMMARY_LINE_COUNT:
+        for fallback in build_content_based_fallback_lines(title, text, source, context, existing_lines=lines):
+            if len(lines) >= SUMMARY_LINE_COUNT:
+                break
+            key = fallback.casefold()
+            if key not in seen:
+                lines.append(fallback)
+                seen.add(key)
 
     recomposed_fallbacks = []
     if source:
