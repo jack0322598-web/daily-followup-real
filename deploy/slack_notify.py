@@ -4,13 +4,17 @@
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import os
 import re
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
+from xml.etree import ElementTree
 
 from bs4 import BeautifulSoup
 
@@ -18,6 +22,9 @@ from bs4 import BeautifulSoup
 ROOT = Path(__file__).resolve().parents[1]
 KST = timezone(timedelta(hours=9))
 SLACK_SECTION_LIMIT = 2900
+KB_DAILY_FX_REPORT_URL = "https://obank.kbstar.com/quics?page=C101426"
+GOOGLE_NEWS_RSS_URL = "https://news.google.com/rss/search"
+MARKET_FACTOR_TEXT_CACHE: dict[str, str] = {}
 SECTION_EMOJIS = {
     "주요 지표": "📊",
     "임팩트": "🌱",
@@ -67,6 +74,10 @@ def normalize_text(value: str) -> str:
     return re.sub(r"\s+", " ", value or "").strip()
 
 
+def strip_tags(value: str) -> str:
+    return normalize_text(html.unescape(re.sub(r"<[^>]+>", " ", value or "")))
+
+
 def format_dot_date(value: str) -> str:
     value = (value or "").strip()
     if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
@@ -76,6 +87,20 @@ def format_dot_date(value: str) -> str:
 
 def today_dot() -> str:
     return datetime.now(KST).strftime("%Y.%m.%d")
+
+
+def parse_iso_date(value: str) -> datetime | None:
+    try:
+        return datetime.strptime((value or "").strip(), "%Y-%m-%d")
+    except ValueError:
+        return None
+
+
+def result_target_date(result: dict) -> datetime | None:
+    dates = result.get("dates") or []
+    if dates:
+        return parse_iso_date(dates[-1])
+    return parse_iso_date(result.get("latest_archive", ""))
 
 
 def slack_escape(value: str) -> str:
@@ -174,6 +199,290 @@ def prepare_sections_for_slack(sections: list[ArticleSection]) -> list[ArticleSe
     return prepared
 
 
+def fetch_url_text(url: str, timeout: int = 12) -> str:
+    request = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        body = response.read()
+    return body.decode("utf-8", errors="replace")
+
+
+def parse_chart_data(soup: BeautifulSoup) -> dict:
+    match = re.search(r"const\s+chartData\s*=\s*(\{.*?\});", str(soup), flags=re.DOTALL)
+    if not match:
+        return {}
+    try:
+        return json.loads(match.group(1))
+    except Exception:
+        return {}
+
+
+def parent_indicator_card(node) -> BeautifulSoup | None:
+    current = node
+    while current:
+        if getattr(current, "name", "") == "article" and "indicator-card" in current.get("class", []):
+            return current
+        current = current.parent
+    return None
+
+
+def extract_indicator_metric(soup: BeautifulSoup, chart_id: str, chart_key: str) -> dict:
+    chart_node = soup.find(id=chart_id)
+    card = parent_indicator_card(chart_node) if chart_node else None
+    label = normalize_text(card.select_one(".metric-label").get_text(" ", strip=True)) if card and card.select_one(".metric-label") else ""
+    value = normalize_text(card.select_one(".metric-value").get_text(" ", strip=True)) if card and card.select_one(".metric-value") else ""
+    detail = normalize_text(card.select_one(".metric-detail").get_text(" ", strip=True)) if card and card.select_one(".metric-detail") else ""
+    return {"label": label, "value": value, "detail": detail, "chart_key": chart_key}
+
+
+def parse_number(value: str) -> float | None:
+    match = re.search(r"[-+]?\d[\d,]*(?:\.\d+)?", value or "")
+    if not match:
+        return None
+    try:
+        return float(match.group(0).replace(",", ""))
+    except ValueError:
+        return None
+
+
+def enrich_metric_with_chart(metric: dict, chart_data: dict) -> dict:
+    chart = chart_data.get(metric.get("chart_key", ""), {}) if isinstance(chart_data, dict) else {}
+    values = chart.get("values") or []
+    if len(values) >= 1 and not metric.get("value"):
+        metric["value"] = f"{float(values[-1]):,.2f}"
+    if len(values) >= 2:
+        try:
+            previous = float(values[-2])
+            current = float(values[-1])
+            change = current - previous
+            pct = (change / previous * 100) if previous else 0.0
+            metric["change"] = change
+            metric["change_pct"] = pct
+            metric["direction"] = "상승" if change > 0 else "하락" if change < 0 else "보합"
+        except Exception:
+            pass
+    return metric
+
+
+def market_metric_suffix(metric: dict) -> str:
+    value = metric.get("value", "")
+    value = re.sub(r"^종가:\s*", "", value)
+    pct = metric.get("change_pct")
+    if value and pct is not None:
+        return f"({value}, {pct:+.2f}%)"
+    return f"({value})" if value else ""
+
+
+def google_news_items(query: str, target_date: datetime | None = None, max_items: int = 8) -> list[str]:
+    params = {
+        "q": query,
+        "hl": "ko",
+        "gl": "KR",
+        "ceid": "KR:ko",
+    }
+    url = f"{GOOGLE_NEWS_RSS_URL}?{urllib.parse.urlencode(params)}"
+    try:
+        root = ElementTree.fromstring(fetch_url_text(url, timeout=15).lstrip("\ufeff"))
+    except Exception:
+        return []
+    items = []
+    target_dot = target_date.strftime("%Y.%m.%d") if target_date else ""
+    for item in root.findall(".//item"):
+        if len(items) >= max_items:
+            break
+        title = normalize_text(item.findtext("title", ""))
+        description = strip_tags(item.findtext("description", ""))
+        pub_text = item.findtext("pubDate", "")
+        if target_dot and pub_text:
+            try:
+                pub_dt = parsedate_to_datetime(pub_text).astimezone(KST)
+                if pub_dt.strftime("%Y.%m.%d") not in {target_dot, (target_date + timedelta(days=1)).strftime("%Y.%m.%d")}:
+                    continue
+            except Exception:
+                pass
+        text = normalize_text(f"{title}. {description}")
+        if text:
+            items.append(text)
+    return items
+
+
+def split_reason_sentences(text: str) -> list[str]:
+    text = normalize_text(re.sub(r"\s+-\s+[^-.]{2,30}$", "", text or ""))
+    parts = re.split(r"(?<=[.!?])\s+|(?<=다)\s+", text)
+    return [normalize_text(part.strip(" .")) for part in parts if len(normalize_text(part)) >= 18]
+
+
+def select_reason_sentence(texts: list[str], required_terms: tuple[str, ...], reason_terms: tuple[str, ...]) -> str:
+    scored = []
+    for text in texts:
+        for sentence in split_reason_sentences(text):
+            if required_terms and not any(term in sentence for term in required_terms):
+                continue
+            score = 0
+            for term in reason_terms:
+                if term in sentence:
+                    score += 8
+            if re.search(r"\d|%|원|포인트|bp", sentence):
+                score += 4
+            if 45 <= len(sentence) <= 165:
+                score += 4
+            scored.append((score, sentence))
+    if not scored:
+        return ""
+    scored.sort(key=lambda item: item[0], reverse=True)
+    return truncate_reason(scored[0][1])
+
+
+def truncate_reason(text: str, limit: int = 175) -> str:
+    text = normalize_text(text)
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip(" ,.;") + "…"
+
+
+def fetch_kospi_factor_summary(target_date: datetime | None, metric: dict) -> str:
+    close_value = parse_number(metric.get("value", ""))
+    close_hint = f"{int(round(close_value)):,}" if close_value else ""
+    date_query = ""
+    if target_date:
+        start = target_date.strftime("%Y-%m-%d")
+        end = (target_date + timedelta(days=1)).strftime("%Y-%m-%d")
+        date_query = f" after:{start} before:{end}"
+    queries = [
+        f"코스피 {close_hint} 연구원{date_query}".strip(),
+        f"코스피 마감 연구원 상승 하락{date_query}".strip(),
+    ]
+    texts = []
+    for query in queries:
+        texts.extend(google_news_items(query, target_date=target_date))
+        if texts:
+            break
+    reason = select_reason_sentence(
+        texts,
+        ("코스피",),
+        ("연구원", "외국인", "기관", "개인", "매수", "매도", "반도체", "삼성전자", "SK하이닉스", "미국", "금리", "환율", "상승", "하락"),
+    )
+    if reason:
+        return reason
+    direction = metric.get("direction") or "변동"
+    flow = metric.get("detail", "")
+    if flow:
+        return f"코스피는 {direction} 마감했으며, 수급상 {flow} 흐름을 함께 점검할 필요가 있습니다."
+    return f"코스피는 {direction} 마감했으며, 대형주 수급과 대외 변수 영향을 함께 확인할 필요가 있습니다."
+
+
+def kb_report_interpretation(title: str) -> str:
+    if any(term in title for term in ("당국", "개입", "게이지")):
+        return "외환당국 경계감이 상단을 제한하는 요인으로 언급됐습니다."
+    if any(term in title for term in ("긴축", "FOMC", "연준", "인하")):
+        return "미 연준의 통화정책 기대 변화가 달러/원 방향성을 좌우하는 변수로 지목됐습니다."
+    if any(term in title for term in ("유가", "이란", "호르무즈", "중동")):
+        return "중동 리스크와 유가 흐름이 위험선호와 달러 수요를 흔드는 요인으로 정리됐습니다."
+    if any(term in title for term in ("기초가치", "눈높이", "환율")):
+        return "전일 환율 레벨과 기초여건 간 괴리가 시장의 되돌림 여부를 가르는 쟁점으로 제시됐습니다."
+    return ""
+
+
+def fetch_kb_fx_report(target_date: datetime | None) -> dict:
+    if not target_date:
+        return {}
+    try:
+        page_text = normalize_text(BeautifulSoup(fetch_url_text(KB_DAILY_FX_REPORT_URL, timeout=15), "html.parser").get_text(" ", strip=True))
+    except Exception:
+        return {}
+    dates = [target_date + timedelta(days=1), target_date]
+    rows = [
+        {
+            "range": normalize_text(match.group(1)),
+            "title": normalize_text(match.group(2)),
+            "date": normalize_text(match.group(3)),
+        }
+        for match in re.finditer(
+            r"\[금일 달러/원 환율 ([^\]]+)\]\|([^[]+?)\s+(\d{4}\.\d{2}\.\d{2})\s+\d+\s+\d+",
+            page_text,
+        )
+    ]
+    for report_date in dates:
+        dot = report_date.strftime("%Y.%m.%d")
+        for row in rows:
+            if row["date"] == dot:
+                return row
+    return {}
+
+
+def fetch_fx_factor_summary(target_date: datetime | None, metric: dict) -> str:
+    report = fetch_kb_fx_report(target_date)
+    close_value = parse_number(metric.get("value", ""))
+    close_hint = f"{int(round(close_value)):,}" if close_value else ""
+    date_query = ""
+    if target_date:
+        start = target_date.strftime("%Y-%m-%d")
+        end = (target_date + timedelta(days=2)).strftime("%Y-%m-%d")
+        date_query = f" after:{start} before:{end}"
+    texts = google_news_items(f"달러 원 환율 {close_hint} 상승 하락{date_query}".strip(), target_date=target_date)
+    reason = select_reason_sentence(
+        texts,
+        ("환율",),
+        ("연준", "FOMC", "달러", "위안", "유가", "이란", "호르무즈", "당국", "개입", "수출", "네고", "위험선호", "상승", "하락"),
+    )
+    kb_reason = kb_report_interpretation(report.get("title", ""))
+    if reason and kb_reason:
+        return f"{reason} KB 리포트는 '{report['title']}'로 {kb_reason}"
+    if reason:
+        return reason
+    if report:
+        range_text = f"달러/원 {report['range']}" if report.get("range") else "달러/원 환율"
+        tail = kb_reason or "전일 레벨과 대외 변수에 따른 변동성 점검을 제시했습니다."
+        return f"KB 일간환율동향리포트는 '{report['title']}' 제목으로 {range_text}을 전망하며, {tail}"
+    direction = metric.get("direction") or "변동"
+    return f"원/달러 환율은 {direction} 흐름을 보였으며, 달러 강세와 위험선호, 외환당국 경계감을 함께 확인할 필요가 있습니다."
+
+
+def extract_market_metrics(latest_archive: str) -> tuple[dict, dict]:
+    path = archive_path(latest_archive)
+    if not path:
+        return {}, {}
+    soup = BeautifulSoup(path.read_text(encoding="utf-8", errors="ignore"), "html.parser")
+    chart_data = parse_chart_data(soup)
+    kospi = enrich_metric_with_chart(extract_indicator_metric(soup, "chart-kospi", "kospi"), chart_data)
+    fx = enrich_metric_with_chart(extract_indicator_metric(soup, "chart-fx", "fx"), chart_data)
+    return kospi, fx
+
+
+def build_market_factor_lines(result: dict) -> list[str]:
+    target_date = result_target_date(result)
+    kospi, fx = extract_market_metrics(result.get("latest_archive", ""))
+    if not kospi and not fx:
+        return []
+
+    lines = ["*[주요 지표]*"]
+    if kospi:
+        kospi_suffix = market_metric_suffix(kospi)
+        kospi_reason = fetch_kospi_factor_summary(target_date, kospi)
+        lines.extend(["📈 *코스피*", f"• {slack_escape(kospi_reason)} {slack_escape(kospi_suffix)}".rstrip()])
+    if fx:
+        fx_suffix = market_metric_suffix(fx)
+        fx_reason = fetch_fx_factor_summary(target_date, fx)
+        lines.extend(["💱 *환율*", f"• {slack_escape(fx_reason)} {slack_escape(fx_suffix)}".rstrip()])
+    return lines
+
+
+def build_market_factor_text(result: dict) -> str:
+    cache_key = json.dumps(
+        {"latest_archive": result.get("latest_archive", ""), "dates": result.get("dates") or []},
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    if cache_key not in MARKET_FACTOR_TEXT_CACHE:
+        MARKET_FACTOR_TEXT_CACHE[cache_key] = "\n".join(build_market_factor_lines(result))
+    return MARKET_FACTOR_TEXT_CACHE[cache_key]
+
+
 def result_date_text(result: dict) -> str:
     dates = result.get("dates") or []
     if dates:
@@ -235,6 +544,9 @@ def build_daily_briefing_message(result: dict) -> str:
         f"*오늘의 날짜: {today_dot()}*",
         f"*업데이트된 기사 발행 날짜: {result_date_text(result)}*",
     ]
+    market_text = build_market_factor_text(result)
+    if market_text:
+        lines.extend(["", market_text])
 
     if article_sections:
         for section in article_sections:
@@ -261,6 +573,9 @@ def build_daily_briefing_blocks(result: dict) -> list[dict]:
             ]
         )
     )
+    market_text = build_market_factor_text(result)
+    if market_text:
+        blocks.extend(section_blocks(market_text))
 
     if article_sections:
         for section in article_sections:
