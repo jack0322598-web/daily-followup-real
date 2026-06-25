@@ -118,6 +118,9 @@ class SyncDeployedTests(unittest.TestCase):
 
 
 class SlackNotifyTests(unittest.TestCase):
+    def tearDown(self):
+        slack_notify.MARKET_FACTOR_TEXT_CACHE.clear()
+
     def test_success_message_links_latest_archive(self):
         result = {"dates": ["2026-06-19"], "latest_archive": "2026-06-19"}
         with patch.dict(
@@ -130,6 +133,58 @@ class SlackNotifyTests(unittest.TestCase):
         self.assertIn("archive_2026-06-19.html", message)
         self.assertIn("실행 로그", message)
         self.assertEqual(color, "#2EB67D")
+
+    def test_success_message_includes_market_factor_summary(self):
+        archive_html = """
+        <html><body>
+          <section id="section-indicators" class="content-section active">
+            <article class="indicator-card">
+              <div class="metric-label">원/달러 환율</div>
+              <div class="metric-value">종가: 1,527.00원</div>
+              <div class="chart-canvas" id="chart-fx"></div>
+            </article>
+            <article class="indicator-card">
+              <div class="metric-label">코스피 지수</div>
+              <div class="metric-value">3,000.00</div>
+              <div class="metric-detail">외국인 순매수</div>
+              <div class="chart-canvas" id="chart-kospi"></div>
+            </article>
+          </section>
+          <script>
+            const chartData = {"fx": {"values": [1510.0, 1527.0]}, "kospi": {"values": [2970.3, 3000.0]}};
+          </script>
+        </body></html>
+        """
+        result = {"dates": ["2026-06-23"], "latest_archive": "2026-06-23"}
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "archive_2026-06-23.html").write_text(archive_html, encoding="utf-8")
+            with (
+                patch.object(slack_notify, "ROOT", root),
+                patch.object(slack_notify, "fetch_kospi_factor_summary", return_value="반도체 대형주 매수세가 코스피 상승을 견인했습니다."),
+                patch.object(slack_notify, "fetch_fx_factor_summary", return_value="연준 매파 기조와 달러 강세가 환율 상승 요인으로 작용했습니다."),
+            ):
+                message = slack_notify.build_daily_briefing_message(result)
+
+        self.assertIn("[주요 지표]", message)
+        self.assertIn("코스피", message)
+        self.assertIn("반도체 대형주", message)
+        self.assertIn("(3,000.00, +1.00%)", message)
+        self.assertIn("환율", message)
+        self.assertIn("연준 매파", message)
+        self.assertIn("(1,527.00원, +1.13%)", message)
+
+    def test_kb_fx_report_prefers_next_day_report_for_target_archive(self):
+        page_text = """
+        [금일 달러/원 환율 1,525~1,540원 전망]|차오르는 한일 당국 게이지 2026.06.24 264 0
+        [금일 달러/원 환율 1,530~1,545원 전망]|어제의 환율이 오늘의 눈높이 2026.06.23 233 0
+        """
+        with patch.object(slack_notify, "fetch_url_text", return_value=page_text):
+            report = slack_notify.fetch_kb_fx_report(slack_notify.datetime(2026, 6, 23))
+
+        self.assertEqual(report["date"], "2026.06.24")
+        self.assertEqual(report["range"], "1,525~1,540원 전망")
+        self.assertEqual(report["title"], "차오르는 한일 당국 게이지")
 
 
 if __name__ == "__main__":
