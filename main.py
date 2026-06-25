@@ -2756,6 +2756,20 @@ def apply_ai_summary_batch(batch, model, api_key):
     parsed = call_gemini_json(api_key, model, prompt, timeout=90)
     return normalize_batch_summary_payload(parsed)
 
+def apply_ai_summary_single_retry(item):
+    lines = generate_editor_summary_with_gemini(
+        item["title"],
+        item["text"],
+        item["source"],
+        item["context"],
+    )
+    if not lines:
+        return False
+    news = item["news"]
+    news["summary"] = lines
+    news["_summary_mode"] = "ai-single-retry"
+    return True
+
 def apply_ai_summaries_to_news(strong_theme, domestic_impact, global_impact, search_sections, industry_trend=None, industry_source_trend=None):
     global SUMMARY_CACHE_DIRTY
     if not env_flag(SUMMARY_ENV, "AI_SUMMARY_ENABLED", True):
@@ -2815,12 +2829,15 @@ def apply_ai_summaries_to_news(strong_theme, domestic_impact, global_impact, sea
     print(f"\n[Summary] AI 배치 요약 중... 대상 {len(candidates)}건, 캐시 {cached_count}건, 제외 {skipped_count}건")
     success_count = 0
     fallback_count = 0
+    single_retry_count = 0
     rate_limited_chunks = 0
 
     for start in range(0, len(candidates), batch_size):
         chunk = candidates[start:start + batch_size]
         chunk_done = False
         chunk_rate_limited = False
+        chunk_stopped = False
+        summarized_ids = set()
         last_error = None
         for model in model_candidates:
             try:
@@ -2836,6 +2853,7 @@ def apply_ai_summaries_to_news(strong_theme, domestic_impact, global_impact, sea
                     news = item["news"]
                     news["summary"] = lines
                     news["_summary_mode"] = f"ai-batch:{model}"
+                    summarized_ids.add(item["id"])
                     SUMMARY_CACHE[summary_cache_key(model, item["title"], item["source"], item["text"])] = {
                         "title": item["title"],
                         "source": item["source"],
@@ -2855,10 +2873,30 @@ def apply_ai_summaries_to_news(strong_theme, domestic_impact, global_impact, sea
                     print(f"  - AI summary batch stopped ({model}): HTTP {e.code}")
                     fallback_count += len(chunk)
                     chunk_done = True
+                    chunk_stopped = True
                     break
             except Exception as e:
                 last_error = e
                 continue
+
+        retry_items = []
+        if chunk_done and not chunk_stopped:
+            retry_items = [item for item in chunk if item["id"] not in summarized_ids]
+        elif not chunk_done and not chunk_rate_limited:
+            retry_items = chunk
+
+        if retry_items:
+            retry_success = 0
+            for item in retry_items:
+                if apply_ai_summary_single_retry(item):
+                    retry_success += 1
+                    single_retry_count += 1
+            if retry_success:
+                success_count += retry_success
+                print(f"  - AI summary single retry recovered: {retry_success}/{len(retry_items)}건")
+            if len(retry_items) > retry_success:
+                fallback_count += len(retry_items) - retry_success
+            chunk_done = True
 
         if not chunk_done:
             fallback_count += len(chunk)
@@ -2877,7 +2915,7 @@ def apply_ai_summaries_to_news(strong_theme, domestic_impact, global_impact, sea
 
     if success_count:
         SUMMARY_CACHE_DIRTY = True
-    print(f"[Summary] 완료: AI {success_count}건, 캐시 {cached_count}건, fallback {fallback_count}건")
+    print(f"[Summary] 완료: AI {success_count}건, 개별재시도 {single_retry_count}건, 캐시 {cached_count}건, fallback {fallback_count}건")
 
 def resolve_google_news_url(url):
     if "news.google.com" not in (url or ""):
@@ -3390,17 +3428,13 @@ def build_korean_summary_fallback(title="", source="", context="", source_lines=
     title = normalize_space(title)
     source = normalize_space(source) or "해당 매체"
     context = normalize_space(context)
+    topic = truncate_text(title, 68) if title else "이번 기사"
+    context_hint = context if context and contains_hangul(context) else "관련 시장과 이해관계자"
     lines = [
-        f"{source}가 보도한 원문 기사 내용을 한국어 브리핑 형식으로 정리한 항목입니다.",
+        f"{source} 보도는 {topic} 이슈의 핵심 흐름을 다룹니다.",
     ]
-    if title and contains_hangul(title):
-        lines.append(f"{truncate_text(title, 64)}의 배경과 핵심 쟁점을 중심으로 확인할 필요가 있습니다.")
-    else:
-        lines.append("원문 제목과 본문을 기준으로 핵심 배경, 주요 수치, 이해관계자 영향을 함께 확인할 필요가 있습니다.")
-    if context and contains_hangul(context):
-        lines.append(context)
-    else:
-        lines.append("원문 링크에서 세부 근거와 맥락을 함께 확인하는 것이 좋습니다.")
+    lines.append("본문에서 확인되는 사실을 바탕으로 배경, 주요 수치, 당사자 입장을 우선 정리합니다.")
+    lines.append(f"{context_hint} 관점에서 후속 영향과 확인해야 할 쟁점을 함께 살펴볼 필요가 있습니다.")
     return [compress_summary_sentence(line) for line in lines[:SUMMARY_LINE_COUNT]]
 
 def ensure_korean_summary_lines(lines, title="", source="", context=""):
@@ -3714,9 +3748,9 @@ def make_extractive_three_line_summary(title, raw_text="", source="", context=""
 
     recomposed_fallbacks = []
     if source:
-        recomposed_fallbacks.append(f"{source}가 짚은 핵심 쟁점과 영향 포인트를 함께 확인할 수 있습니다.")
+        recomposed_fallbacks.append(f"{source} 보도는 이번 이슈의 배경과 이해관계자 영향을 중심으로 볼 필요가 있습니다.")
     if title:
-        recomposed_fallbacks.append(f"{truncate_text(title, 68)} 관련 핵심 내용을 정리한 자료입니다.")
+        recomposed_fallbacks.append(f"{truncate_text(title, 68)} 사안에서 확인된 핵심 사실과 후속 쟁점을 정리합니다.")
     if context:
         recomposed_fallbacks.append(context)
 
