@@ -132,8 +132,8 @@ MAX_BCG_MBB_INSIGHTS = MAX_NEWS_PER_CATEGORY
 SUMMARY_LINE_COUNT = 3
 SUMMARY_MAX_CHARS = 145
 SUMMARY_INPUT_MAX_CHARS = 20000
-SUMMARY_BATCH_ITEM_MAX_CHARS = 6500
-SUMMARY_BATCH_SIZE = 5
+SUMMARY_BATCH_ITEM_MAX_CHARS = 3600
+SUMMARY_BATCH_SIZE = 3
 GEMINI_SUMMARY_MODEL = "gemini-2.5-flash"
 SUMMARY_CACHE_FILE = BASE_DIR / "summary_cache.json"
 INDUSTRY_TREND_CACHE_FILE = BASE_DIR / "industry_trend_cache.json"
@@ -2461,13 +2461,74 @@ def configure_summary_generator(env):
     SUMMARY_AI_DISABLED_REASON = ""
     SUMMARY_LAST_CALL_TS = 0.0
 
-def fit_summary_input(text, limit=SUMMARY_INPUT_MAX_CHARS):
+def score_summary_input_sentence(sentence, index, title="", context=""):
+    score = score_summary_candidate(sentence, index)
+    sentence_tokens = set(extract_story_tokens(sentence))
+    title_tokens = set(extract_story_tokens(title))
+    context_tokens = set(extract_story_tokens(context))
+    score += min(24, 6 * len(sentence_tokens.intersection(title_tokens)))
+    score += min(12, 3 * len(sentence_tokens.intersection(context_tokens)))
+    if index < 3:
+        score += 24
+    elif index < 8:
+        score += 14
+    elif index < 15:
+        score += 6
+    lowered = sentence.lower()
+    if re.search(r"\d|%|percent|million|billion|trillion|rate|growth|inflation|employment|jobs|market|policy|investment|revenue|profit|ai|climate", lowered):
+        score += 12
+    if re.search(r"announc|said|reported|plans?|expects?|impact|risk|because|according|전망|발표|투자|정책|시장|영향|증가|감소|매출|고용|물가|금리", lowered):
+        score += 10
+    if len(sentence) > 420:
+        score -= 18
+    return score
+
+def select_core_summary_excerpt(text, limit=SUMMARY_INPUT_MAX_CHARS, title="", source="", context=""):
     text = clean_article_text(text)
-    if len(text) <= limit:
+    if not text:
+        return ""
+    if len(text) <= limit and len(split_into_summary_candidates(text)) <= 14:
         return text
-    head_len = int(limit * 0.72)
-    tail_len = max(0, limit - head_len - 40)
-    return normalize_space(f"{text[:head_len]} [...본문 일부 생략...] {text[-tail_len:]}")
+
+    scored = []
+    for index, sentence in enumerate(split_into_summary_candidates(text)):
+        sentence = normalize_summary_candidate(sentence, source=source)
+        if len(sentence) < 18:
+            continue
+        if any(keyword.lower() in sentence.lower() for keyword in SUMMARY_SKIP_KEYWORDS):
+            continue
+        scored.append((
+            score_summary_input_sentence(sentence, index, title=title, context=context),
+            index,
+            sentence,
+        ))
+    if not scored:
+        return normalize_space(text[:limit])
+
+    selected = sorted(scored, key=lambda item: item[0], reverse=True)[:18]
+    selected.sort(key=lambda item: item[1])
+    parts = []
+    used = set()
+    for _score, _index, sentence in selected:
+        key = compact_text(sentence)
+        if not key or key in used:
+            continue
+        candidate = normalize_space(" ".join(parts + [sentence]))
+        if len(candidate) > limit:
+            continue
+        parts.append(sentence)
+        used.add(key)
+        if len(parts) >= 12:
+            break
+
+    excerpt = normalize_space(" ".join(parts))
+    if excerpt:
+        return excerpt[:limit]
+    return normalize_space(text[:limit])
+
+def fit_summary_input(text, limit=SUMMARY_INPUT_MAX_CHARS, title="", source="", context=""):
+    text = clean_article_text(text)
+    return select_core_summary_excerpt(text, limit=limit, title=title, source=source, context=context)
 
 def summary_cache_key(model, title, source, text):
     payload = json.dumps(
@@ -2584,7 +2645,8 @@ def generate_editor_summary_with_gemini(title, raw_text="", source="", context="
     if not api_key:
         return []
 
-    article_text = fit_summary_input(raw_text)
+    item_limit = env_int(SUMMARY_ENV, "AI_SUMMARY_BATCH_ITEM_MAX_CHARS", SUMMARY_BATCH_ITEM_MAX_CHARS)
+    article_text = fit_summary_input(raw_text, item_limit, title=title, source=source, context=context)
     if len(article_text) < 80:
         return []
 
@@ -2790,7 +2852,13 @@ def apply_ai_summaries_to_news(strong_theme, domestic_impact, global_impact, sea
     for index, news in enumerate(iter_news_items_for_summary(
         strong_theme, domestic_impact, global_impact, search_sections, industry_trend, industry_source_trend
     ), 1):
-        raw_text = fit_summary_input(get_news_summary_text(news), item_limit)
+        raw_text = fit_summary_input(
+            get_news_summary_text(news),
+            item_limit,
+            title=news.get("title", ""),
+            source=news.get("source", ""),
+            context=get_news_summary_context(news),
+        )
         if len(raw_text) < 80:
             skipped_count += 1
             continue

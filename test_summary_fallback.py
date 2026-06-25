@@ -39,6 +39,26 @@ class SummaryFallbackTests(unittest.TestCase):
         self.assertTrue(all(main.contains_hangul(line) for line in final_news["summary"]))
         self.assertEqual(skipped_news["summary"], [])
 
+    def test_summary_batch_defaults_to_three_items(self):
+        self.assertEqual(main.SUMMARY_BATCH_SIZE, 3)
+
+    def test_summary_input_is_compressed_around_core_sentences(self):
+        filler = "This paragraph repeats background boilerplate without useful figures or decisions. " * 20
+        key_sentence = "The central bank announced a 0.25 percent rate change that affected inflation expectations and markets."
+        raw_text = f"{filler} {key_sentence} {filler}"
+
+        excerpt = main.fit_summary_input(
+            raw_text,
+            limit=260,
+            title="Central bank rate change affects markets",
+            source="AP News",
+            context="거시경제 통화정책 기사입니다.",
+        )
+
+        self.assertLessEqual(len(excerpt), 260)
+        self.assertIn("0.25 percent rate change", excerpt)
+        self.assertIn("inflation expectations", excerpt)
+
     def test_ai_summary_retries_missing_batch_items_individually(self):
         batch_lines = [
             "첫 번째 기사는 정책 변화의 핵심 내용을 간결하게 정리합니다.",
