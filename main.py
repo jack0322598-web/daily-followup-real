@@ -138,6 +138,7 @@ GEMINI_SUMMARY_MODEL = "gemini-2.5-flash"
 SUMMARY_CACHE_FILE = BASE_DIR / "summary_cache.json"
 INDUSTRY_TREND_CACHE_FILE = BASE_DIR / "industry_trend_cache.json"
 INDUSTRY_SOURCE_CACHE_FILE = BASE_DIR / "industry_source_cache.json"
+DEFER_INLINE_SUMMARIES = False
 MCKINSEY_WEEK_IN_CHARTS_URL = "https://www.mckinsey.com/featured-insights/week-in-charts"
 BAIN_INSIGHTS_URL = "https://www.bain.com/insights/"
 BAIN_INSIGHTS_FEED_URL = "https://www.bain.com/insights/GetFeedItems"
@@ -2733,6 +2734,23 @@ def get_news_summary_text(news):
 def get_news_summary_context(news):
     return news.get("_summary_context") or f"{news.get('source', '원문')} 보도입니다."
 
+def ensure_final_display_summaries(strong_theme, domestic_impact, global_impact, search_sections, industry_trend=None, industry_source_trend=None):
+    completed = 0
+    for news in iter_news_items_for_summary(
+        strong_theme, domestic_impact, global_impact, search_sections, industry_trend, industry_source_trend
+    ):
+        summary_source = get_news_summary_text(news)
+        news["summary"] = make_extractive_three_line_summary(
+            news.get("title", ""),
+            summary_source,
+            news.get("source", ""),
+            get_news_summary_context(news),
+        )
+        news["_summary_mode"] = "extractive-final"
+        completed += 1
+    if completed:
+        print(f"  - Final display summaries prepared: {completed}건")
+
 def apply_ai_summary_batch(batch, model, api_key):
     prompt = build_batch_editor_summary_prompt(batch)
     parsed = call_gemini_json(api_key, model, prompt, timeout=90)
@@ -3713,6 +3731,8 @@ def make_extractive_three_line_summary(title, raw_text="", source="", context=""
     return ensure_korean_summary_lines(lines[:SUMMARY_LINE_COUNT], title, source, context)
 
 def make_three_line_summary(title, raw_text="", source="", context=""):
+    if DEFER_INLINE_SUMMARIES:
+        return []
     return make_extractive_three_line_summary(title, raw_text, source, context)
 
 class ArticleLinkParser(HTMLParser):
@@ -7699,6 +7719,7 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
     return html_content
 
 def main():
+    global DEFER_INLINE_SUMMARIES
     args = parse_args()
     target_date = get_news_date(args)
     target_dot = target_date.strftime("%Y.%m.%d")
@@ -7706,6 +7727,7 @@ def main():
     seen_links, seen_titles = set(), [] 
     env = load_env()
     configure_summary_generator(env)
+    DEFER_INLINE_SUMMARIES = True
     
     # 1. 대시보드 및 강세테마 데이터 수집
     dashboard_data = fetch_dashboard_data()
@@ -7794,8 +7816,19 @@ def main():
 
     domestic_impact, global_impact = [], []
     for news in all_impact:
-        if is_domestic_news(news["title"], news["summary"], news["source"]): domestic_impact.append(news)
+        summary_basis = news.get("summary") or [news.get("_summary_source", "")]
+        if is_domestic_news(news["title"], summary_basis, news["source"]): domestic_impact.append(news)
         else: global_impact.append(news)
+
+    DEFER_INLINE_SUMMARIES = False
+    ensure_final_display_summaries(
+        strong_theme,
+        domestic_impact,
+        global_impact,
+        search_sections,
+        industry_trend,
+        industry_source_trend,
+    )
     agent_c_report = None
     if agent_c is not None:
         try:
