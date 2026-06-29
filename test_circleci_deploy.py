@@ -43,6 +43,35 @@ class DailyCiTests(unittest.TestCase):
             self.assertEqual(payload["latest_archive"], "2026-06-19")
             self.assertEqual(payload["status"], "updated")
 
+    def test_next_target_limits_backfill_to_oldest_date(self):
+        pending = [date(2026, 6, 26), date(2026, 6, 27), date(2026, 6, 28)]
+        with patch.object(daily_ci, "pending_dates", return_value=pending):
+            target, count = daily_ci.next_target()
+
+        self.assertEqual(target, date(2026, 6, 26))
+        self.assertEqual(count, 3)
+
+    def test_summary_state_is_separate_from_collect_state(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            collect_state = root / "pipeline_state.json"
+            summary_state = root / "pipeline_summarize_state.json"
+            with (
+                patch.object(daily_ci, "STATE_FILE", collect_state),
+                patch.object(daily_ci, "SUMMARY_STATE_FILE", summary_state),
+            ):
+                daily_ci.write_state("collected", date(2026, 6, 26))
+                daily_ci.write_state(
+                    "summarized",
+                    date(2026, 6, 26),
+                    path=summary_state,
+                )
+                target = daily_ci.state_target("summarized", path=summary_state)
+
+            self.assertEqual(target, date(2026, 6, 26))
+            self.assertEqual(json.loads(collect_state.read_text(encoding="utf-8"))["status"], "collected")
+            self.assertEqual(json.loads(summary_state.read_text(encoding="utf-8"))["status"], "summarized")
+
 
 class BuildPublicTests(unittest.TestCase):
     def test_build_copies_public_assets_only(self):
