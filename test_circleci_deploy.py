@@ -106,6 +106,25 @@ class SyncDeployedTests(unittest.TestCase):
         ):
             self.assertEqual(sync_deployed.sync_deployed(), [])
 
+    def test_sync_fails_when_required_deployment_is_unavailable(self):
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "SITE_URL": "https://required-site.example",
+                    "REQUIRE_DEPLOYED_STATE": "1",
+                },
+                clear=True,
+            ),
+            patch.object(
+                sync_deployed.urllib.request,
+                "urlopen",
+                side_effect=sync_deployed.urllib.error.URLError("temporary outage"),
+            ),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "Required deployed state is unavailable"):
+                sync_deployed.sync_deployed()
+
     def test_sync_restores_new_archive_and_state(self):
         responses = {
             "https://site.example/archive_list.js": b'const archiveDates = ["2026-06-20"];',

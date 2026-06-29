@@ -30,6 +30,8 @@ jobs:
       TZ: Asia/Seoul
       PYTHONIOENCODING: utf-8
       AI_ISSUE_RANKING_ENABLED: "0"
+      SITE_URL: https://daily-followup-real.pages.dev
+      REQUIRE_DEPLOYED_STATE: "1"
       REQUESTED_NEWS_DATE: << pipeline.parameters.news_date >>
     steps:
       - checkout
@@ -70,6 +72,7 @@ jobs:
       TZ: Asia/Seoul
       PYTHONIOENCODING: utf-8
       AI_ISSUE_RANKING_ENABLED: "0"
+      SITE_URL: https://daily-followup-real.pages.dev
     steps:
       - attach_workspace:
           at: /home/circleci
@@ -100,6 +103,7 @@ jobs:
       TZ: Asia/Seoul
       PYTHONIOENCODING: utf-8
       AI_ISSUE_RANKING_ENABLED: "0"
+      SITE_URL: https://daily-followup-real.pages.dev
     steps:
       - attach_workspace:
           at: /home/circleci
@@ -141,6 +145,7 @@ jobs:
       TZ: Asia/Seoul
       PYTHONIOENCODING: utf-8
       FAILED_STAGE: << parameters.failed_stage >>
+      SITE_URL: https://daily-followup-real.pages.dev
     steps:
       - checkout
       - run:

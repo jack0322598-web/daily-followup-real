@@ -35,6 +35,8 @@ Configure these in a CircleCI context or the project environment variables:
 - `SITE_URL` (for example `https://daily-followup.pages.dev`)
 - `MAX_BACKFILL_DAYS=7`
 
+The production CI config pins `SITE_URL` to the live Pages domain and requires the deployed state to be available. This prevents a transient sync failure from replacing the site with an incomplete archive set.
+
 ## Cloudflare token permissions
 
 Create an API token limited to the account with `Cloudflare Pages: Edit` permission.

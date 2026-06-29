@@ -51,6 +51,16 @@ def sync_deployed() -> list[str]:
     except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError) as exc:
         if isinstance(exc, urllib.error.HTTPError):
             exc.close()
+        require_deployed_state = os.environ.get("REQUIRE_DEPLOYED_STATE", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        if require_deployed_state:
+            raise RuntimeError(
+                f"Required deployed state is unavailable at {base_url}: {type(exc).__name__}"
+            ) from exc
         print(
             "Previous deployment is not available yet "
             f"({type(exc).__name__}); starting from repository files."
