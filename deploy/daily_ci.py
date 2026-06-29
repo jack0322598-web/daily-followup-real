@@ -21,13 +21,22 @@ KST = timezone(timedelta(hours=9))
 LOCK_FILE = ROOT / ".update.lock"
 LOG_DIR = ROOT / "logs"
 RESULT_FILE = ROOT / "deploy_result.json"
+STATE_FILE = ROOT / "pipeline_state.json"
+SUMMARY_STATE_FILE = ROOT / "pipeline_summarize_state.json"
 ARCHIVE_PATTERN = re.compile(r"archive_(\d{4}-\d{2}-\d{2})\.html$")
 MIN_NEWS_CARDS = 3
+STAGES = ("all", "collect", "summarize", "render")
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate the daily news briefing.")
     parser.add_argument("--date", help="Generate one date only (YYYY-MM-DD).")
+    parser.add_argument(
+        "--stage",
+        choices=STAGES,
+        default="all",
+        help="Run the complete pipeline or one CI stage.",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Show pending dates without running the pipeline.")
     return parser.parse_args()
 
@@ -124,18 +133,29 @@ def update_lock():
         LOCK_FILE.unlink(missing_ok=True)
 
 
+def stage_log_path(stage: str) -> Path:
+    stamp = datetime.now(KST).strftime("%Y-%m-%d_%H%M%S")
+    return LOG_DIR / f"scheduled_update_{stage}_{stamp}.log"
+
+
+def log_message(message: str, log_handle) -> None:
+    print(message, flush=True)
+    print(message, file=log_handle, flush=True)
+
+
 def run_step(label: str, command: list[str], env: dict[str, str], log_handle) -> None:
-    print(f"\n[{label}] {' '.join(command)}", file=log_handle, flush=True)
+    started = datetime.now(KST)
+    log_message(f"\n[{label}] {' '.join(command)}", log_handle)
     result = subprocess.run(
         command,
         cwd=ROOT,
         env=env,
-        stdout=log_handle,
-        stderr=subprocess.STDOUT,
         text=True,
         timeout=3 * 60 * 60,
         check=False,
     )
+    duration = (datetime.now(KST) - started).total_seconds()
+    log_message(f"[{label}] finished with exit code {result.returncode} in {duration:.1f}s", log_handle)
     if result.returncode:
         raise RuntimeError(f"{label} failed with exit code {result.returncode}")
 
@@ -151,11 +171,16 @@ def validate_archive(target: date) -> Path:
     return archive
 
 
-def run_pipeline(target: date, log_handle) -> Path:
+def command_environment() -> dict[str, str]:
+    env = os.environ.copy()
+    env.update({"TZ": "Asia/Seoul", "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1"})
+    return env
+
+
+def run_collect(target: date, log_handle) -> None:
     value = target.isoformat()
     python = sys.executable
-    env = os.environ.copy()
-    env.update({"TZ": "Asia/Seoul", "PYTHONIOENCODING": "utf-8"})
+    env = command_environment()
 
     with rollback_on_failure(target):
         first_pass_env = env.copy()
@@ -167,14 +192,44 @@ def run_pipeline(target: date, log_handle) -> Path:
             env,
             log_handle,
         )
+
+
+def run_summarize(target: date, log_handle) -> None:
+    value = target.isoformat()
+    run_step(
+        "Agent B",
+        [
+            sys.executable,
+            "-u",
+            "agent_b.py",
+            "--date",
+            value,
+            "--fallback-models",
+            "none",
+            "--retry-attempts",
+            "2",
+        ],
+        command_environment(),
+        log_handle,
+    )
+
+
+def run_render(target: date, log_handle) -> Path:
+    value = target.isoformat()
+    with rollback_on_failure(target):
         run_step(
-            "Agent B",
-            [python, "-u", "agent_b.py", "--date", value, "--fallback-models", "none", "--retry-attempts", "2"],
-            env,
+            "Final render",
+            [sys.executable, "-u", "main.py", "--date", value],
+            command_environment(),
             log_handle,
         )
-        run_step("Final render", [python, "-u", "main.py", "--date", value], env, log_handle)
         return validate_archive(target)
+
+
+def run_pipeline(target: date, log_handle) -> Path:
+    run_collect(target, log_handle)
+    run_summarize(target, log_handle)
+    return run_render(target, log_handle)
 
 
 def write_result(status: str, dates: list[date], error: str = "") -> None:
@@ -189,32 +244,145 @@ def write_result(status: str, dates: list[date], error: str = "") -> None:
     RESULT_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def write_state(
+    status: str,
+    target: date | None = None,
+    error: str = "",
+    path: Path | None = None,
+) -> None:
+    payload = {
+        "status": status,
+        "target_date": target.isoformat() if target else "",
+        "updated_at": datetime.now(KST).isoformat(),
+        "error": error,
+    }
+    (path or STATE_FILE).write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def load_state(path: Path | None = None) -> dict:
+    state_file = path or STATE_FILE
+    if not state_file.exists():
+        raise RuntimeError(f"Pipeline state is missing: {state_file.name}")
+    return json.loads(state_file.read_text(encoding="utf-8"))
+
+
+def state_target(
+    expected_status: str,
+    requested: str | None = None,
+    path: Path | None = None,
+) -> date | None:
+    state = load_state(path)
+    if state.get("status") == "no_changes":
+        return None
+    if state.get("status") != expected_status:
+        raise RuntimeError(
+            f"Expected pipeline state {expected_status!r}, got {state.get('status')!r}"
+        )
+    target = parse_iso_date(state.get("target_date", ""))
+    if requested and target != parse_iso_date(requested):
+        raise RuntimeError(f"Pipeline state date {target} does not match requested date {requested}")
+    return target
+
+
+def next_target(requested: str | None = None) -> tuple[date | None, int]:
+    dates = pending_dates(requested)
+    if not dates:
+        return None, 0
+    return dates[0], len(dates)
+
+
+def run_stage(stage: str, requested: str | None = None) -> None:
+    if stage == "collect":
+        target, pending_count = next_target(requested)
+        if target is None:
+            write_state("no_changes")
+            print("No pending dates; downstream stages will skip generation.")
+            return
+        log_path = stage_log_path(stage)
+        with update_lock(), log_path.open("a", encoding="utf-8") as log_handle:
+            log_message(
+                f"Starting collect stage for {target.isoformat()} (pending dates: {pending_count})",
+                log_handle,
+            )
+            run_collect(target, log_handle)
+        write_state("collected", target)
+        print(f"Collect stage completed. Log: {log_path}")
+        return
+
+    if stage == "summarize":
+        target = state_target("collected", requested)
+        if target is None:
+            (ROOT / "pipeline_data" / "agent_b").mkdir(parents=True, exist_ok=True)
+            write_state("no_changes", path=SUMMARY_STATE_FILE)
+            print("No pending dates; summarize stage skipped.")
+            return
+        log_path = stage_log_path(stage)
+        with update_lock(), log_path.open("a", encoding="utf-8") as log_handle:
+            log_message(f"Starting summarize stage for {target.isoformat()}", log_handle)
+            run_summarize(target, log_handle)
+        write_state("summarized", target, path=SUMMARY_STATE_FILE)
+        print(f"Summarize stage completed. Log: {log_path}")
+        return
+
+    if stage == "render":
+        target = state_target("summarized", requested, path=SUMMARY_STATE_FILE)
+        if target is None:
+            write_result("no_changes", [])
+            print("No pending dates; render stage skipped.")
+            return
+        log_path = stage_log_path(stage)
+        with update_lock(), log_path.open("a", encoding="utf-8") as log_handle:
+            log_message(f"Starting render stage for {target.isoformat()}", log_handle)
+            run_render(target, log_handle)
+        write_state("rendered", target)
+        write_result("updated", [target])
+        print(f"Render stage completed. Log: {log_path}")
+        return
+
+    target, pending_count = next_target(requested)
+    if target is None:
+        write_result("no_changes", [])
+        print("No pending dates; the existing site will still be deployed.")
+        return
+    log_path = stage_log_path(stage)
+    with update_lock(), log_path.open("a", encoding="utf-8") as log_handle:
+        log_message(
+            f"Starting complete pipeline for {target.isoformat()} (pending dates: {pending_count})",
+            log_handle,
+        )
+        run_pipeline(target, log_handle)
+    write_result("updated", [target])
+    print(f"Update completed. Log: {log_path}")
+
+
 def main() -> int:
     args = parse_args()
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    dates: list[date] = []
+    result_dates: list[date] = []
     try:
-        dates = pending_dates(args.date)
         if args.dry_run:
+            dates = pending_dates(args.date)
             print("Pending dates:", ", ".join(value.isoformat() for value in dates) or "none")
             return 0
-        if not dates:
-            write_result("no_changes", [])
-            print("No pending dates; the existing site will still be deployed.")
-            return 0
-
-        stamp = datetime.now(KST).strftime("%Y-%m-%d_%H%M%S")
-        log_path = LOG_DIR / f"scheduled_update_{stamp}.log"
-        with update_lock(), log_path.open("a", encoding="utf-8") as log_handle:
-            for target in dates:
-                print(f"Starting {target.isoformat()}", file=log_handle, flush=True)
-                run_pipeline(target, log_handle)
-        write_result("updated", dates)
-        print(f"Update completed. Log: {log_path}")
+        if args.date:
+            result_dates = [parse_iso_date(args.date)]
+        elif args.stage in {"summarize", "render"} and STATE_FILE.exists():
+            state_file = SUMMARY_STATE_FILE if args.stage == "render" and SUMMARY_STATE_FILE.exists() else STATE_FILE
+            target_text = load_state(state_file).get("target_date", "")
+            if target_text:
+                result_dates = [parse_iso_date(target_text)]
+        run_stage(args.stage, args.date)
         return 0
     except Exception as exc:
         error = f"{type(exc).__name__}: {exc}"
-        write_result("failed", dates, error)
+        write_result("failed", result_dates, error)
+        try:
+            write_state("failed", result_dates[0] if result_dates else None, error)
+        except Exception:
+            pass
         print(error, file=sys.stderr)
         return 1
 

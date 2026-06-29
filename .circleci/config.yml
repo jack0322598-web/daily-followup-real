@@ -4,6 +4,9 @@ parameters:
   run_daily:
     type: boolean
     default: false
+  news_date:
+    type: string
+    default: ""
 
 jobs:
   validate:
@@ -19,14 +22,17 @@ jobs:
           name: Run tests
           command: python -m unittest discover -v
 
-  daily-update:
+  daily-collect:
     docker:
       - image: cimg/python:3.12-node
-    resource_class: medium
+    resource_class: large
     environment:
       TZ: Asia/Seoul
       PYTHONIOENCODING: utf-8
       AI_ISSUE_RANKING_ENABLED: "0"
+      SITE_URL: https://daily-followup-real.pages.dev
+      REQUIRE_DEPLOYED_STATE: "1"
+      REQUESTED_NEWS_DATE: << pipeline.parameters.news_date >>
     steps:
       - checkout
       - run:
@@ -39,9 +45,75 @@ jobs:
           name: Restore previous deployed archives
           command: python deploy/sync_deployed.py
       - run:
-          name: Generate daily briefing
-          no_output_timeout: 3h
-          command: python -u deploy/daily_ci.py
+          name: Collect daily articles
+          no_output_timeout: 55m
+          command: |
+            args=(--stage collect)
+            if [ -n "$REQUESTED_NEWS_DATE" ]; then
+              args+=(--date "$REQUESTED_NEWS_DATE")
+            fi
+            python -u deploy/daily_ci.py "${args[@]}"
+      - store_artifacts:
+          path: logs
+          destination: collect-logs
+      - store_artifacts:
+          path: deploy_result.json
+          destination: collect-result.json
+      - persist_to_workspace:
+          root: /home/circleci
+          paths:
+            - project
+
+  daily-summarize:
+    docker:
+      - image: cimg/python:3.12-node
+    resource_class: large
+    environment:
+      TZ: Asia/Seoul
+      PYTHONIOENCODING: utf-8
+      AI_ISSUE_RANKING_ENABLED: "0"
+      SITE_URL: https://daily-followup-real.pages.dev
+    steps:
+      - attach_workspace:
+          at: /home/circleci
+      - run:
+          name: Install dependencies
+          command: pip install --user -r requirements.txt
+      - run:
+          name: Summarize selected articles
+          no_output_timeout: 55m
+          command: python -u deploy/daily_ci.py --stage summarize
+      - store_artifacts:
+          path: logs
+          destination: summarize-logs
+      - store_artifacts:
+          path: deploy_result.json
+          destination: summarize-result.json
+      - persist_to_workspace:
+          root: /home/circleci
+          paths:
+            - project/pipeline_data/agent_b
+            - project/pipeline_summarize_state.json
+
+  daily-deploy:
+    docker:
+      - image: cimg/python:3.12-node
+    resource_class: medium
+    environment:
+      TZ: Asia/Seoul
+      PYTHONIOENCODING: utf-8
+      AI_ISSUE_RANKING_ENABLED: "0"
+      SITE_URL: https://daily-followup-real.pages.dev
+    steps:
+      - attach_workspace:
+          at: /home/circleci
+      - run:
+          name: Install dependencies
+          command: pip install --user -r requirements.txt
+      - run:
+          name: Render and validate briefing
+          no_output_timeout: 55m
+          command: python -u deploy/daily_ci.py --stage render
       - run:
           name: Prepare public site
           command: python deploy/build_public.py
@@ -55,16 +127,59 @@ jobs:
       - run:
           name: Notify Slack of success
           command: python deploy/slack_notify.py success
-      - run:
-          name: Notify Slack of failure
-          when: on_fail
-          command: python deploy/slack_notify.py failure || true
       - store_artifacts:
           path: logs
-          destination: update-logs
+          destination: render-logs
       - store_artifacts:
           path: deploy_result.json
           destination: deploy_result.json
+
+  notify-failure:
+    parameters:
+      failed_stage:
+        type: string
+    docker:
+      - image: cimg/python:3.12
+    resource_class: small
+    environment:
+      TZ: Asia/Seoul
+      PYTHONIOENCODING: utf-8
+      FAILED_STAGE: << parameters.failed_stage >>
+      SITE_URL: https://daily-followup-real.pages.dev
+    steps:
+      - checkout
+      - run:
+          name: Install notification dependencies
+          command: pip install --user -r requirements.txt
+      - run:
+          name: Prepare failure details
+          command: |
+            python - \<<'PY'
+            import json
+            import os
+            from datetime import datetime, timedelta, timezone
+            from pathlib import Path
+
+            stage = os.environ["FAILED_STAGE"]
+            kst = timezone(timedelta(hours=9))
+            Path("deploy_result.json").write_text(
+                json.dumps(
+                    {
+                        "status": "failed",
+                        "dates": [],
+                        "latest_archive": "",
+                        "generated_at": datetime.now(kst).isoformat(),
+                        "error": f"CircleCI {stage} stage failed or timed out.",
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+            PY
+      - run:
+          name: Notify Slack of failure
+          command: python deploy/slack_notify.py failure
 
 workflows:
   validate-changes:
@@ -76,4 +191,31 @@ workflows:
   scheduled-daily-update:
     when: << pipeline.parameters.run_daily >>
     jobs:
-      - daily-update
+      - daily-collect
+      - notify-failure:
+          name: notify-collect-failure
+          failed_stage: collect
+          requires:
+            - daily-collect:
+                - failed
+                - canceled
+      - daily-summarize:
+          requires:
+            - daily-collect
+      - notify-failure:
+          name: notify-summarize-failure
+          failed_stage: summarize
+          requires:
+            - daily-summarize:
+                - failed
+                - canceled
+      - daily-deploy:
+          requires:
+            - daily-summarize
+      - notify-failure:
+          name: notify-deploy-failure
+          failed_stage: deploy
+          requires:
+            - daily-deploy:
+                - failed
+                - canceled

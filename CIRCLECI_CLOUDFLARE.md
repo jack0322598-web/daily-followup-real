@@ -12,6 +12,14 @@ Create a schedule trigger for the `main` branch with pipeline parameter `run_dai
 
 CircleCI may apply a short scheduling delay.
 
+The scheduled workflow is split into three jobs so each stage has its own runtime budget:
+
+1. `daily-collect` restores the deployed state, renders the initial selection, and collects article bodies.
+2. `daily-summarize` summarizes the selected articles.
+3. `daily-deploy` renders, validates, deploys, and sends the success notification.
+
+Collection and summarization use the `large` resource class. A separate failure-notification job runs when any stage fails or times out.
+
 ## CircleCI environment variables
 
 Configure these in a CircleCI context or the project environment variables:
@@ -27,13 +35,15 @@ Configure these in a CircleCI context or the project environment variables:
 - `SITE_URL` (for example `https://daily-followup.pages.dev`)
 - `MAX_BACKFILL_DAYS=7`
 
+The production CI config pins `SITE_URL` to the live Pages domain and requires the deployed state to be available. This prevents a transient sync failure from replacing the site with an incomplete archive set.
+
 ## Cloudflare token permissions
 
 Create an API token limited to the account with `Cloudflare Pages: Edit` permission.
 
 ## Manual verification
 
-Trigger a CircleCI pipeline with `run_daily=true`. A successful run must satisfy all four checks:
+Trigger a CircleCI pipeline with `run_daily=true`. To backfill one specific date, also set `news_date=YYYY-MM-DD`. Backfills must be dispatched one date per pipeline. A successful run must satisfy all four checks:
 
 1. CircleCI job is green.
 2. Cloudflare Pages production deployment is active.

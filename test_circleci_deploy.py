@@ -43,6 +43,35 @@ class DailyCiTests(unittest.TestCase):
             self.assertEqual(payload["latest_archive"], "2026-06-19")
             self.assertEqual(payload["status"], "updated")
 
+    def test_next_target_limits_backfill_to_oldest_date(self):
+        pending = [date(2026, 6, 26), date(2026, 6, 27), date(2026, 6, 28)]
+        with patch.object(daily_ci, "pending_dates", return_value=pending):
+            target, count = daily_ci.next_target()
+
+        self.assertEqual(target, date(2026, 6, 26))
+        self.assertEqual(count, 3)
+
+    def test_summary_state_is_separate_from_collect_state(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            collect_state = root / "pipeline_state.json"
+            summary_state = root / "pipeline_summarize_state.json"
+            with (
+                patch.object(daily_ci, "STATE_FILE", collect_state),
+                patch.object(daily_ci, "SUMMARY_STATE_FILE", summary_state),
+            ):
+                daily_ci.write_state("collected", date(2026, 6, 26))
+                daily_ci.write_state(
+                    "summarized",
+                    date(2026, 6, 26),
+                    path=summary_state,
+                )
+                target = daily_ci.state_target("summarized", path=summary_state)
+
+            self.assertEqual(target, date(2026, 6, 26))
+            self.assertEqual(json.loads(collect_state.read_text(encoding="utf-8"))["status"], "collected")
+            self.assertEqual(json.loads(summary_state.read_text(encoding="utf-8"))["status"], "summarized")
+
 
 class BuildPublicTests(unittest.TestCase):
     def test_build_copies_public_assets_only(self):
@@ -77,6 +106,25 @@ class SyncDeployedTests(unittest.TestCase):
         ):
             self.assertEqual(sync_deployed.sync_deployed(), [])
 
+    def test_sync_fails_when_required_deployment_is_unavailable(self):
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "SITE_URL": "https://required-site.example",
+                    "REQUIRE_DEPLOYED_STATE": "1",
+                },
+                clear=True,
+            ),
+            patch.object(
+                sync_deployed.urllib.request,
+                "urlopen",
+                side_effect=sync_deployed.urllib.error.URLError("temporary outage"),
+            ),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "Required deployed state is unavailable"):
+                sync_deployed.sync_deployed()
+
     def test_sync_restores_new_archive_and_state(self):
         responses = {
             "https://site.example/archive_list.js": b'const archiveDates = ["2026-06-20"];',
@@ -100,6 +148,9 @@ class SyncDeployedTests(unittest.TestCase):
                 return self.data
 
         def urlopen(url, timeout=30):
+            if hasattr(url, "full_url"):
+                self.assertTrue(url.get_header("User-agent"))
+                url = url.full_url
             if url in responses:
                 return Response(responses[url])
             raise __import__("urllib.error").error.HTTPError(url, 404, "not found", {}, None)
