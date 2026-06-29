@@ -149,7 +149,7 @@ jobs:
       - run:
           name: Prepare failure details
           command: |
-            python - <<'PY'
+            python - \<<'PY'
             import json
             import os
             from datetime import datetime, timedelta, timezone
