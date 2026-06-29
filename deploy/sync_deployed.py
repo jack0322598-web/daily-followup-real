@@ -12,6 +12,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MAX_DOWNLOAD_SIZE = 10 * 1024 * 1024
+REQUEST_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (compatible; DailyBriefingStateSync/1.0)",
+    "Accept": "text/html,application/javascript,application/json;q=0.9,*/*;q=0.8",
+}
 STATE_FILES = (
     "industry_source_cache.json",
     "industry_trend_cache.json",
@@ -23,8 +27,9 @@ STATE_FILES = (
 
 def download(base_url: str, remote_path: str, destination: Path, required: bool = False) -> bool:
     url = f"{base_url.rstrip('/')}/{remote_path.lstrip('/')}"
+    request = urllib.request.Request(url, headers=REQUEST_HEADERS)
     try:
-        with urllib.request.urlopen(url, timeout=30) as response:
+        with urllib.request.urlopen(request, timeout=30) as response:
             data = response.read(MAX_DOWNLOAD_SIZE + 1)
     except urllib.error.HTTPError as exc:
         if not required and exc.code == 404:
@@ -46,7 +51,8 @@ def sync_deployed() -> list[str]:
         return []
 
     try:
-        with urllib.request.urlopen(f"{base_url}/archive_list.js", timeout=30) as response:
+        request = urllib.request.Request(f"{base_url}/archive_list.js", headers=REQUEST_HEADERS)
+        with urllib.request.urlopen(request, timeout=30) as response:
             archive_list = response.read(MAX_DOWNLOAD_SIZE + 1).decode("utf-8", errors="ignore")
     except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError) as exc:
         if isinstance(exc, urllib.error.HTTPError):

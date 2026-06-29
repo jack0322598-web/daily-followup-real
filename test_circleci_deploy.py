@@ -148,6 +148,9 @@ class SyncDeployedTests(unittest.TestCase):
                 return self.data
 
         def urlopen(url, timeout=30):
+            if hasattr(url, "full_url"):
+                self.assertTrue(url.get_header("User-agent"))
+                url = url.full_url
             if url in responses:
                 return Response(responses[url])
             raise __import__("urllib.error").error.HTTPError(url, 404, "not found", {}, None)
