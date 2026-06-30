@@ -6880,6 +6880,8 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 18px;
+            width: 100%;
+            min-width: 0;
         }
 
         .indicator-card {
@@ -6892,6 +6894,9 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
             flex-direction: column;
             gap: 14px;
             box-shadow: var(--shadow-card);
+            width: 100%;
+            min-width: 0;
+            overflow: hidden;
         }
 
         .indicator-summary {
@@ -6960,11 +6965,21 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
             border-radius: 0;
             padding: 0;
             flex: 1;
+            width: 100%;
+            min-width: 0;
+            overflow: hidden;
         }
 
         .chart-canvas {
             min-height: 292px;
             height: 100%;
+            width: 100%;
+            min-width: 0;
+        }
+
+        .chart-canvas .apexcharts-canvas,
+        .chart-canvas .apexcharts-svg {
+            max-width: 100% !important;
         }
 
         .impact-source-strip {
