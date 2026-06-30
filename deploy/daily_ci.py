@@ -330,8 +330,22 @@ def run_stage(stage: str, requested: str | None = None) -> None:
     if stage == "render":
         target = state_target("summarized", requested, path=SUMMARY_STATE_FILE)
         if target is None:
+            archives = archive_dates()
+            if not archives:
+                write_result("no_changes", [])
+                print("No pending dates or existing archives; render stage skipped.")
+                return
+            target = archives[-1]
+            log_path = stage_log_path(stage)
+            with update_lock(), log_path.open("a", encoding="utf-8") as log_handle:
+                log_message(
+                    f"No pending dates; re-rendering {target.isoformat()} with the current site code.",
+                    log_handle,
+                )
+                run_render(target, log_handle)
+            write_state("rendered", target)
             write_result("no_changes", [])
-            print("No pending dates; render stage skipped.")
+            print(f"Render stage refreshed the existing site. Log: {log_path}")
             return
         log_path = stage_log_path(stage)
         with update_lock(), log_path.open("a", encoding="utf-8") as log_handle:
