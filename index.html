@@ -1044,6 +1044,13 @@
                 grid-template-columns: repeat(2, minmax(0, 1fr));
             }
 
+            .source-tab-section .impact-source-strip > .impact-news-stage {
+                grid-column: 1 / -1;
+                width: 100%;
+                min-height: 0;
+                margin: 0 0 4px;
+            }
+
             .panel-shell,
             .sidebar-calendar {
                 border-radius: 24px;
@@ -1350,15 +1357,45 @@
         document.querySelectorAll(".source-tab-section").forEach((sourceSection) => {
             const sourceCards = sourceSection.querySelectorAll("[data-source-target]");
             const sourcePanels = sourceSection.querySelectorAll("[data-source-panel]");
+            const sourceStrip = sourceSection.querySelector(".impact-source-strip");
+            const sourceStage = sourceSection.querySelector(".impact-news-stage");
+            const mobileSourceLayout = window.matchMedia("(max-width: 780px)");
+
+            function placeSourceStage(activeCard) {
+                if (!sourceStrip || !sourceStage) return;
+                if (mobileSourceLayout.matches && activeCard) {
+                    activeCard.insertAdjacentElement("afterend", sourceStage);
+                } else {
+                    sourceStrip.insertAdjacentElement("afterend", sourceStage);
+                }
+            }
 
             function activateSource(targetKey) {
-                sourceCards.forEach((card) => card.classList.toggle("active", card.dataset.sourceTarget === targetKey));
+                let activeCard = null;
+                sourceCards.forEach((card) => {
+                    const isActive = card.dataset.sourceTarget === targetKey;
+                    card.classList.toggle("active", isActive);
+                    card.setAttribute("aria-expanded", isActive ? "true" : "false");
+                    if (isActive) activeCard = card;
+                });
                 sourcePanels.forEach((panel) => panel.classList.toggle("active", panel.dataset.sourcePanel === targetKey));
+                placeSourceStage(activeCard);
             }
 
             sourceCards.forEach((card) => {
                 card.addEventListener("click", () => activateSource(card.dataset.sourceTarget));
             });
+
+            function syncSourceLayout() {
+                placeSourceStage(sourceSection.querySelector("[data-source-target].active"));
+            }
+
+            if (typeof mobileSourceLayout.addEventListener === "function") {
+                mobileSourceLayout.addEventListener("change", syncSourceLayout);
+            } else {
+                mobileSourceLayout.addListener(syncSourceLayout);
+            }
+            syncSourceLayout();
         });
 
         function archiveHref(dateStr) {
