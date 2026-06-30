@@ -6377,10 +6377,10 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
                     <div class="panel-count">{updated_dot} 기준</div>
                 </div>
                 <div class="indicators-board">
-                    {render_indicator_card("미국 10년물 국채 금리", dashboard.get("us_10y", "-"), "", "chart-us-10y", "tone-blue")}
-                    {render_indicator_card("원/달러 환율", dashboard.get("fx_info", "-"), "", "chart-fx", "tone-green")}
                     {render_indicator_card("코스피 지수", dashboard.get("kospi_info", "-"), format_flow_html(dashboard.get("kospi_flow", "")), "chart-kospi", "tone-amber")}
                     {render_indicator_card("코스닥 지수", dashboard.get("kosdaq_info", "-"), format_flow_html(dashboard.get("kosdaq_flow", "")), "chart-kosdaq", "tone-slate")}
+                    {render_indicator_card("원/달러 환율", dashboard.get("fx_info", "-"), "", "chart-fx", "tone-green")}
+                    {render_indicator_card("미국 10년물 국채 금리", dashboard.get("us_10y", "-"), "", "chart-us-10y", "tone-blue")}
                 </div>
             </div>
         </section>
@@ -7597,6 +7597,35 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
                 width: 100%;
                 min-height: 0;
                 margin: 0 0 4px;
+                padding: 10px 0 2px;
+                border: 0;
+                border-radius: 0;
+                background: transparent;
+                box-shadow: none;
+                overflow: hidden;
+            }
+
+            .source-tab-section .impact-news-stage[hidden] {
+                display: none;
+            }
+
+            .source-tab-section .impact-news-stage .impact-panel-head {
+                display: none;
+            }
+
+            .source-tab-section .panel-shell {
+                padding: 18px;
+            }
+
+            .source-tab-section .impact-source-strip {
+                gap: 12px;
+                margin-bottom: 0;
+            }
+
+            .source-tab-section .impact-news-stage .news-card,
+            .source-tab-section .impact-news-stage .industry-card {
+                border-radius: 16px;
+                padding: 16px;
             }
 
             .panel-shell,
@@ -7616,6 +7645,15 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
 
             .impact-source-strip {
                 grid-template-columns: 1fr;
+            }
+
+            .source-tab-section .panel-shell {
+                padding: 14px;
+            }
+
+            .source-tab-section .impact-source-card {
+                min-height: 112px;
+                padding: 16px;
             }
 
             .theme-hero,
@@ -7689,6 +7727,21 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
             const sourceStrip = sourceSection.querySelector(".impact-source-strip");
             const sourceStage = sourceSection.querySelector(".impact-news-stage");
             const mobileSourceLayout = window.matchMedia("(max-width: 780px)");
+            const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+            const initialCard = sourceSection.querySelector("[data-source-target].active");
+            const defaultTarget = initialCard ? initialCard.dataset.sourceTarget : sourceCards[0]?.dataset.sourceTarget;
+            let activeTarget = defaultTarget || "";
+            let firstLayoutSync = true;
+            let sourceTransitioning = false;
+
+            function setSourceState(targetKey) {
+                sourceCards.forEach((card) => {
+                    const isActive = card.dataset.sourceTarget === targetKey;
+                    card.classList.toggle("active", isActive);
+                    card.setAttribute("aria-expanded", isActive ? "true" : "false");
+                });
+                sourcePanels.forEach((panel) => panel.classList.toggle("active", panel.dataset.sourcePanel === targetKey));
+            }
 
             function placeSourceStage(activeCard) {
                 if (!sourceStrip || !sourceStage) return;
@@ -7699,16 +7752,90 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
                 }
             }
 
-            function activateSource(targetKey) {
-                let activeCard = null;
-                sourceCards.forEach((card) => {
-                    const isActive = card.dataset.sourceTarget === targetKey;
-                    card.classList.toggle("active", isActive);
-                    card.setAttribute("aria-expanded", isActive ? "true" : "false");
-                    if (isActive) activeCard = card;
+            function lockViewportToCard(card) {
+                const viewportTop = card.getBoundingClientRect().top;
+                let locked = true;
+                function keepPosition() {
+                    if (!locked) return;
+                    const offset = card.getBoundingClientRect().top - viewportTop;
+                    if (Math.abs(offset) > 0.5) window.scrollBy(0, offset);
+                    window.requestAnimationFrame(keepPosition);
+                }
+                window.requestAnimationFrame(keepPosition);
+                return () => {
+                    locked = false;
+                    const offset = card.getBoundingClientRect().top - viewportTop;
+                    if (Math.abs(offset) > 0.5) window.scrollBy(0, offset);
+                };
+            }
+
+            async function animateSourceStage(opening) {
+                if (!sourceStage) return;
+                if (!mobileSourceLayout.matches || reduceMotion.matches || typeof sourceStage.animate !== "function") {
+                    sourceStage.hidden = !opening;
+                    return;
+                }
+
+                sourceStage.hidden = false;
+                const height = Math.max(1, sourceStage.scrollHeight);
+                const keyframes = opening
+                    ? [
+                        { height: "0px", opacity: 0, transform: "translateY(-10px)" },
+                        { height: `${height}px`, opacity: 1, transform: "translateY(0)" },
+                    ]
+                    : [
+                        { height: `${height}px`, opacity: 1, transform: "translateY(0)" },
+                        { height: "0px", opacity: 0, transform: "translateY(-10px)" },
+                    ];
+                const animation = sourceStage.animate(keyframes, {
+                    duration: 280,
+                    easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+                    fill: "both",
                 });
-                sourcePanels.forEach((panel) => panel.classList.toggle("active", panel.dataset.sourcePanel === targetKey));
-                placeSourceStage(activeCard);
+                try {
+                    await animation.finished;
+                } catch (error) {
+                    // A newer interaction may cancel the previous animation.
+                }
+                animation.cancel();
+                sourceStage.hidden = !opening;
+            }
+
+            async function activateSource(targetKey) {
+                if (!sourceStage || sourceTransitioning) return;
+                const activeCard = Array.from(sourceCards).find((card) => card.dataset.sourceTarget === targetKey);
+                if (!activeCard) return;
+
+                if (!mobileSourceLayout.matches) {
+                    activeTarget = targetKey;
+                    setSourceState(targetKey);
+                    sourceStage.hidden = false;
+                    placeSourceStage(null);
+                    return;
+                }
+
+                sourceTransitioning = true;
+                const unlockViewport = lockViewportToCard(activeCard);
+                try {
+                    const isOpen = activeTarget === targetKey && !sourceStage.hidden;
+                    if (isOpen) {
+                        await animateSourceStage(false);
+                        activeTarget = "";
+                        setSourceState("");
+                        return;
+                    }
+
+                    if (activeTarget && !sourceStage.hidden) {
+                        await animateSourceStage(false);
+                    }
+                    activeTarget = targetKey;
+                    setSourceState(targetKey);
+                    placeSourceStage(activeCard);
+                    await animateSourceStage(true);
+                } finally {
+                    unlockViewport();
+                    sourceTransitioning = false;
+                }
             }
 
             sourceCards.forEach((card) => {
@@ -7716,7 +7843,28 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
             });
 
             function syncSourceLayout() {
-                placeSourceStage(sourceSection.querySelector("[data-source-target].active"));
+                if (!sourceStage) return;
+                if (mobileSourceLayout.matches) {
+                    if (firstLayoutSync) {
+                        activeTarget = "";
+                        setSourceState("");
+                        sourceStage.hidden = true;
+                    } else if (activeTarget) {
+                        const activeCard = sourceSection.querySelector(`[data-source-target="${activeTarget}"]`);
+                        placeSourceStage(activeCard);
+                        sourceStage.hidden = false;
+                    } else {
+                        sourceStage.hidden = true;
+                    }
+                } else {
+                    if (!activeTarget && defaultTarget) {
+                        activeTarget = defaultTarget;
+                        setSourceState(defaultTarget);
+                    }
+                    sourceStage.hidden = false;
+                    placeSourceStage(null);
+                }
+                firstLayoutSync = false;
             }
 
             if (typeof mobileSourceLayout.addEventListener === "function") {
