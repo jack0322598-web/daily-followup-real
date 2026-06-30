@@ -7581,7 +7581,7 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
 
         @media (max-width: 780px) {
             body {
-                padding: 18px;
+                padding: 12px;
             }
 
             .sidebar {
@@ -7596,8 +7596,8 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
                 grid-column: 1 / -1;
                 width: 100%;
                 min-height: 0;
-                margin: 0 0 4px;
-                padding: 10px 0 2px;
+                margin: 0;
+                padding: 6px 0 0;
                 border: 0;
                 border-radius: 0;
                 background: transparent;
@@ -7614,18 +7614,48 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
             }
 
             .source-tab-section .panel-shell {
-                padding: 18px;
+                padding: 12px;
             }
 
             .source-tab-section .impact-source-strip {
-                gap: 12px;
+                gap: 8px;
                 margin-bottom: 0;
             }
 
             .source-tab-section .impact-news-stage .news-card,
             .source-tab-section .impact-news-stage .industry-card {
-                border-radius: 16px;
-                padding: 16px;
+                border-radius: 14px;
+                padding: 12px;
+            }
+
+            .source-tab-section .impact-news-stage .news-card + .news-card {
+                margin-top: 8px;
+            }
+
+            .source-tab-section .impact-news-stage .news-title {
+                margin-bottom: 4px;
+                font-size: 0.96rem;
+                line-height: 1.38;
+            }
+
+            .source-tab-section .impact-news-stage .news-date {
+                margin-bottom: 6px;
+                font-size: 0.75rem;
+                line-height: 1.4;
+            }
+
+            .source-tab-section .impact-news-stage .news-summary {
+                padding-left: 16px;
+                font-size: 0.84rem;
+                line-height: 1.48;
+            }
+
+            .source-tab-section .impact-news-stage .news-summary li + li {
+                margin-top: 2px;
+            }
+
+            .source-tab-section .impact-news-stage .news-actions {
+                margin-top: 9px;
             }
 
             .panel-shell,
@@ -7648,12 +7678,12 @@ def render_html(target_date, domestic_impact, global_impact, search_sections, ta
             }
 
             .source-tab-section .panel-shell {
-                padding: 14px;
+                padding: 10px;
             }
 
             .source-tab-section .impact-source-card {
-                min-height: 112px;
-                padding: 16px;
+                min-height: 96px;
+                padding: 12px;
             }
 
             .theme-hero,
