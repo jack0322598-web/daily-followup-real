@@ -72,6 +72,30 @@ class DailyCiTests(unittest.TestCase):
             self.assertEqual(json.loads(collect_state.read_text(encoding="utf-8"))["status"], "collected")
             self.assertEqual(json.loads(summary_state.read_text(encoding="utf-8"))["status"], "summarized")
 
+    def test_render_stage_refreshes_latest_archive_when_no_dates_are_pending(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            logs = root / "logs"
+            logs.mkdir()
+            archive_date = date(2026, 6, 29)
+            (root / f"archive_{archive_date.isoformat()}.html").write_text("existing", encoding="utf-8")
+            with (
+                patch.object(daily_ci, "ROOT", root),
+                patch.object(daily_ci, "LOG_DIR", logs),
+                patch.object(daily_ci, "LOCK_FILE", root / ".update.lock"),
+                patch.object(daily_ci, "RESULT_FILE", root / "deploy_result.json"),
+                patch.object(daily_ci, "STATE_FILE", root / "pipeline_state.json"),
+                patch.object(daily_ci, "SUMMARY_STATE_FILE", root / "pipeline_summarize_state.json"),
+                patch.object(daily_ci, "state_target", return_value=None),
+                patch.object(daily_ci, "run_render") as run_render,
+            ):
+                daily_ci.run_stage("render")
+
+            run_render.assert_called_once()
+            self.assertEqual(run_render.call_args.args[0], archive_date)
+            result = json.loads((root / "deploy_result.json").read_text(encoding="utf-8"))
+            self.assertEqual(result["status"], "no_changes")
+
 
 class BuildPublicTests(unittest.TestCase):
     def test_build_copies_public_assets_only(self):
